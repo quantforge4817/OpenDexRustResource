@@ -165,11 +165,13 @@ async fn main() -> Result<()> {
         format!("/ip4/127.0.0.1/tcp/{}", port)
             .parse()?;
 
+    swarm.listen_on(listen_addr.clone())?;
 
-    swarm.listen_on(listen_addr)?;
+         println!("Listening for peers...");
+         println!("Address:");
+         println!("{}/p2p/{}", listen_addr, peer_id);
 
-
-    println!("Listening for peers...");
+   
 
 
     if port == "4001" {
