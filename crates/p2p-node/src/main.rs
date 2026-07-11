@@ -92,9 +92,15 @@ async fn main() -> Result<()> {
 
     let port = args
         .iter()
-    .find(|arg| arg.parse::<u16>().is_ok())
+        .find(|arg| arg.parse::<u16>().is_ok())
         .cloned()
         .unwrap_or_else(|| "4001".to_string());
+
+    let peer_addr = args
+        .iter()
+        .position(|arg| arg == "--peer")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
 
     tracing_subscriber::fmt::init();
 
@@ -171,6 +177,13 @@ async fn main() -> Result<()> {
          println!("Address:");
          println!("{}/p2p/{}", listen_addr, peer_id);
 
+	if let Some(addr) = peer_addr {
+    let peer: Multiaddr = addr.parse()?;
+
+    println!("Dialing peer: {}", peer);
+
+    swarm.dial(peer)?;
+}
    
 
 
