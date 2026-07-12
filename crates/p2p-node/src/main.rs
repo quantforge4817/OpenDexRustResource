@@ -51,19 +51,18 @@ struct OpenDexBehaviour {
     ping: ping::Behaviour,
 }
 
-fn load_bootstrap_peers() -> Vec<Multiaddr> {
-    let path = dirs::home_dir().unwrap().join(".opendex/bootstrap.peers");
 
-    if !path.exists() {
-        return vec![];
-    }
-
-    let data = fs::read_to_string(path).unwrap();
-
-    data.lines().filter_map(|line| line.parse().ok()).collect()
-}
 
 fn save_bootstrap_peer(addr: &Multiaddr) -> Result<()> {
+    // Ignore addresses without a PeerId.
+    // These are usually temporary connection addresses like /tcp/38232.
+    if !addr
+        .iter()
+        .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_)))
+    {
+        return Ok(());
+    }
+
     let path = dirs::home_dir().unwrap().join(".opendex/bootstrap.peers");
 
     if let Some(parent) = path.parent() {
@@ -87,6 +86,7 @@ fn save_bootstrap_peer(addr: &Multiaddr) -> Result<()> {
 
     Ok(())
 }
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -170,70 +170,42 @@ async fn main() -> Result<()> {
     }
 
     if port == "4001" {
-        for peer in load_bootstrap_peers() {
-            println!("Dialing bootstrap peer: {:?}", peer);
+    for peer in load_bootstrap_peers()? {
+        println!("Dialing bootstrap peer: {:?}", peer);
 
-            swarm.dial(peer)?;
+        if let Err(e) = swarm.dial(peer.clone()) {
+            eprintln!("Failed dialing bootstrap peer {:?}: {}", peer, e);
         }
     }
+}
 
     loop {
         if let Some(event) = swarm.next().await {
             match event {
                 libp2p::swarm::SwarmEvent::ConnectionEstablished {
-                    peer_id, endpoint, ..
-                } => {
-                    println!("Connected to 	peer: {:?}", peer_id);
-
-                    match endpoint {
-                        libp2p::core::ConnectedPoint::Dialer { address, .. } => {
-                            swarm
-                                .behaviour_mut()
-                                .kademlia
-                                .add_address(&peer_id, address.clone());
-
-                            
-
-                            println!("Kademlia added dialed peer: {:?}", address);
-                        }
-
-                        libp2p::core::ConnectedPoint::Listener { send_back_addr, .. } => {
-                            swarm
-                                .behaviour_mut()
-                                .kademlia
-                                .add_address(&peer_id, send_back_addr.clone());
-
-                           
-
-                            println!("Kademlia added incoming peer: {:?}", send_back_addr);
-                        }
-                    }
-
-                    swarm.behaviour_mut().kademlia.bootstrap().ok();
-                }
+    peer_id,
+    ..
+} => {
+    println!("Connected to peer: {:?}", peer_id);
+}
 
                               libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                     OpenDexBehaviourEvent::Identify(identify::Event::Received {
-                        peer_id,
-                        info,
-                        ..
+                             peer_id,
+                             info,
+                              ..
                     }) => {
-                        for addr in info.listen_addrs {
-                            let addr =
-                                addr.with(libp2p::multiaddr::Protocol::P2p(peer_id.into()));
+    for addr in info.listen_addrs {
+        let addr = addr.with(libp2p::multiaddr::Protocol::P2p(peer_id.into()));
 
-                            swarm
-                                .behaviour_mut()
-                                .kademlia
-                                .add_address(&peer_id, addr.clone());
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .add_address(&peer_id, addr.clone());
 
-                            if let Err(e) = save_bootstrap_peer(&addr) {
-                                eprintln!("Failed saving peer: {}", e);
-                            }
-
-                            println!("Saved peer address: {:?}", addr);
-                        }
-                    }
+        println!("Kademlia learned address: {:?}", addr);
+    }
+}
 
                     OpenDexBehaviourEvent::Ping(event) => {
                         println!("Ping event: {:?}", event);
@@ -241,9 +213,22 @@ async fn main() -> Result<()> {
 
                     OpenDexBehaviourEvent::Kademlia(event) => {
                         match event {
-                            kad::Event::RoutingUpdated { peer, .. } => {
-                                println!("Routing updated: {:?}", peer);
-                            }
+                            kad::Event::RoutingUpdated {
+                             peer,
+                             addresses,
+                             ..
+                            } => {
+    println!("Routing updated: {:?}", peer);
+
+    for addr in addresses.iter() {
+        if let Err(e) = save_bootstrap_peer(addr) {
+            eprintln!("Failed saving peer: {}", e);
+        } else{
+
+        println!("Saved stable peer: {:?}", addr);
+        }
+      }
+    }
 
                             kad::Event::OutboundQueryProgressed { result, .. } => {
                                 if matches!(result, kad::QueryResult::Bootstrap(_)) {
@@ -264,4 +249,22 @@ async fn main() -> Result<()> {
             }
         }
     }
+}
+fn load_bootstrap_peers() -> Result<Vec<Multiaddr>> {
+    let path = dirs::home_dir()
+        .unwrap()
+        .join(".opendex/bootstrap.peers");
+
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+
+    let data = fs::read_to_string(path)?;
+
+    let peers = data
+        .lines()
+        .filter_map(|line| line.parse().ok())
+        .collect();
+
+    Ok(peers)
 }
