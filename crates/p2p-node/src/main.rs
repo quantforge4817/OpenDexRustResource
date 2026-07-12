@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
     let id_keys = if args.contains(&"--new-identity".to_string()) {
         identity::Keypair::generate_ed25519()
     } else {
-        load_or_create_identity()?
+	        load_or_create_identity()?
     };
 
     let peer_id = id_keys.public().to_peer_id();
@@ -212,14 +212,15 @@ async fn main() -> Result<()> {
                     swarm.behaviour_mut().kademlia.bootstrap().ok();
                 }
 
-                libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
+                              libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                     OpenDexBehaviourEvent::Identify(identify::Event::Received {
                         peer_id,
                         info,
                         ..
                     }) => {
                         for addr in info.listen_addrs {
-                            let addr = addr.with(libp2p::multiaddr::Protocol::P2p(peer_id.into()));
+                            let addr =
+                                addr.with(libp2p::multiaddr::Protocol::P2p(peer_id.into()));
 
                             swarm
                                 .behaviour_mut()
@@ -234,14 +235,32 @@ async fn main() -> Result<()> {
                         }
                     }
 
+                    OpenDexBehaviourEvent::Ping(event) => {
+                        println!("Ping event: {:?}", event);
+                    }
+
+                    OpenDexBehaviourEvent::Kademlia(event) => {
+                        match event {
+                            kad::Event::RoutingUpdated { peer, .. } => {
+                                println!("Routing updated: {:?}", peer);
+                            }
+
+                            kad::Event::OutboundQueryProgressed { result, .. } => {
+                                if matches!(result, kad::QueryResult::Bootstrap(_)) {
+                                    println!("Bootstrap progress: {:?}", result);
+                                }
+                            }
+
+                            _ => {}
+                        }
+                    }
+
                     other => {
-                        println!("Behaviour event: {:?}", other);
+                        println!("Other behaviour event: {:?}", other);
                     }
                 },
 
-                other => {
-                    println!("{:?}", other);
-                }
+                _ => {}
             }
         }
     }
