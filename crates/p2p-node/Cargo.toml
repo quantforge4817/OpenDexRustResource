@@ -14,7 +14,8 @@ libp2p = { version = "0.54.1", features = [
     "yamux",
     "identify",
     "macros",
-    "kad"
+    "kad",
+    "ping"
 ] }
 
 anyhow = { workspace = true }
