@@ -15,7 +15,8 @@ libp2p = { version = "0.54.1", features = [
     "identify",
     "macros",
     "kad",
-    "ping"
+    "ping",
+    "gossipsub"
 ] }
 
 anyhow = { workspace = true }
@@ -27,3 +28,8 @@ tracing-subscriber = { workspace = true }
 futures = "0.3"
 
 dirs = "5"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+protocol = { path = "../protocol" }

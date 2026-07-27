@@ -1,27 +1,32 @@
 use anyhow::Result;
 use futures::StreamExt;
-use libp2p::ping;
+
+use protocol::message::{MessageType, OpenDexMessage, Order};
+
+mod orderbook;
+
+use orderbook::OrderBook;
 
 use libp2p::{
-    Multiaddr, Swarm, SwarmBuilder, identify, identity, kad, noise, swarm::NetworkBehaviour, tcp,
-    yamux,
+    Multiaddr, PeerId, Swarm, SwarmBuilder, gossipsub, identify, identity, kad, noise, ping,
+    swarm::NetworkBehaviour, tcp, yamux,
 };
 
 use std::{fs, path::PathBuf};
 
 use tracing_subscriber;
 
-fn identity_path() -> PathBuf {
+fn identity_path(port: &str) -> PathBuf {
     let mut path = dirs::home_dir().expect("Cannot find home directory");
 
     path.push(".opendex");
-    path.push("identity.key");
+    path.push(format!("identity-{}.key", port));
 
     path
 }
 
-fn load_or_create_identity() -> Result<identity::Keypair> {
-    let path = identity_path();
+fn load_or_create_identity(port: &str) -> Result<identity::Keypair> {
+    let path = identity_path(port);
 
     if path.exists() {
         let bytes = fs::read(&path)?;
@@ -46,47 +51,11 @@ fn load_or_create_identity() -> Result<identity::Keypair> {
 
 #[derive(NetworkBehaviour)]
 struct OpenDexBehaviour {
-    identify: identify::Behaviour,
     kademlia: kad::Behaviour<kad::store::MemoryStore>,
     ping: ping::Behaviour,
+    identify: identify::Behaviour,
+    gossipsub: gossipsub::Behaviour,
 }
-
-
-
-fn save_bootstrap_peer(addr: &Multiaddr) -> Result<()> {
-    // Ignore addresses without a PeerId.
-    // These are usually temporary connection addresses like /tcp/38232.
-    if !addr
-        .iter()
-        .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_)))
-    {
-        return Ok(());
-    }
-
-    let path = dirs::home_dir().unwrap().join(".opendex/bootstrap.peers");
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let mut peers = if path.exists() {
-        fs::read_to_string(&path)?
-    } else {
-        String::new()
-    };
-
-    let addr_string = addr.to_string();
-
-    if !peers.contains(&addr_string) {
-        peers.push_str(&addr_string);
-        peers.push('\n');
-
-        fs::write(&path, peers)?;
-    }
-
-    Ok(())
-}
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -106,20 +75,19 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::fmt::init();
 
-    let id_keys = if args.contains(&"--new-identity".to_string()) {
+    let id_keys = if args.iter().any(|arg| arg == "--new-identity") {
         identity::Keypair::generate_ed25519()
     } else {
-	        load_or_create_identity()?
+        load_or_create_identity(&port)?
     };
-
-    let peer_id = id_keys.public().to_peer_id();
+    let local_peer_id = PeerId::from(id_keys.public());
 
     println!("================================");
     println!(" OpenDEX Node Started");
     println!("================================");
 
     println!("Peer ID:");
-    println!("{}", peer_id);
+    println!("{}", local_peer_id);
 
     let mut swarm: Swarm<OpenDexBehaviour> = SwarmBuilder::with_existing_identity(id_keys)
         .with_tokio()
@@ -134,6 +102,17 @@ async fn main() -> Result<()> {
             let store = kad::store::MemoryStore::new(peer_id);
 
             let kademlia = kad::Behaviour::new(peer_id, store);
+            let gossipsub = {
+                let config = gossipsub::ConfigBuilder::default()
+                    .build()
+                    .expect("valid gossipsub config");
+
+                gossipsub::Behaviour::new(
+                    gossipsub::MessageAuthenticity::Signed(key.clone()),
+                    config,
+                )
+                .expect("create gossipsub")
+            };
 
             Ok(OpenDexBehaviour {
                 identify: identify::Behaviour::new(identify::Config::new(
@@ -143,15 +122,44 @@ async fn main() -> Result<()> {
 
                 kademlia,
 
-                ping: ping::Behaviour::new(ping::Config::new()),
+                ping: ping::Behaviour::new(
+                    ping::Config::new().with_interval(std::time::Duration::from_secs(15)),
+                ),
+                gossipsub,
             })
         })?
+        .with_swarm_config(|cfg| {
+            cfg.with_idle_connection_timeout(std::time::Duration::from_secs(300))
+        })
         .build();
+    let topic = gossipsub::IdentTopic::new("opendex-orders");
 
     swarm
         .behaviour_mut()
-        .kademlia
-        .set_mode(Some(kad::Mode::Server));
+        .gossipsub
+        .subscribe(&topic)
+        .expect("subscribe failed");
+
+   /* let bootstrap_peer: PeerId = "12D3KooWD38Xr5mhvj78TqeTmvNs3kRpuQ13dzsZ22N2tCuQxtzm"
+        .parse()
+        .unwrap();
+
+     if local_peer_id != bootstrap_peer {
+        let bootstrap_addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
+
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .add_address(&bootstrap_peer, bootstrap_addr);
+
+        swarm
+            .behaviour_mut()
+            .kademlia
+            .bootstrap()
+            .expect("bootstrap failed");
+    }*/
+
+    // Kademlia mode left at default until bootstrap is implemented
 
     let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", port).parse()?;
 
@@ -159,112 +167,149 @@ async fn main() -> Result<()> {
 
     println!("Listening for peers...");
     println!("Address:");
-    println!("{}/p2p/{}", listen_addr, peer_id);
+    println!("{}/p2p/{}", listen_addr, local_peer_id);
 
-    if let Some(addr) = peer_addr {
-        let peer: Multiaddr = addr.parse()?;
+    
+if let Some(addr) = peer_addr {
+    let peer: Multiaddr = addr.parse()?;
 
-        println!("Dialing peer: {}", peer);
+    println!("Dialing peer: {}", peer);
 
-        swarm.dial(peer)?;
-    }
-
-    if port == "4001" {
-    for peer in load_bootstrap_peers()? {
-        println!("Dialing bootstrap peer: {:?}", peer);
-
-        if let Err(e) = swarm.dial(peer.clone()) {
-            eprintln!("Failed dialing bootstrap peer {:?}: {}", peer, e);
-        }
-    }
+    swarm.dial(peer)?;
 }
 
+   let mut order_book = OrderBook::new();
+  
     loop {
         if let Some(event) = swarm.next().await {
             match event {
                 libp2p::swarm::SwarmEvent::ConnectionEstablished {
-    peer_id,
-    ..
-} => {
-    println!("Connected to peer: {:?}", peer_id);
-}
+                    peer_id,
+                    num_established,
+                    ..
+                } => {
+                    println!(
+                        "Connected to peer: {:?}, total connections: {}",
+                        peer_id, num_established
+                    );
+                }
 
-                              libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
+                libp2p::swarm::SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                    println!("Connection closed with {:?}, cause: {:?}", peer_id, cause);
+                }
+
+                libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    println!("Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
+
+                libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
                     OpenDexBehaviourEvent::Identify(identify::Event::Received {
-                             peer_id,
-                             info,
-                              ..
+                        peer_id,
+                        info,
+                        ..
                     }) => {
-    for addr in info.listen_addrs {
-        let addr = addr.with(libp2p::multiaddr::Protocol::P2p(peer_id.into()));
+                        println!("Identify received from peer: {:?}", peer_id);
 
-        swarm
-            .behaviour_mut()
-            .kademlia
-            .add_address(&peer_id, addr.clone());
+                        for addr in info.listen_addrs {
+                            println!("Adding address to Kademlia: {}", addr);
 
-        println!("Kademlia learned address: {:?}", addr);
-    }
-}
+                            swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                        }
 
-                    OpenDexBehaviourEvent::Ping(event) => {
-                        println!("Ping event: {:?}", event);
-                    }
-
-                    OpenDexBehaviourEvent::Kademlia(event) => {
-                        match event {
-                            kad::Event::RoutingUpdated {
-                             peer,
-                             addresses,
-                             ..
-                            } => {
-    println!("Routing updated: {:?}", peer);
-
-    for addr in addresses.iter() {
-        if let Err(e) = save_bootstrap_peer(addr) {
-            eprintln!("Failed saving peer: {}", e);
-        } else{
-
-        println!("Saved stable peer: {:?}", addr);
-        }
-      }
-    }
-
-                            kad::Event::OutboundQueryProgressed { result, .. } => {
-                                if matches!(result, kad::QueryResult::Bootstrap(_)) {
-                                    println!("Bootstrap progress: {:?}", result);
-                                }
-                            }
-
-                            _ => {}
+                        if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
+                            println!("Bootstrap error: {:?}", e);
                         }
                     }
 
-                    other => {
-                        println!("Other behaviour event: {:?}", other);
+                    OpenDexBehaviourEvent::Identify(event) => {
+                        println!("Identify event: {:?}", event);
                     }
+
+
+                  OpenDexBehaviourEvent::Gossipsub(
+    gossipsub::Event::Subscribed {
+        peer_id,
+        topic,
+    },
+) => {
+ 	 println!("Peer {:?} subscribed to {:?}", peer_id, topic);
+
+      let order = Order {
+       trader: local_peer_id.to_string(),
+       pair: "ETH/USDC".to_string(),
+       side: "BUY".to_string(),
+       price: 3000.0,
+       amount: 1.5,
+   };
+
+    let message = OpenDexMessage {
+     message_type: MessageType::OrderCreated,
+     sender: local_peer_id.to_string(),
+     payload: serde_json::to_string(&order)?,
+     timestamp: chrono::Utc::now().timestamp() as u64,
+  };
+    let encoded = serde_json::to_vec(&message)?;
+
+    match swarm
+        .behaviour_mut()
+        .gossipsub
+        .publish(topic.clone(), encoded)
+    {
+        Ok(id) => {
+           println!("Published OpenDEX message: {:?}", id);
+        }
+        Err(e) => {
+            println!("Publish failed: {:?}", e);
+        }
+    }
+}
+
+OpenDexBehaviourEvent::Gossipsub(
+    gossipsub::Event::Message {
+        propagation_source: _,
+        message,
+        ..
+    },
+) => {
+    match serde_json::from_slice::<OpenDexMessage>(&message.data) {
+        Ok(msg) => {
+            println!("Received OpenDEX message:");
+            println!("{:?}", msg);
+
+            match msg.message_type {
+                MessageType::OrderCreated => {
+                    match serde_json::from_str::<Order>(&msg.payload) {
+                        Ok(order) => {
+                            order_book.add_order(order);
+                            order_book.print_orders();
+                        }
+                        Err(e) => {
+                            println!("Failed to decode order: {:?}", e);
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        Err(e) => {
+            println!("Invalid OpenDEX message: {:?}", e);
+        }
+    }
+}
+
+OpenDexBehaviourEvent::Kademlia(event) => {
+    println!("Kademlia event: {:?}", event);
+}
+
+OpenDexBehaviourEvent::Ping(_) => {}
+
+_ => {}
                 },
 
                 _ => {}
             }
         }
     }
-}
-fn load_bootstrap_peers() -> Result<Vec<Multiaddr>> {
-    let path = dirs::home_dir()
-        .unwrap()
-        .join(".opendex/bootstrap.peers");
-
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-
-    let data = fs::read_to_string(path)?;
-
-    let peers = data
-        .lines()
-        .filter_map(|line| line.parse().ok())
-        .collect();
-
-    Ok(peers)
 }
