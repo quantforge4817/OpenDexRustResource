@@ -1,11 +1,23 @@
+
+use crate::cli::{parse_command, Command};
+
 use anyhow::Result;
+
 use futures::StreamExt;
 
-use protocol::message::{MessageType, OpenDexMessage, Order};
+use protocol::message::{ MessageType, OpenDexMessage, Order,};
+
+mod cli;
+
+use order_factory::create_order;
 
 mod orderbook;
 
+mod order_factory;
+
 use orderbook::OrderBook;
+
+use tokio::io::{self, AsyncBufReadExt};
 
 use libp2p::{
     Multiaddr, PeerId, Swarm, SwarmBuilder, gossipsub, identify, identity, kad, noise, ping,
@@ -140,27 +152,6 @@ async fn main() -> Result<()> {
         .subscribe(&topic)
         .expect("subscribe failed");
 
-   /* let bootstrap_peer: PeerId = "12D3KooWD38Xr5mhvj78TqeTmvNs3kRpuQ13dzsZ22N2tCuQxtzm"
-        .parse()
-        .unwrap();
-
-     if local_peer_id != bootstrap_peer {
-        let bootstrap_addr: Multiaddr = "/ip4/127.0.0.1/tcp/4001".parse().unwrap();
-
-        swarm
-            .behaviour_mut()
-            .kademlia
-            .add_address(&bootstrap_peer, bootstrap_addr);
-
-        swarm
-            .behaviour_mut()
-            .kademlia
-            .bootstrap()
-            .expect("bootstrap failed");
-    }*/
-
-    // Kademlia mode left at default until bootstrap is implemented
-
     let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", port).parse()?;
 
     swarm.listen_on(listen_addr.clone())?;
@@ -180,19 +171,76 @@ if let Some(addr) = peer_addr {
 
    let mut order_book = OrderBook::new();
   
-    loop {
-        if let Some(event) = swarm.next().await {
-            match event {
-                libp2p::swarm::SwarmEvent::ConnectionEstablished {
-                    peer_id,
-                    num_established,
-                    ..
-                } => {
-                    println!(
-                        "Connected to peer: {:?}, total connections: {}",
-                        peer_id, num_established
-                    );
+    
+        let stdin = io::BufReader::new(io::stdin());
+let mut lines = stdin.lines();
+
+loop {
+    tokio::select! {
+        line = lines.next_line() => {
+            if let Some(input) = line? {
+                match parse_command(&input) {
+                    Command::Order {
+                        side,
+                        market,
+                        price,
+                        amount,
+                    } => {
+                        let order = create_order(
+                            local_peer_id.to_string(),
+                            market,
+                            side,
+                            price,
+                            amount,
+                        );
+
+                        let message = OpenDexMessage {
+                            message_type: MessageType::OrderCreated,
+                            sender: local_peer_id.to_string(),
+                            payload: serde_json::to_string(&order)?,
+                            timestamp: chrono::Utc::now().timestamp() as u64,
+                        };
+
+                        let encoded = serde_json::to_vec(&message)?;
+
+                        match swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .publish(topic.clone(), encoded)
+                        {
+                            Ok(id) => {
+                                println!("Published order: {:?}", id);
+                            }
+                            Err(e) => {
+                                println!("Publish failed: {:?}", e);
+                            }
+                        }
+                    }
+                    Command::ShowOrders => {
+                    order_book.print_orders();
+                 }
+
+                    Command::Unknown => {
+                        println!("Unknown command");
+                        println!("Example: buy BTC XMR 12.5 0.1");
+                    }
                 }
+            }
+        }
+
+        event = swarm.next() => {
+            if let Some(event) = event {
+                match event {
+                    libp2p::swarm::SwarmEvent::ConnectionEstablished {
+                        peer_id,
+                        num_established,
+                        ..
+                    } => {
+                        println!(
+                            "Connected to peer: {:?}, total connections: {}",
+                            peer_id, num_established
+                        );
+                    }
 
                 libp2p::swarm::SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                     println!("Connection closed with {:?}, cause: {:?}", peer_id, cause);
@@ -234,34 +282,6 @@ if let Some(addr) = peer_addr {
 ) => {
  	 println!("Peer {:?} subscribed to {:?}", peer_id, topic);
 
-      let order = Order {
-       trader: local_peer_id.to_string(),
-       pair: "ETH/USDC".to_string(),
-       side: "BUY".to_string(),
-       price: 3000.0,
-       amount: 1.5,
-   };
-
-    let message = OpenDexMessage {
-     message_type: MessageType::OrderCreated,
-     sender: local_peer_id.to_string(),
-     payload: serde_json::to_string(&order)?,
-     timestamp: chrono::Utc::now().timestamp() as u64,
-  };
-    let encoded = serde_json::to_vec(&message)?;
-
-    match swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(topic.clone(), encoded)
-    {
-        Ok(id) => {
-           println!("Published OpenDEX message: {:?}", id);
-        }
-        Err(e) => {
-            println!("Publish failed: {:?}", e);
-        }
-    }
 }
 
 OpenDexBehaviourEvent::Gossipsub(
@@ -306,10 +326,12 @@ OpenDexBehaviourEvent::Kademlia(event) => {
 OpenDexBehaviourEvent::Ping(_) => {}
 
 _ => {}
-                },
-
-                _ => {}
-            }
-        }
-    }
-}
+             
+             },
+_ => {}
+           }
+         }
+       }
+     }
+   }
+ }
