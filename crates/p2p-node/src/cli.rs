@@ -1,5 +1,7 @@
 use protocol::message::{Asset, Market, Side};
 
+use uuid::Uuid;
+
 pub enum Command {
     Order {
         side: Side,
@@ -7,9 +9,13 @@ pub enum Command {
         price: f64,
         amount: f64,
     },
-   
+
+    Cancel {
+        id: Uuid,
+    },
+
     ShowOrders,
-   
+
     Unknown,
 }
 
@@ -17,7 +23,14 @@ pub fn parse_command(input: &str) -> Command {
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
 
     if input.trim() == "orders" {
-    return Command::ShowOrders;
+        return Command::ShowOrders;
+    }
+
+    if parts.len() == 2 && parts[0] == "cancel" {
+        return match Uuid::parse_str(parts[1]) {
+            Ok(id) => Command::Cancel { id },
+            Err(_) => Command::Unknown,
+        };
     }
 
     if parts.len() != 5 {
@@ -57,6 +70,5 @@ pub fn parse_command(input: &str) -> Command {
         market: Market { base, quote },
         price,
         amount,
-        }
-      }
-
+    }
+}

@@ -1,10 +1,11 @@
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageType {
     PeerAnnouncement,
     OrderCreated,
+    OrderCancelled,
     TradeCreated,
 }
 
@@ -16,7 +17,7 @@ pub struct OpenDexMessage {
     pub timestamp: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Asset {
     BTC,
     XMR,
@@ -28,7 +29,7 @@ pub struct Market {
     pub quote: Asset,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Side {
     Buy,
     Sell,
@@ -42,4 +43,19 @@ pub struct Order {
     pub side: Side,
     pub price: f64,
     pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Trade {
+    pub id: String,
+    pub buy_order: Uuid,
+    pub sell_order: Uuid,
+    pub market: Market,
+    pub price: f64,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrderCancelled {
+    pub order_id: Uuid,
 }
