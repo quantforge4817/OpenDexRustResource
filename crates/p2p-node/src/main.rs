@@ -259,6 +259,10 @@ async fn main() -> Result<()> {
                                         println!("Order not found locally: {}", id);
                                     }
                                 }
+                                 
+                               Command::Peers => {
+                                   println!("Peers command not implemented yet");
+                               }                                      
 
                                 Command::Unknown => {
                                     println!("Unknown command");

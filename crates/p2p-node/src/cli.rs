@@ -15,7 +15,7 @@ pub enum Command {
     },
 
     ShowOrders,
-
+    Peers,
     Unknown,
 }
 
@@ -25,6 +25,10 @@ pub fn parse_command(input: &str) -> Command {
     if input.trim() == "orders" {
         return Command::ShowOrders;
     }
+    
+   if input.trim() == "peers" {
+    return Command::Peers;
+   }
 
     if parts.len() == 2 && parts[0] == "cancel" {
         return match Uuid::parse_str(parts[1]) {
