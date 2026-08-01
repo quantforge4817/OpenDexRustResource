@@ -7,6 +7,8 @@ pub enum MessageType {
     OrderCreated,
     OrderCancelled,
     TradeCreated,
+    StateRequest,
+    StateResponse,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

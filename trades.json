@@ -1,0 +1,26 @@
+{
+  "trades": [
+    {
+      "id": "959455b3-59ae-7ce0-b0d7-cc129e0ff356",
+      "buy_order": "f7ed3c60-a740-4e45-8710-1a879e87039a",
+      "sell_order": "8575a1b0-9c41-4793-a95a-e83aa882b06a",
+      "market": {
+        "base": "BTC",
+        "quote": "XMR"
+      },
+      "price": 12.5,
+      "amount": 0.5
+    },
+    {
+      "id": "008df72e-a82c-3fec-d7d0-88742e3819af",
+      "buy_order": "d413b506-4ec5-4719-a38e-8c0dfe1def30",
+      "sell_order": "62f5ca63-5086-4d89-8814-addf7d7c1438",
+      "market": {
+        "base": "BTC",
+        "quote": "XMR"
+      },
+      "price": 12.5,
+      "amount": 1.0
+    }
+  ]
+}
