@@ -86,8 +86,12 @@ impl OrderBook {
 
             if existing.market.base == incoming.market.base
                 && existing.market.quote == incoming.market.quote
-                && existing.price == incoming.price
                 && existing.side != incoming.side
+                && match incoming.side {
+                     Side::Buy => existing.price <= incoming.price,
+                     Side::Sell => existing.price >= incoming.price,
+      }
+
             {
                 let buy_order = if matches!(incoming.side, Side::Buy) {
                     incoming.id

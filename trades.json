@@ -21,6 +21,17 @@
       },
       "price": 12.5,
       "amount": 1.0
+    },
+    {
+      "id": "b4df0747-49f4-096f-a5ee-4555af0e3152",
+      "buy_order": "cfd77b3d-d6ca-4912-a006-70f7f7aae224",
+      "sell_order": "8b08c2f2-5ed1-4343-91c3-08fd47cdacb8",
+      "market": {
+        "base": "BTC",
+        "quote": "XMR"
+      },
+      "price": 10.0,
+      "amount": 2.0
     }
   ]
 }
