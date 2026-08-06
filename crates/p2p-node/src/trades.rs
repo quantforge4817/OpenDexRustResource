@@ -30,14 +30,19 @@ impl TradeBook {
         fs::write("trades.json", data)?;
         Ok(())
     }
-    pub fn add_trade(&mut self, trade: Trade) {
+    pub fn add_trade(&mut self, trade: Trade) -> Result<()> {
         if self.trades.iter().any(|t| t.id == trade.id) {
             println!("Trade {} already exists, ignoring.", trade.id);
-            return;
+            return Ok(());
         }
 
         println!("Adding trade {}", trade.id);
+
         self.trades.push(trade);
+
+        self.save_trades()?;
+
+        Ok(())
     }
 
     pub fn print_trades(&self) {

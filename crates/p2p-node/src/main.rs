@@ -205,57 +205,57 @@ async fn main() -> Result<()> {
 
                                     println!("Created order: {}", order.id);
 
-                                    let trade = order_book.match_order(&order);
+                                    let trades = order_book.match_order(&order);
 
-                                    if let Some(trade) = &trade {
-                                        println!("=== Trade Created ===");
-                                        println!("{:?}", trade);
-
-                                        trade_book.add_trade(trade.clone());
-                                        trade_book.save_trades()?;
-
-                                        
-
-                                       // Keep remaining amount from incoming order after partial fill
-                                       if order.amount > trade.amount {
-                                           let mut remaining = order.clone();
-                                           remaining.amount -= trade.amount;
-                                           order_book.add_order(remaining);
-                                        }
-
-                                        order_book.save_orders()?;
+                                    if trades.is_empty(){
+                                       order_book.add_order(order.clone());
+                                       order_book.save_orders()?;
 
 
                                         let trade_message = OpenDexMessage {
-                                            message_type: MessageType::TradeCreated,
-                                            sender: local_peer_id.to_string(),
-                                            payload: serde_json::to_string(trade)?,
-                                            timestamp: chrono::Utc::now().timestamp() as u64,
-                                        };
-
-                                        publish_message(&mut swarm, &topic, &trade_message)?;
-
-
-                                    } else {
-                                        order_book.add_order(order.clone());
-                                        order_book.save_orders()?;
-
-                                        let message = OpenDexMessage {
                                             message_type: MessageType::OrderCreated,
                                             sender: local_peer_id.to_string(),
                                             payload: serde_json::to_string(&order)?,
                                             timestamp: chrono::Utc::now().timestamp() as u64,
+                                        };
+
+                                        match publish_message(&mut swarm, &topic, &trade_message) {
+                                        Ok(_) => {
+                                            println!("Published order");
+                                       }
+                                       Err(e) => {
+                                           println!("Publish failed: {:?}", e);
+                                       }
+                                   }
+
+                               } else {
+                                       for trade in trades {
+                                         println!("=== Trade Created ===");
+                                         println!("{:?}", trade);
+
+                                       if let Err(e) = trade_book.add_trade(trade.clone()) {
+                                          eprintln!("Failed to save trade: {}", e);
+                                       }
+
+                                        let message = OpenDexMessage {
+                                            message_type: MessageType::TradeCreated,
+                                            sender: local_peer_id.to_string(),
+                                            payload: serde_json::to_string(&trade)?,
+                                            timestamp: chrono::Utc::now().timestamp() as u64,
                                           };
 
-                                        match publish_message(&mut swarm, &topic, &message) {
+                                      match publish_message(&mut swarm, &topic, &message) {
                                             Ok(_) => {
-                                                println!("Published order");
+                                                println!("Published trade");
                                             }
                                             Err(e) => {
                                                 println!("Publish failed: {:?}", e);
                                             }
                                         }
                                     }
+                                  }
+                                    trade_book.save_trades()?;
+                                    order_book.save_orders()?;
                                 }
 
                                 Command::ShowOrders => {
@@ -266,31 +266,40 @@ async fn main() -> Result<()> {
                                     trade_book.print_trades();
                                 }
 
-                                Command::Cancel { id } => {
-                                 if order_book.remove_order(id) {
-                                     order_book.save_orders()?;
-                                   println!("Removed local order: {}", id);
+                                                               Command::Cancel { id } => {
+                                    if order_book.remove_order(id) {
 
-                                   order_book.save_orders()?;
+                                        order_book.save_orders()?;
 
-                           let cancelled = OrderCancelled {
-                               order_id: id,
-                             };
+                                        println!("Removed local order: {}", id);
 
-                          let message = OpenDexMessage {
-                              message_type: MessageType::OrderCancelled,
-                              sender: local_peer_id.to_string(),
-                              payload: serde_json::to_string(&cancelled)?,
-                              timestamp: chrono::Utc::now().timestamp() as u64,
-                            };
+                                        let cancelled = OrderCancelled {
+                                            order_id: id,
+                                        };
 
-                          publish_message(&mut swarm, &topic, &message)?;
-                        } else {
-                               println!("Order not found locally: {}", id);
-                        }
+                                        let message = OpenDexMessage {
+                                            message_type: MessageType::OrderCancelled,
+                                            sender: local_peer_id.to_string(),
+                                            payload: serde_json::to_string(&cancelled)?,
+                                            timestamp: chrono::Utc::now().timestamp() as u64,
+                                        };
 
-                         order_book.print_orders();
-                       }
+                                        publish_message(
+                                            &mut swarm,
+                                            &topic,
+                                            &message,
+                                        )?;
+
+                                    } else {
+
+                                        println!(
+                                            "Order not found locally: {}",
+                                            id
+                                        );
+
+                                    }
+                                }
+
 
                                Command::Peers => {
                                     println!("=== Connected Peers ===");
@@ -433,38 +442,40 @@ async fn main() -> Result<()> {
                                                                 &msg.payload,
                                                             ) {
                                                                 Ok(order) => {
-                                                                    match order_book
-                                                                        .match_order(&order)
-                                                                    {
-                                                                        Some(trade) => {
-                                                                            println!("=== Trade Created ===");
-                                                                            println!("{:?}", trade);
+                                                              let trades = order_book.match_order(&order);
 
-                                                                            trade_book.add_trade(trade.clone());
-                                                                            trade_book.save_trades()?;
+        if trades.is_empty() {
+            order_book.add_order(order);
 
-                                                                            order_book.apply_trade(&trade);
-                                                                            order_book.save_orders()?;
+            order_book.save_orders()?;
 
-                                                                            let trade_message = OpenDexMessage {
-                                                                            message_type: MessageType::TradeCreated,
-                                                                            sender: local_peer_id.to_string(),
-                                                                            payload: serde_json::to_string(&trade)?,
-                                                                            timestamp: chrono::Utc::now().timestamp() as u64,
-                                                                            };
+            order_book.print_orders();
+        } else {
+            for trade in trades {
+                println!("=== Trade Created ===");
+                println!("{:?}", trade);
 
-                                                        publish_message(&mut swarm, &topic, &trade_message)?;
-                                                                               }
-                                                                        None => {
-                                                                            order_book
-                                                                                .add_order(order);
 
-                                                                            order_book.save_orders()?;
+            if let Err(e) = trade_book.add_trade(trade.clone()) {
+               eprintln!("Failed to save trade: {}", e);
+             }
 
-                                                                            order_book
-                                                                                .print_orders();
-                                                                        }
-                                                                    }
+                trade_book.save_trades()?;
+
+                order_book.apply_trade(&trade);
+                order_book.save_orders()?;
+
+                let trade_message = OpenDexMessage {
+                    message_type: MessageType::TradeCreated,
+                    sender: local_peer_id.to_string(),
+                    payload: serde_json::to_string(&trade)?,
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                };
+
+                publish_message(&mut swarm, &topic, &trade_message)?;
+            }
+        }
+
                                                                 }
 
                                                                 Err(e) => {
@@ -528,47 +539,64 @@ async fn main() -> Result<()> {
                                                              publish_message(&mut swarm, &topic, &message)?;
                                                           }
 
-                                                          MessageType::StateResponse => {
-                                                              match serde_json::from_str::<StateSnapshot>(&msg.payload) {
+                                                        MessageType::StateResponse => {
+                                                            match serde_json::from_str::<StateSnapshot>(
+                                                                &msg.payload,
+                                                            ) {
                                                                 Ok(state) => {
-                                                                     println!("=== State Sync Received ===");
+                                                                    println!(
+                                                                        "=== State Sync Received ==="
+                                                                    );
 
-                                                                     let mut changed = false;
+                                                                    let mut changed = false;
 
-                                                                     for order in state.orders {
-                                                                       if !order_book.orders.iter().any(|o| o.id == order.id) {
-                order_book.add_order(order);
-                changed = true;
-            }
-        }
-
-        for trade in state.trades {
-            if !trade_book.trades.iter().any(|t| t.id == trade.id) {
-                trade_book.add_trade(trade);
-                changed = true;
-            }
-        }
-
-        if changed {
-            order_book.save_orders()?;
-            trade_book.save_trades()?;
-        }
-
-
-
-
-                                                                         order_book.save_orders()?;
-                                                                         trade_book.save_trades()?;
-
-                                                                         order_book.print_orders();
-                                                                         trade_book.print_trades();
+                                                                    for order in state.orders {
+                                                                        if !order_book
+                                                                            .orders
+                                                                            .iter()
+                                                                            .any(|o| o.id == order.id)
+                                                                        {
+                                                                            order_book.add_order(order);
+                                                                            changed = true;
+                                                                        }
                                                                     }
 
-                                                                    Err(e) => {
-                                                                      println!("Failed to decode state: {:?}", e);
+                                                                    for trade in state.trades {
+                                                                        if !trade_book
+                                                                            .trades
+                                                                            .iter()
+                                                                            .any(|t| t.id == trade.id)
+                                                                        {
+                                                                            if let Err(e) = trade_book.add_trade(trade) {
+                                                                                eprintln!("Failed to save trade: {}", e);
+                                                                         }
+                                                                            changed = true;
+                                                                        }
                                                                     }
-                                                                  }
+
+                                                                    // Reconcile order book against trade history
+                                                                    for trade in &trade_book.trades {
+                                                                        order_book.apply_trade(trade);
+                                                                    }
+
+                                                                    if changed {
+                                                                        order_book.save_orders()?;
+                                                                        trade_book.save_trades()?;
+                                                                    }
+
+                                                                    order_book.print_orders();
+                                                                    trade_book.print_trades();
                                                                 }
+
+                                                                Err(e) => {
+                                                                    println!(
+                                                                        "Failed to decode state: {:?}",
+                                                                        e
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+
                                                            MessageType::TradeCreated => {
                                                             match serde_json::from_str::<Trade>(
                                                                 &msg.payload,
@@ -579,7 +607,10 @@ async fn main() -> Result<()> {
                                                                     );
                                                                     println!("{:?}", trade);
 
-                                                                    trade_book.add_trade(trade.clone());
+                                                                    if let Err(e) = trade_book.add_trade(trade.clone()) {
+                                                                        eprintln!("Failed to save trade: {}", e);
+                                                                    }
+
                                                                     trade_book.save_trades()?;
 
                                                                     order_book.apply_trade(&trade);

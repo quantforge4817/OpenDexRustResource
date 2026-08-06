@@ -58,6 +58,17 @@ pub struct Trade {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StateRequest {
+    pub since: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StateResponse {
+    pub orders: Vec<Order>,
+    pub trades: Vec<Trade>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderCancelled {
     pub order_id: Uuid,
 }

@@ -9,11 +9,15 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OrderBook {
     pub orders: Vec<Order>,
+    pub applied_trades: Vec<String>,
 }
 
 impl OrderBook {
     pub fn new() -> Self {
-        Self { orders: Vec::new() }
+        Self {
+            orders: Vec::new(),
+            applied_trades: Vec::new(),
+        }
     }
 
     pub fn load_orders() -> Result<Self> {
@@ -57,20 +61,24 @@ impl OrderBook {
     }
 
     pub fn apply_trade(&mut self, trade: &Trade) {
-    self.orders.retain_mut(|order| {
-        if order.id == trade.buy_order || order.id == trade.sell_order {
-            if order.amount > trade.amount {
-                order.amount -= trade.amount;
-                true
-            } else {
-                false
-            }
-        } else {
-            true
+        if self.applied_trades.contains(&trade.id) {
+            return;
         }
-    });
-}
+        self.applied_trades.push(trade.id.clone());
 
+        self.orders.retain_mut(|order| {
+            if order.id == trade.buy_order || order.id == trade.sell_order {
+                if order.amount > trade.amount {
+                    order.amount -= trade.amount;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                true
+            }
+        });
+    }
 
     pub fn print_orders(&self) {
         println!("=== OpenDEX OrderBook ===");
@@ -80,18 +88,22 @@ impl OrderBook {
         }
     }
 
-    pub fn match_order(&mut self, incoming: &Order) -> Option<Trade> {
-        for index in 0..self.orders.len() {
-            let existing = &self.orders[index];
+    pub fn match_order(&mut self, incoming: &Order) -> Vec<Trade> {
+        let mut trades = Vec::new();
+        let mut remaining_amount = incoming.amount;
+
+        let mut index = 0;
+
+        while index < self.orders.len() && remaining_amount > 0.0 {
+            let existing = self.orders[index].clone();
 
             if existing.market.base == incoming.market.base
                 && existing.market.quote == incoming.market.quote
                 && existing.side != incoming.side
                 && match incoming.side {
-                     Side::Buy => existing.price <= incoming.price,
-                     Side::Sell => existing.price >= incoming.price,
-      }
-
+                    Side::Buy => existing.price <= incoming.price,
+                    Side::Sell => existing.price >= incoming.price,
+                }
             {
                 let buy_order = if matches!(incoming.side, Side::Buy) {
                     incoming.id
@@ -105,7 +117,7 @@ impl OrderBook {
                     existing.id
                 };
 
-                let amount = incoming.amount.min(existing.amount);
+                let amount = remaining_amount.min(existing.amount);
 
                 let trade_input =
                     format!("{}{}{}{}", buy_order, sell_order, incoming.price, amount);
@@ -125,16 +137,24 @@ impl OrderBook {
                     amount,
                 };
 
+                println!("Match found:");
+                println!("{:?}", trade);
+
+                trades.push(trade);
+
                 if existing.amount > amount {
                     self.orders[index].amount -= amount;
+                    index += 1;
                 } else {
                     self.orders.remove(index);
                 }
 
-                return Some(trade);
+                remaining_amount -= amount;
+            } else {
+                index += 1;
             }
         }
 
-        None
+        trades
     }
 }

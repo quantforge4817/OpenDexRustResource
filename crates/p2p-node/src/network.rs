@@ -11,10 +11,25 @@ pub fn publish_message(
 ) -> Result<()> {
     let encoded = serde_json::to_vec(message)?;
 
-    swarm
+    println!(
+        "Gossipsub peers before publish: {:?}",
+        swarm.behaviour().gossipsub.all_peers().collect::<Vec<_>>()
+    );
+
+    match swarm
         .behaviour_mut()
         .gossipsub
-        .publish(topic.clone(), encoded)?;
+        .publish(topic.clone(), encoded)
+    {
+        Ok(_) => {
+            println!("Gossipsub publish OK");
+        }
+
+        Err(e) => {
+            println!("Gossipsub publish failed: {:?}", e);
+            return Err(e.into());
+        }
+    }
 
     Ok(())
 }
