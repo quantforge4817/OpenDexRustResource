@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub const PRICE_SCALE: u64 = 100_000_000;
+pub const AMOUNT_SCALE: u64 = 100_000_000;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageType {
     PeerAnnouncement,
@@ -43,8 +46,8 @@ pub struct Order {
     pub trader: String,
     pub market: Market,
     pub side: Side,
-    pub price: f64,
-    pub amount: f64,
+    pub price: u64,
+    pub amount: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,8 +56,9 @@ pub struct Trade {
     pub buy_order: Uuid,
     pub sell_order: Uuid,
     pub market: Market,
-    pub price: f64,
-    pub amount: f64,
+    pub price: u64,
+    pub amount: u64,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
