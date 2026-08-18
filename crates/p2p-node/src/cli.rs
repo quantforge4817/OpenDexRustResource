@@ -14,6 +14,12 @@ pub enum Command {
         id: Uuid,
     },
 
+    Fund {
+        asset: Asset,
+        amount: u64,
+    },
+
+    ShowBalances,
     ShowOrders,
     ShowTrades,
     Peers,
@@ -22,6 +28,25 @@ pub enum Command {
 
 pub fn parse_command(input: &str) -> Command {
     let parts: Vec<&str> = input.trim().split_whitespace().collect();
+
+    if input.trim() == "balances" {
+        return Command::ShowBalances;
+    }
+
+    if parts.len() == 3 && parts[0].eq_ignore_ascii_case("fund") {
+        let asset = match parts[1].to_uppercase().as_str() {
+            "BTC" => Asset::BTC,
+            "XMR" => Asset::XMR,
+            _ => return Command::Unknown,
+        };
+
+        let amount = match parts[2].parse::<u64>() {
+            Ok(v) if v > 0 => v,
+            _ => return Command::Unknown,
+        };
+
+        return Command::Fund { asset, amount };
+    }
 
     if input.trim() == "orders" {
         return Command::ShowOrders;
@@ -35,7 +60,7 @@ pub fn parse_command(input: &str) -> Command {
         return Command::Peers;
     }
 
-    if parts.len() == 2 && parts[0] == "cancel" {
+    if parts.len() == 2 && parts[0].eq_ignore_ascii_case("cancel") {
         return match Uuid::parse_str(parts[1]) {
             Ok(id) => Command::Cancel { id },
             Err(_) => Command::Unknown,
