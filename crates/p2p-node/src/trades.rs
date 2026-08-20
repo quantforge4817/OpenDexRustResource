@@ -101,6 +101,8 @@ mod tests {
             sell_order: Uuid::new_v4(),
             maker: "maker".to_string(),
             taker: "taker".to_string(),
+            buyer: "buyer".to_string(),
+            seller: "seller".to_string(),
             market: Market {
                 base: Asset::BTC,
                 quote: Asset::XMR,

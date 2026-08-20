@@ -1,5 +1,5 @@
 use anyhow::Result;
-use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
+use protocol::message::{Order, Side, Trade, TradeState};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -257,12 +257,29 @@ impl OrderBook {
             let maker = &existing.trader;
             let taker = &incoming.trader;
 
+            // Determine the actual buyer and seller.
+            // This must happen here because both orders are available
+            // before match_order() potentially removes a fully-filled order.
+            let buyer = if matches!(incoming.side, Side::Buy) {
+                incoming.trader.clone()
+            } else {
+                existing.trader.clone()
+            };
+
+            let seller = if matches!(incoming.side, Side::Sell) {
+                incoming.trader.clone()
+            } else {
+                existing.trader.clone()
+            };
+
             let trade = Trade {
                 id: trade_id,
                 buy_order,
                 sell_order,
                 maker: maker.clone(),
                 taker: taker.clone(),
+                buyer,
+                seller,
                 market: incoming.market.clone(),
                 price: trade_price,
                 amount,
@@ -302,7 +319,7 @@ impl OrderBook {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use protocol::message::{Asset, Market, TradeState};
     fn market() -> Market {
         Market {
             base: Asset::BTC,
@@ -534,6 +551,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,
@@ -568,6 +587,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,
@@ -639,6 +660,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,
@@ -709,6 +732,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,
@@ -810,6 +835,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,
@@ -889,6 +916,8 @@ mod tests {
             sell_order: order_id,
             maker: order_a.trader.clone(),
             taker: "test-trader".to_string(),
+            buyer: "test-trader".to_string(),
+            seller: order_a.trader.clone(),
             market: market(),
             price: 100,
             amount: 10,
@@ -957,6 +986,8 @@ mod tests {
             sell_order: sell.id,
             maker: sell.trader.clone(),
             taker: buy.trader.clone(),
+            buyer: buy.trader.clone(),
+            seller: sell.trader.clone(),
             market: market(),
             price: 100,
             amount: 4,

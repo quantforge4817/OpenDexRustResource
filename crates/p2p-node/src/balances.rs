@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use protocol::message::{Asset, Market, Order, PRICE_SCALE, Side, Trade, TradeState};
+use protocol::message::{Asset, Order, PRICE_SCALE, Side, Trade, TradeState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -95,15 +95,6 @@ impl BalanceBook {
 
         Ok(())
     }
-    fn quote_amount(price: u64, amount: u64) -> Result<u64> {
-        let value = u128::from(price)
-            .checked_mul(u128::from(amount))
-            .ok_or_else(|| anyhow!("trade value overflow"))?;
-
-        let value = value / u128::from(PRICE_SCALE);
-
-        u64::try_from(value).map_err(|_| anyhow!("quote amount overflow"))
-    }
 
     pub fn lock(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
         let balances = self.balances.entry(trader.to_string()).or_default();
@@ -142,7 +133,7 @@ impl BalanceBook {
     pub fn unlock_for_order(&mut self, order: &Order) -> Result<()> {
         match order.side {
             Side::Buy => {
-                let amount = Self::quote_amount(order.price, order.amount)?;
+                let amount = quote_amount(order.price, order.amount)?;
 
                 self.unlock(&order.trader, order.market.quote.clone(), amount)?;
             }
@@ -201,31 +192,38 @@ impl BalanceBook {
             .ok_or_else(|| anyhow!("balance overflow"))?;
         Ok(())
     }
-    pub fn settle_trade(
-        &mut self,
-        local_trader: &str,
-        buyer: &str,
-        seller: &str,
-        trade: &Trade,
-    ) -> Result<()> {
+
+    pub fn settle_trade(&mut self, local_trader: &str, trade: &Trade) -> Result<()> {
         let trade_id = trade.id.to_string();
 
-        // A trade must only settle once.
+        // A trade must only settle once locally.
         if self.settled_trades.contains(&trade_id) {
             return Ok(());
         }
 
+        // Settlement is only valid for a completed trade.
+        if trade.state != TradeState::Settled {
+            return Err(anyhow!(
+                "cannot settle trade {} while state is {:?}",
+                trade.id,
+                trade.state
+            ));
+        }
+
         let quote_amount = quote_amount(trade.price, trade.amount)?;
 
-        if local_trader == buyer {
-            // Buyer gives the quote asset.
+        if local_trader == trade.buyer {
+            // Buyer spends the quote asset that was locked for the order.
             {
                 let balances = self.balances.entry(local_trader.to_string()).or_default();
 
                 let quote_balance = balances.entry(trade.market.quote.clone()).or_default();
 
                 if quote_balance.locked < quote_amount {
-                    return Err(anyhow!("insufficient locked quote balance"));
+                    return Err(anyhow!(
+                        "insufficient locked quote balance for trade {}",
+                        trade.id
+                    ));
                 }
 
                 quote_balance.locked -= quote_amount;
@@ -233,15 +231,18 @@ impl BalanceBook {
 
             // Buyer receives the base asset.
             self.credit(local_trader, trade.market.base.clone(), trade.amount)?;
-        } else if local_trader == seller {
-            // Seller gives the base asset.
+        } else if local_trader == trade.seller {
+            // Seller spends the base asset that was locked for the order.
             {
                 let balances = self.balances.entry(local_trader.to_string()).or_default();
 
                 let base_balance = balances.entry(trade.market.base.clone()).or_default();
 
                 if base_balance.locked < trade.amount {
-                    return Err(anyhow!("insufficient locked base balance"));
+                    return Err(anyhow!(
+                        "insufficient locked base balance for trade {}",
+                        trade.id
+                    ));
                 }
 
                 base_balance.locked -= trade.amount;
@@ -249,6 +250,9 @@ impl BalanceBook {
 
             // Seller receives the quote asset.
             self.credit(local_trader, trade.market.quote.clone(), quote_amount)?;
+        } else {
+            // This node does not own either side of the trade.
+            return Ok(());
         }
 
         // Record settlement only after local settlement succeeded.
@@ -257,11 +261,10 @@ impl BalanceBook {
         Ok(())
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use protocol::message::Asset;
+    use protocol::message::{Asset, Market, TradeState};
 
     #[test]
     fn credit_adds_available_balance() {
@@ -467,21 +470,21 @@ mod tests {
             sell_order: uuid::Uuid::new_v4(),
             maker: "bob".to_string(),
             taker: "alice".to_string(),
+            buyer: "alice".to_string(),
+            seller: "bob".to_string(),
             market: Market {
                 base: Asset::BTC,
                 quote: Asset::XMR,
             },
             price,
             amount,
-            state: TradeState::Created,
+            state: TradeState::Settled,
             created_at: 1,
             updated_at: 1,
         };
 
         // Alice's node settles only Alice's side.
-        alice_book
-            .settle_trade("alice", "alice", "bob", &trade)
-            .unwrap();
+        alice_book.settle_trade("alice", &trade).unwrap();
 
         assert_eq!(
             alice_book.balance("alice", &Asset::BTC),
@@ -500,9 +503,7 @@ mod tests {
         );
 
         // Bob's node settles only Bob's side.
-        bob_book
-            .settle_trade("bob", "alice", "bob", &trade)
-            .unwrap();
+        bob_book.settle_trade("bob", &trade).unwrap();
 
         assert_eq!(
             bob_book.balance("bob", &Asset::BTC),
@@ -521,9 +522,7 @@ mod tests {
         );
 
         // Deliver the exact same trade to Alice again.
-        alice_book
-            .settle_trade("alice", "alice", "bob", &trade)
-            .unwrap();
+        alice_book.settle_trade("alice", &trade).unwrap();
 
         // Alice's balances must not change.
         assert_eq!(
@@ -546,9 +545,7 @@ mod tests {
         assert_eq!(alice_book.settled_trades[0], trade.id.to_string());
 
         // Deliver the exact same trade to Bob again.
-        bob_book
-            .settle_trade("bob", "alice", "bob", &trade)
-            .unwrap();
+        bob_book.settle_trade("bob", &trade).unwrap();
 
         // Bob's balances must not change.
         assert_eq!(
