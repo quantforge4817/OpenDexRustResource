@@ -36,6 +36,24 @@ impl TradeBook {
         Ok(true)
     }
 
+    pub fn set_trade_state(
+        &mut self,
+        trade_id: uuid::Uuid,
+        state: TradeState,
+        timestamp: u64,
+    ) -> Result<bool> {
+        let Some(trade) = self.trades.iter_mut().find(|trade| trade.id == trade_id) else {
+            return Ok(false);
+        };
+
+        trade.state = state;
+        trade.updated_at = timestamp;
+
+        self.save_trades()?;
+
+        Ok(true)
+    }
+
     pub fn load_trades(path: PathBuf) -> Result<Self> {
         if !Path::new(&path).exists() {
             return Ok(Self::new(path));
@@ -73,10 +91,13 @@ impl TradeBook {
         }
 
         println!("Adding trade {}", trade.id);
-
         self.trades.push(trade);
 
         true
+    }
+
+    pub fn get_trade(&self, trade_id: uuid::Uuid) -> Option<&Trade> {
+        self.trades.iter().find(|trade| trade.id == trade_id)
     }
 
     pub fn print_trades(&self) {

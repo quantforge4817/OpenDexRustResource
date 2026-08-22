@@ -195,13 +195,28 @@ impl OrderBook {
         let mut trades = Vec::new();
         let mut remaining_amount = incoming.amount;
 
+        // Track the remaining quantity of resting orders without mutating
+        // the actual order book. apply_trade() is the only function that
+        // changes/removes orders.
+        let mut available: std::collections::HashMap<Uuid, u64> = self
+            .orders
+            .iter()
+            .map(|order| (order.id, order.amount))
+            .collect();
+
         while remaining_amount > 0 {
             let best_index = self
                 .orders
                 .iter()
                 .enumerate()
                 .filter(|(_, existing)| {
-                    existing.market.base == incoming.market.base
+                    let available_amount = available
+                        .get(&existing.id)
+                        .copied()
+                        .unwrap_or(existing.amount);
+
+                    available_amount > 0
+                        && existing.market.base == incoming.market.base
                         && existing.market.quote == incoming.market.quote
                         && existing.side != incoming.side
                         && match incoming.side {
@@ -229,6 +244,11 @@ impl OrderBook {
 
             let existing = self.orders[index].clone();
 
+            let existing_remaining = available
+                .get(&existing.id)
+                .copied()
+                .unwrap_or(existing.amount);
+
             let buy_order = if matches!(incoming.side, Side::Buy) {
                 incoming.id
             } else {
@@ -241,7 +261,7 @@ impl OrderBook {
                 existing.id
             };
 
-            let amount = remaining_amount.min(existing.amount);
+            let amount = remaining_amount.min(existing_remaining);
             let trade_price = existing.price;
 
             let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, trade_price, amount);
@@ -253,13 +273,11 @@ impl OrderBook {
             let now = chrono::Utc::now().timestamp() as u64;
 
             // The resting order is the maker.
-            // The incoming order is the taker.
             let maker = &existing.trader;
+
+            // The incoming order is the taker.
             let taker = &incoming.trader;
 
-            // Determine the actual buyer and seller.
-            // This must happen here because both orders are available
-            // before match_order() potentially removes a fully-filled order.
             let buyer = if matches!(incoming.side, Side::Buy) {
                 incoming.trader.clone()
             } else {
@@ -293,23 +311,11 @@ impl OrderBook {
 
             trades.push(trade);
 
-            if existing.amount > amount {
-                self.orders[index].amount -= amount;
-            } else {
-                let removed = self.orders.remove(index);
-
-                if !self.removed_orders.contains(&removed.id) {
-                    self.removed_orders.push(removed.id);
-                }
-            }
+            // Only update our temporary matching state.
+            // The real order book is updated later by apply_trade().
+            available.insert(existing.id, existing_remaining - amount);
 
             remaining_amount -= amount;
-        }
-
-        if remaining_amount > 0 {
-            let mut remaining_order = incoming.clone();
-            remaining_order.amount = remaining_amount;
-            self.add_order(remaining_order);
         }
 
         trades
@@ -407,6 +413,9 @@ mod tests {
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].amount, 5);
 
+        book.add_order(incoming.clone());
+        assert!(book.apply_trade(&trades[0]));
+
         let remaining = book
             .orders
             .iter()
@@ -480,6 +489,9 @@ mod tests {
         assert_eq!(trades1.len(), 1);
         assert_eq!(trades1[0].amount, 3);
 
+        book.add_order(buy1.clone());
+        assert!(book.apply_trade(&trades1[0]));
+
         let remaining = book
             .orders
             .iter()
@@ -491,6 +503,9 @@ mod tests {
         let trades2 = book.match_order(&buy2);
         assert_eq!(trades2.len(), 1);
         assert_eq!(trades2[0].amount, 4);
+
+        book.add_order(buy2.clone());
+        assert!(book.apply_trade(&trades2[0]));
 
         let remaining = book
             .orders
@@ -504,6 +519,9 @@ mod tests {
         assert_eq!(trades3.len(), 1);
         assert_eq!(trades3[0].amount, 4);
 
+        book.add_order(buy3.clone());
+        assert!(book.apply_trade(&trades3[0]));
+
         let remaining = book
             .orders
             .iter()
@@ -516,9 +534,12 @@ mod tests {
         assert_eq!(trades4.len(), 1);
         assert_eq!(trades4[0].amount, 2);
 
+        book.add_order(buy4.clone());
+        assert!(book.apply_trade(&trades4[0]));
+
         assert!(
             !book.orders.iter().any(|o| o.id == sell.id),
-            "fully filled sell order should be removed"
+            "sell order should be fully filled"
         );
 
         assert_eq!(trades1[0].sell_order, sell.id);

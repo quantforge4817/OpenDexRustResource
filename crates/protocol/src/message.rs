@@ -109,6 +109,9 @@ pub struct Trade {
     pub maker: String,
     pub taker: String,
 
+    pub buyer: String,
+    pub seller: String,
+
     pub market: Market,
 
     pub price: u64,
@@ -129,6 +132,11 @@ pub struct TradeStateChanged {
 
 impl Trade {
     pub fn transition(&mut self, next: TradeState, timestamp: u64) -> anyhow::Result<()> {
+        // Duplicate state events are harmless and should be idempotent.
+        if self.state == next {
+            return Ok(());
+        }
+
         if !self.state.can_transition_to(&next) {
             return Err(anyhow::anyhow!(
                 "invalid trade state transition: {:?} -> {:?}",
@@ -171,8 +179,10 @@ mod tests {
             id: Uuid::new_v4(),
             buy_order: Uuid::new_v4(),
             sell_order: Uuid::new_v4(),
-            maker: "maker".to_string(),
-            taker: "taker".to_string(),
+            maker: "seller".to_string(),
+            taker: "buyer".to_string(),
+            buyer: "buyer".to_string(),
+            seller: "seller".to_string(),
             market: Market {
                 base: Asset::BTC,
                 quote: Asset::XMR,
