@@ -4,6 +4,7 @@ use network::publish_message;
 
 use crate::cli::{Command, parse_command};
 
+use trade_state::{advance_trade_to_state, trade_state_rank};
 use trades::TradeBook;
 
 use protocol::state::StateSnapshot;
@@ -12,6 +13,8 @@ use anyhow::Result;
 
 use futures::StreamExt;
 
+use settlement::settle_local_trade;
+
 use protocol::message::{
     AMOUNT_SCALE, Asset, MessageType, OpenDexMessage, Order, OrderCancelled, Trade, TradeState,
     TradeStateChanged,
@@ -19,12 +22,15 @@ use protocol::message::{
 
 use balances::BalanceBook;
 
+mod settlement;
+
 mod balances;
 
 mod cli;
 
 use order_factory::create_order;
 
+mod trade_state;
 mod trades;
 
 mod orderbook;
@@ -77,65 +83,6 @@ fn format_amount(amount: u64) -> String {
     }
 }
 
-fn trade_state_rank(state: &TradeState) -> u8 {
-    match state {
-        TradeState::Created => 0,
-        TradeState::Accepted => 1,
-        TradeState::EscrowFunding => 2,
-        TradeState::EscrowFunded => 3,
-        TradeState::PaymentPending => 4,
-        TradeState::PaymentSent => 5,
-        TradeState::PaymentConfirmed => 6,
-        TradeState::PayoutPending => 7,
-        TradeState::Settled => 8,
-
-        TradeState::Cancelled => 9,
-        TradeState::Expired => 9,
-        TradeState::Disputed => 9,
-    }
-}
-
-fn advance_trade_to_state(
-    trade_book: &mut TradeBook,
-    trade_id: uuid::Uuid,
-    target_state: TradeState,
-    timestamp: u64,
-) -> Result<()> {
-    let states = [
-        TradeState::Accepted,
-        TradeState::EscrowFunding,
-        TradeState::EscrowFunded,
-        TradeState::PaymentPending,
-        TradeState::PaymentSent,
-        TradeState::PaymentConfirmed,
-        TradeState::PayoutPending,
-        TradeState::Settled,
-    ];
-
-    for state in states {
-        if trade_state_rank(&state) > trade_state_rank(&target_state) {
-            break;
-        }
-
-        let current_state = match trade_book.get_trade(trade_id) {
-            Some(trade) => trade.state.clone(),
-            None => {
-                anyhow::bail!("Trade {} disappeared while advancing state", trade_id);
-            }
-        };
-
-        if current_state == state {
-            continue;
-        }
-
-        if current_state.can_transition_to(&state) {
-            trade_book.transition_trade(trade_id, state, timestamp)?;
-        }
-    }
-
-    Ok(())
-}
-
 fn transition_and_publish_trade(
     trade_book: &mut TradeBook,
     trade_id: uuid::Uuid,
@@ -168,62 +115,6 @@ fn transition_and_publish_trade(
     println!("Published TradeStateChanged: {}", trade_id);
 
     Ok(true)
-}
-
-fn complete_trade_for_demo(
-    trade_book: &mut TradeBook,
-    trade_id: uuid::Uuid,
-    swarm: &mut libp2p::Swarm<OpenDexBehaviour>,
-    topic: &libp2p::gossipsub::IdentTopic,
-    local_peer_id: &PeerId,
-) -> Result<()> {
-    let states = [
-        TradeState::EscrowFunding,
-        TradeState::EscrowFunded,
-        TradeState::PaymentPending,
-        TradeState::PaymentSent,
-        TradeState::PaymentConfirmed,
-        TradeState::PayoutPending,
-        TradeState::Settled,
-    ];
-
-    for state in states {
-        let timestamp = chrono::Utc::now().timestamp() as u64;
-
-        transition_and_publish_trade(
-            trade_book,
-            trade_id,
-            state,
-            timestamp,
-            swarm,
-            topic,
-            local_peer_id,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn settle_local_trade(
-    balance_book: &mut BalanceBook,
-    local_peer_id: &PeerId,
-    trade: &Trade,
-) -> Result<()> {
-    let local_trader = local_peer_id.to_string();
-
-    if local_trader != trade.buyer && local_trader != trade.seller {
-        return Ok(());
-    }
-
-    balance_book.settle_trade(&local_trader, trade)?;
-    balance_book.save()?;
-
-    println!(
-        "Settled trade {} locally: buyer={}, seller={}",
-        trade.id, trade.buyer, trade.seller
-    );
-
-    Ok(())
 }
 
 fn load_or_create_identity(port: &str) -> Result<identity::Keypair> {
@@ -570,26 +461,6 @@ async fn main() -> Result<()> {
                                         &topic,
                                         &local_peer_id,
                                     )?;
-
-                                    complete_trade_for_demo(
-                                        &mut trade_book,
-                                        trade.id,
-                                        &mut swarm,
-                                        &topic,
-                                        &local_peer_id,
-                                    )?;
-
-                                    if let Some(settled_trade) =
-                                        trade_book
-                                            .get_trade(trade.id)
-                                            .cloned()
-                                    {
-                                        settle_local_trade(
-                                            &mut balance_book,
-                                            &local_peer_id,
-                                            &settled_trade,
-                                        )?;
-                                    }
 
                                     order_book.save_orders()?;
                                     trade_book.save_trades()?;
@@ -1283,18 +1154,11 @@ async fn main() -> Result<()> {
                                                                 )
                                                             {
                                                                 Some(trade) => {
-                                                                    let current_rank =
-                                                                        trade_state_rank(
-                                                                            &trade.state,
-                                                                        );
+                                                                    let current_state =
+                                                                        trade.state.clone();
 
-                                                                    let incoming_rank =
-                                                                        trade_state_rank(
-                                                                            &change.state,
-                                                                        );
-
-                                                                    if incoming_rank
-                                                                        > current_rank
+                                                                    if current_state
+                                                                        != change.state
                                                                     {
                                                                         advance_trade_to_state(
                                                                             &mut trade_book,
@@ -1327,27 +1191,32 @@ async fn main() -> Result<()> {
 
                                                                 None => {
                                                                     pending_trade_states
-                                                                        .entry(
-                                                                            change.trade_id,
-                                                                        )
-                                                                        .and_modify(
-                                                                            |existing| {
-                                                                                if trade_state_rank(
+                                                                        .entry(change.trade_id)
+                                                                        .and_modify(|existing| {
+                                                                            let existing_rank =
+                                                                                trade_state_rank(
+                                                                                    &existing.state,
+                                                                                );
+                                                                            let incoming_rank =
+                                                                                trade_state_rank(
                                                                                     &change.state,
-                                                                                )
-                                                                                    > trade_state_rank(
-                                                                                        &existing.state,
+                                                                                );
+
+                                                                            if incoming_rank
+                                                                                > existing_rank
+                                                                                || existing
+                                                                                    .state
+                                                                                    .can_transition_to(
+                                                                                        &change.state,
                                                                                     )
-                                                                                {
-                                                                                    *existing =
-                                                                                        change.clone();
-                                                                                }
-                                                                            },
-                                                                        )
-                                                                        .or_insert(
-                                                                            change,
-                                                                        );
+                                                                            {
+                                                                                *existing =
+                                                                                    change.clone();
+                                                                            }
+                                                                        })
+                                                                        .or_insert(change);
                                                                 }
+
                                                             }
                                                         }
 
