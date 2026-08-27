@@ -230,3 +230,202 @@ pub fn handle_trade_state_changed(
 
     Ok(())
 }
+pub fn handle_gossipsub_message(
+    data: &[u8],
+    swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
+    topic: &libp2p::gossipsub::IdentTopic,
+    local_peer_id: &PeerId,
+    order_book: &mut OrderBook,
+    trade_book: &mut TradeBook,
+    balance_book: &mut BalanceBook,
+    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+) -> Result<()> {
+    match serde_json::from_slice::<OpenDexMessage>(data) {
+        Ok(msg) => {
+            println!("Received OpenDEX message:");
+            println!("{:?}", msg);
+
+            match msg.message_type {
+                MessageType::OrderCreated => match serde_json::from_str::<Order>(&msg.payload) {
+                    Ok(order) => {
+                        handle_order_created(
+                            order,
+                            order_book,
+                            trade_book,
+                            swarm,
+                            topic,
+                            local_peer_id,
+                        )?;
+                    }
+                    Err(e) => {
+                        println!("Failed to decode order: {:?}", e);
+                    }
+                },
+
+                MessageType::OrderCancelled => {
+                    match serde_json::from_str::<OrderCancelled>(&msg.payload) {
+                        Ok(cancelled) => {
+                            handle_order_cancelled(cancelled, order_book)?;
+                        }
+                        Err(e) => {
+                            println!("Failed to decode cancellation: {:?}", e);
+                        }
+                    }
+                }
+
+                MessageType::StateRequest => {
+                    handle_state_request(order_book, trade_book, swarm, topic, local_peer_id)?;
+                }
+
+                MessageType::StateResponse => {
+                    match serde_json::from_str::<StateSnapshot>(&msg.payload) {
+                        Ok(state) => {
+                            handle_state_response(state, order_book, trade_book)?;
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to decode StateResponse: {:?}", e);
+                        }
+                    }
+                }
+
+                MessageType::TradeCreated => match serde_json::from_str::<Trade>(&msg.payload) {
+                    Ok(trade) => {
+                        handle_trade_created(
+                            trade,
+                            trade_book,
+                            order_book,
+                            pending_trade_states,
+                            balance_book,
+                            local_peer_id,
+                        )?;
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to decode TradeCreated: {:?}", e);
+                    }
+                },
+
+                MessageType::TradeStateChanged => {
+                    match serde_json::from_str::<TradeStateChanged>(&msg.payload) {
+                        Ok(change) => {
+                            handle_trade_state_changed(
+                                change,
+                                trade_book,
+                                pending_trade_states,
+                                balance_book,
+                                local_peer_id,
+                            )?;
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to decode TradeStateChanged: {:?}", e);
+                        }
+                    }
+                }
+
+                MessageType::PeerAnnouncement => {
+                    println!("Received PeerAnnouncement from {}", msg.sender);
+                }
+            }
+        }
+
+        Err(e) => {
+            println!("Invalid OpenDEX message: {:?}", e);
+        }
+    }
+
+    Ok(())
+}
+
+pub fn handle_swarm_event(
+    event: libp2p::swarm::SwarmEvent<crate::OpenDexBehaviourEvent>,
+    swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
+    topic: &libp2p::gossipsub::IdentTopic,
+    local_peer_id: &PeerId,
+    order_book: &mut OrderBook,
+    trade_book: &mut TradeBook,
+    balance_book: &mut BalanceBook,
+    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+) -> Result<()> {
+    match event {
+        libp2p::swarm::SwarmEvent::ConnectionEstablished {
+            peer_id,
+            num_established,
+            ..
+        } => {
+            println!(
+                "Connected to peer: {:?}, total connections: {}",
+                peer_id, num_established
+            );
+        }
+
+        libp2p::swarm::SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+            println!("Connection closed with {:?}, cause: {:?}", peer_id, cause);
+        }
+
+        libp2p::swarm::SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+            println!("Outgoing connection error to {:?}: {:?}", peer_id, error);
+        }
+
+        libp2p::swarm::SwarmEvent::Behaviour(event) => match event {
+            crate::OpenDexBehaviourEvent::Identify(libp2p::identify::Event::Received {
+                peer_id,
+                info,
+                ..
+            }) => {
+                println!("Identify received from peer: {:?}", peer_id);
+
+                for addr in info.listen_addrs {
+                    println!("Adding address to Kademlia: {}", addr);
+
+                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                }
+
+                println!("Kademlia peer added: {:?}", peer_id);
+            }
+
+            crate::OpenDexBehaviourEvent::Gossipsub(event) => match event {
+                libp2p::gossipsub::Event::Subscribed {
+                    peer_id,
+                    topic: subscribed_topic,
+                } => {
+                    println!("Peer {:?} subscribed to {:?}", peer_id, subscribed_topic);
+
+                    let request = OpenDexMessage {
+                        message_type: MessageType::StateRequest,
+                        sender: local_peer_id.to_string(),
+                        payload: "{}".to_string(),
+                        timestamp: chrono::Utc::now().timestamp() as u64,
+                    };
+
+                    publish_message(swarm, topic, &request)?;
+                }
+
+                libp2p::gossipsub::Event::Message { message, .. } => {
+                    handle_gossipsub_message(
+                        &message.data,
+                        swarm,
+                        topic,
+                        local_peer_id,
+                        order_book,
+                        trade_book,
+                        balance_book,
+                        pending_trade_states,
+                    )?;
+                }
+
+                _ => {}
+            },
+
+            crate::OpenDexBehaviourEvent::Kademlia(event) => {
+                println!("Kademlia event: {:?}", event);
+            }
+
+            crate::OpenDexBehaviourEvent::Ping(_) => {}
+
+            _ => {}
+        },
+
+        _ => {}
+    }
+
+    Ok(())
+}

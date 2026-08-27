@@ -82,20 +82,6 @@ impl BalanceBook {
         Ok(())
     }
 
-    pub fn debit_available(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
-        let balances = self.balances.entry(trader.to_string()).or_default();
-
-        let balance = balances.entry(asset).or_default();
-
-        if balance.available < amount {
-            return Err(anyhow!("insufficient available balance"));
-        }
-
-        balance.available -= amount;
-
-        Ok(())
-    }
-
     pub fn lock(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
         let balances = self.balances.entry(trader.to_string()).or_default();
 
