@@ -409,3 +409,61 @@ fn settle_trade_rejects_quote_overflow_without_mutating_balance() {
 
     assert!(book.settled_trades.is_empty());
 }
+#[test]
+fn settle_partial_trade_consumes_only_traded_locked_amount() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-settle-partial-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+
+    let mut book = BalanceBook::new(path);
+
+    let price = 100 * protocol::message::PRICE_SCALE;
+
+    // Alice has 300 XMR and locks 200 XMR for a 2 BTC order.
+    book.credit("alice", Asset::XMR, 300 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock("alice", Asset::XMR, 200 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    // Only 0.5 BTC of the order trades at 100 XMR/BTC.
+    let trade = Trade {
+        id: uuid::Uuid::new_v4(),
+        buy_order: uuid::Uuid::new_v4(),
+        sell_order: uuid::Uuid::new_v4(),
+        maker: "bob".to_string(),
+        taker: "alice".to_string(),
+        buyer: "alice".to_string(),
+        seller: "bob".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        price,
+        amount: protocol::message::AMOUNT_SCALE / 2, // 0.5 BTC
+        state: TradeState::Settled,
+        created_at: 1,
+        updated_at: 1,
+    };
+
+    book.settle_trade("alice", &trade).unwrap();
+
+    // 50 XMR was consumed, not unlocked.
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 100 * protocol::message::AMOUNT_SCALE,
+            locked: 150 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    // Alice receives the 0.5 BTC.
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: protocol::message::AMOUNT_SCALE / 2,
+            locked: 0,
+        }
+    );
+}

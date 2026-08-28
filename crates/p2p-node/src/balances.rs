@@ -212,14 +212,14 @@ impl BalanceBook {
             / PRICE_SCALE;
 
         if local_trader == trade.buyer {
-            // Buyer gives locked quote and receives base.
+            // Buyer spends locked quote and receives base.
             self.consume_locked(local_trader, trade.market.quote.clone(), quote_amount)?;
 
             self.credit(local_trader, trade.market.base.clone(), trade.amount)?;
         }
 
         if local_trader == trade.seller {
-            // Seller gives locked base and receives quote.
+            // Seller spends locked base and receives quote.
             self.consume_locked(local_trader, trade.market.base.clone(), trade.amount)?;
 
             self.credit(local_trader, trade.market.quote.clone(), quote_amount)?;
