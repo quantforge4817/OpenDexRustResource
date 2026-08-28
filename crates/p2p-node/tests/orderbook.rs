@@ -343,6 +343,93 @@ fn distributed_event_order_converges() {
 
     assert_eq!(node_a.removed_orders, node_b.removed_orders);
 }
+
+#[test]
+fn trade_before_orders_applies_once_when_orders_arrive() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-before-orders-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
+
+    let trade = Trade {
+        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 4,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let mut book = OrderBook::new(path.clone());
+
+    // Trade arrives before either order.
+    assert!(!book.apply_trade(&trade));
+    assert_eq!(book.pending_trades.len(), 1);
+    assert!(book.applied_trades.is_empty());
+
+    // First order arrives. Trade must remain pending.
+    book.add_order(buy.clone());
+
+    assert_eq!(book.pending_trades.len(), 1);
+    assert!(book.applied_trades.is_empty());
+
+    // Second order arrives. The pending trade must now apply.
+    book.add_order(sell.clone());
+
+    assert!(book.pending_trades.is_empty());
+    assert_eq!(book.applied_trades.len(), 1);
+    assert_eq!(book.applied_trades[0], trade.id.to_string());
+
+    let remaining_buy = book
+        .orders
+        .iter()
+        .find(|order| order.id == buy.id)
+        .expect("buy order should remain");
+
+    let remaining_sell = book
+        .orders
+        .iter()
+        .find(|order| order.id == sell.id)
+        .expect("sell order should remain");
+
+    assert_eq!(remaining_buy.amount, 6);
+    assert_eq!(remaining_sell.amount, 6);
+
+    // Duplicate delivery must not apply the trade a second time.
+    assert!(!book.apply_trade(&trade));
+
+    assert_eq!(book.applied_trades.len(), 1);
+    assert_eq!(book.pending_trades.len(), 0);
+
+    let remaining_buy = book
+        .orders
+        .iter()
+        .find(|order| order.id == buy.id)
+        .expect("buy order should remain after duplicate");
+
+    let remaining_sell = book
+        .orders
+        .iter()
+        .find(|order| order.id == sell.id)
+        .expect("sell order should remain after duplicate");
+
+    assert_eq!(remaining_buy.amount, 6);
+    assert_eq!(remaining_sell.amount, 6);
+
+    let _ = fs::remove_file(path);
+}
+
 #[test]
 fn duplicate_out_of_order_delivery_converges() {
     let path_a = std::env::temp_dir().join("opendex-test-duplicate-out-of-order-a.json");

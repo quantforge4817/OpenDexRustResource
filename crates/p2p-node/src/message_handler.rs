@@ -141,25 +141,22 @@ pub fn handle_trade_created(
     if trade_book.add_trade(trade.clone()) {
         trade_book.save_trades()?;
 
-        order_book.mark_trade_applied(&trade.id.to_string());
+        if order_book.apply_trade(&trade) {
+            println!("Applied remote trade to order book: {}", trade.id);
 
-        if !order_book.removed_orders.contains(&trade.buy_order) {
-            order_book.removed_orders.push(trade.buy_order);
+            order_book
+                .pending_trades
+                .retain(|pending| pending.id != trade.id);
+
+            order_book.save_orders()?;
+        } else {
+            println!(
+                "Remote trade {} is pending because both orders are not available yet",
+                trade.id
+            );
+
+            order_book.save_orders()?;
         }
-
-        if !order_book.removed_orders.contains(&trade.sell_order) {
-            order_book.removed_orders.push(trade.sell_order);
-        }
-
-        order_book
-            .orders
-            .retain(|order| order.id != trade.buy_order && order.id != trade.sell_order);
-
-        order_book
-            .pending_trades
-            .retain(|pending| pending.id != trade.id);
-
-        order_book.save_orders()?;
 
         if let Some(pending_change) = pending_trade_states.remove(&trade.id) {
             advance_trade_to_state(
@@ -183,7 +180,6 @@ pub fn handle_trade_created(
 
     Ok(())
 }
-
 pub fn handle_trade_state_changed(
     change: TradeStateChanged,
     trade_book: &mut TradeBook,
@@ -240,95 +236,97 @@ pub fn handle_gossipsub_message(
     balance_book: &mut BalanceBook,
     pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
 ) -> Result<()> {
-    match serde_json::from_slice::<OpenDexMessage>(data) {
-        Ok(msg) => {
-            println!("Received OpenDEX message:");
-            println!("{:?}", msg);
-
-            match msg.message_type {
-                MessageType::OrderCreated => match serde_json::from_str::<Order>(&msg.payload) {
-                    Ok(order) => {
-                        handle_order_created(
-                            order,
-                            order_book,
-                            trade_book,
-                            swarm,
-                            topic,
-                            local_peer_id,
-                        )?;
-                    }
-                    Err(e) => {
-                        println!("Failed to decode order: {:?}", e);
-                    }
-                },
-
-                MessageType::OrderCancelled => {
-                    match serde_json::from_str::<OrderCancelled>(&msg.payload) {
-                        Ok(cancelled) => {
-                            handle_order_cancelled(cancelled, order_book)?;
-                        }
-                        Err(e) => {
-                            println!("Failed to decode cancellation: {:?}", e);
-                        }
-                    }
-                }
-
-                MessageType::StateRequest => {
-                    handle_state_request(order_book, trade_book, swarm, topic, local_peer_id)?;
-                }
-
-                MessageType::StateResponse => {
-                    match serde_json::from_str::<StateSnapshot>(&msg.payload) {
-                        Ok(state) => {
-                            handle_state_response(state, order_book, trade_book)?;
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to decode StateResponse: {:?}", e);
-                        }
-                    }
-                }
-
-                MessageType::TradeCreated => match serde_json::from_str::<Trade>(&msg.payload) {
-                    Ok(trade) => {
-                        handle_trade_created(
-                            trade,
-                            trade_book,
-                            order_book,
-                            pending_trade_states,
-                            balance_book,
-                            local_peer_id,
-                        )?;
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to decode TradeCreated: {:?}", e);
-                    }
-                },
-
-                MessageType::TradeStateChanged => {
-                    match serde_json::from_str::<TradeStateChanged>(&msg.payload) {
-                        Ok(change) => {
-                            handle_trade_state_changed(
-                                change,
-                                trade_book,
-                                pending_trade_states,
-                                balance_book,
-                                local_peer_id,
-                            )?;
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to decode TradeStateChanged: {:?}", e);
-                        }
-                    }
-                }
-
-                MessageType::PeerAnnouncement => {
-                    println!("Received PeerAnnouncement from {}", msg.sender);
-                }
-            }
-        }
-
+    let msg = match serde_json::from_slice::<OpenDexMessage>(data) {
+        Ok(msg) => msg,
         Err(e) => {
             println!("Invalid OpenDEX message: {:?}", e);
+            return Ok(());
+        }
+    };
+
+    println!("Received OpenDEX message:");
+    println!("{:?}", msg);
+
+    match msg.message_type {
+        MessageType::OrderCreated => {
+            let order = match serde_json::from_str::<Order>(&msg.payload) {
+                Ok(order) => order,
+                Err(e) => {
+                    println!("Failed to decode order: {:?}", e);
+                    return Ok(());
+                }
+            };
+
+            handle_order_created(order, order_book, trade_book, swarm, topic, local_peer_id)?;
+        }
+
+        MessageType::OrderCancelled => {
+            let cancelled = match serde_json::from_str::<OrderCancelled>(&msg.payload) {
+                Ok(cancelled) => cancelled,
+                Err(e) => {
+                    println!("Failed to decode cancellation: {:?}", e);
+                    return Ok(());
+                }
+            };
+
+            handle_order_cancelled(cancelled, order_book)?;
+        }
+
+        MessageType::StateRequest => {
+            handle_state_request(order_book, trade_book, swarm, topic, local_peer_id)?;
+        }
+
+        MessageType::StateResponse => {
+            let state = match serde_json::from_str::<StateSnapshot>(&msg.payload) {
+                Ok(state) => state,
+                Err(e) => {
+                    eprintln!("Failed to decode StateResponse: {:?}", e);
+                    return Ok(());
+                }
+            };
+
+            handle_state_response(state, order_book, trade_book)?;
+        }
+
+        MessageType::TradeCreated => {
+            let trade = match serde_json::from_str::<Trade>(&msg.payload) {
+                Ok(trade) => trade,
+                Err(e) => {
+                    eprintln!("Failed to decode TradeCreated: {:?}", e);
+                    return Ok(());
+                }
+            };
+
+            handle_trade_created(
+                trade,
+                trade_book,
+                order_book,
+                pending_trade_states,
+                balance_book,
+                local_peer_id,
+            )?;
+        }
+
+        MessageType::TradeStateChanged => {
+            let change = match serde_json::from_str::<TradeStateChanged>(&msg.payload) {
+                Ok(change) => change,
+                Err(e) => {
+                    eprintln!("Failed to decode TradeStateChanged: {:?}", e);
+                    return Ok(());
+                }
+            };
+
+            handle_trade_state_changed(
+                change,
+                trade_book,
+                pending_trade_states,
+                balance_book,
+                local_peer_id,
+            )?;
+        }
+
+        MessageType::PeerAnnouncement => {
+            println!("Received PeerAnnouncement from {}", msg.sender);
         }
     }
 

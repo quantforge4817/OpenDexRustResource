@@ -1,8 +1,10 @@
 pub mod balances;
+pub mod message_handler;
 pub mod network;
 pub mod order_factory;
 pub mod orderbook;
 pub mod settlement;
+pub mod sync;
 pub mod trade_state;
 pub mod trades;
 
