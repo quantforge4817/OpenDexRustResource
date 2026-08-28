@@ -304,3 +304,108 @@ fn settle_trade_is_local_and_idempotent() {
     assert_eq!(bob_book.settled_trades.len(), 1);
     assert_eq!(bob_book.settled_trades[0], trade.id.to_string());
 }
+#[test]
+fn settle_trade_does_nothing_for_non_participant() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-settle-nonparticipant-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+
+    let mut book = BalanceBook::new(path);
+
+    book.credit("charlie", Asset::BTC, 10 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    let trade = Trade {
+        id: uuid::Uuid::new_v4(),
+        buy_order: uuid::Uuid::new_v4(),
+        sell_order: uuid::Uuid::new_v4(),
+        maker: "bob".to_string(),
+        taker: "alice".to_string(),
+        buyer: "alice".to_string(),
+        seller: "bob".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        price: 100 * protocol::message::PRICE_SCALE,
+        amount: 2 * protocol::message::AMOUNT_SCALE,
+        state: TradeState::Settled,
+        created_at: 1,
+        updated_at: 1,
+    };
+
+    book.settle_trade("charlie", &trade).unwrap();
+
+    assert_eq!(
+        book.balance("charlie", &Asset::BTC),
+        Balance {
+            available: 10 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance("charlie", &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert!(book.settled_trades.is_empty());
+}
+#[test]
+fn settle_trade_rejects_quote_overflow_without_mutating_balance() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-settle-overflow-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+
+    let mut book = BalanceBook::new(path);
+
+    book.credit("alice", Asset::XMR, 100 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock("alice", Asset::XMR, 100 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    let trade = Trade {
+        id: uuid::Uuid::new_v4(),
+        buy_order: uuid::Uuid::new_v4(),
+        sell_order: uuid::Uuid::new_v4(),
+        maker: "bob".to_string(),
+        taker: "alice".to_string(),
+        buyer: "alice".to_string(),
+        seller: "bob".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        price: u64::MAX,
+        amount: u64::MAX,
+        state: TradeState::Settled,
+        created_at: 1,
+        updated_at: 1,
+    };
+
+    assert!(book.settle_trade("alice", &trade).is_err());
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 100 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert!(book.settled_trades.is_empty());
+}

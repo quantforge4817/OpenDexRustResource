@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use protocol::message::{Asset, Order, PRICE_SCALE, Side, Trade, TradeState};
+use protocol::message::{Asset, Order, PRICE_SCALE, Side, Trade};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -150,6 +150,19 @@ impl BalanceBook {
 
         Ok(())
     }
+    pub fn consume_locked(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
+        let balances = self.balances.entry(trader.to_string()).or_default();
+
+        let balance = balances.entry(asset).or_default();
+
+        if balance.locked < amount {
+            return Err(anyhow!("insufficient locked balance"));
+        }
+
+        balance.locked -= amount;
+
+        Ok(())
+    }
 
     pub fn transfer_locked(
         &mut self,
@@ -182,66 +195,36 @@ impl BalanceBook {
     pub fn settle_trade(&mut self, local_trader: &str, trade: &Trade) -> Result<()> {
         let trade_id = trade.id.to_string();
 
-        // A trade must only settle once locally.
-        if self.settled_trades.contains(&trade_id) {
+        // Idempotency: a repeated Settled event must never move funds twice.
+        if self.settled_trades.iter().any(|id| id == &trade_id) {
             return Ok(());
         }
 
-        // Settlement is only valid for a completed trade.
-        if trade.state != TradeState::Settled {
-            return Err(anyhow!(
-                "cannot settle trade {} while state is {:?}",
-                trade.id,
-                trade.state
-            ));
+        // Ignore trades where this node is neither participant.
+        if local_trader != trade.buyer && local_trader != trade.seller {
+            return Ok(());
         }
 
-        let quote_amount = quote_amount(trade.price, trade.amount)?;
+        let quote_amount = trade
+            .price
+            .checked_mul(trade.amount)
+            .ok_or_else(|| anyhow!("trade quote amount overflow"))?
+            / PRICE_SCALE;
 
         if local_trader == trade.buyer {
-            // Buyer spends the quote asset that was locked for the order.
-            {
-                let balances = self.balances.entry(local_trader.to_string()).or_default();
+            // Buyer gives locked quote and receives base.
+            self.consume_locked(local_trader, trade.market.quote.clone(), quote_amount)?;
 
-                let quote_balance = balances.entry(trade.market.quote.clone()).or_default();
-
-                if quote_balance.locked < quote_amount {
-                    return Err(anyhow!(
-                        "insufficient locked quote balance for trade {}",
-                        trade.id
-                    ));
-                }
-
-                quote_balance.locked -= quote_amount;
-            }
-
-            // Buyer receives the base asset.
             self.credit(local_trader, trade.market.base.clone(), trade.amount)?;
-        } else if local_trader == trade.seller {
-            // Seller spends the base asset that was locked for the order.
-            {
-                let balances = self.balances.entry(local_trader.to_string()).or_default();
-
-                let base_balance = balances.entry(trade.market.base.clone()).or_default();
-
-                if base_balance.locked < trade.amount {
-                    return Err(anyhow!(
-                        "insufficient locked base balance for trade {}",
-                        trade.id
-                    ));
-                }
-
-                base_balance.locked -= trade.amount;
-            }
-
-            // Seller receives the quote asset.
-            self.credit(local_trader, trade.market.quote.clone(), quote_amount)?;
-        } else {
-            // This node does not own either side of the trade.
-            return Ok(());
         }
 
-        // Record settlement only after local settlement succeeded.
+        if local_trader == trade.seller {
+            // Seller gives locked base and receives quote.
+            self.consume_locked(local_trader, trade.market.base.clone(), trade.amount)?;
+
+            self.credit(local_trader, trade.market.quote.clone(), quote_amount)?;
+        }
+
         self.settled_trades.push(trade_id);
 
         Ok(())
