@@ -8,7 +8,11 @@ use crate::trades::TradeBook;
 use anyhow::Result;
 use libp2p::{PeerId, Swarm, gossipsub};
 
-use protocol::message::{AMOUNT_SCALE, Asset, MessageType, OpenDexMessage, OrderCancelled};
+use crate::settlement::settle_local_trade;
+use crate::trade_state::advance_trade_to_state;
+use protocol::message::{
+    AMOUNT_SCALE, Asset, MessageType, OpenDexMessage, OrderCancelled, TradeState, TradeStateChanged,
+};
 
 fn format_amount(amount: u64) -> String {
     let whole = amount / AMOUNT_SCALE;
@@ -178,6 +182,62 @@ pub fn handle_command(
 
         Command::ShowTrades => {
             trade_book.print_trades();
+        }
+
+        Command::TradeState { id, state } => {
+            let timestamp = chrono::Utc::now().timestamp() as u64;
+
+            let current_trade = match trade_book.get_trade(id).cloned() {
+                Some(trade) => trade,
+                None => {
+                    eprintln!("Trade not found locally: {}", id);
+                    return Ok(());
+                }
+            };
+
+            if current_trade.state == state {
+                println!("Trade {} is already {:?}", id, state);
+                return Ok(());
+            }
+
+            advance_trade_to_state(trade_book, id, state.clone(), timestamp)?;
+
+            let updated_trade = match trade_book.get_trade(id).cloned() {
+                Some(trade) => trade,
+                None => {
+                    eprintln!("Trade disappeared after state transition: {}", id);
+                    return Ok(());
+                }
+            };
+
+            if state == TradeState::Settled {
+                settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
+            }
+
+            let change = TradeStateChanged {
+                trade_id: id,
+                state: state.clone(),
+                timestamp,
+            };
+
+            let message = OpenDexMessage {
+                message_type: MessageType::TradeStateChanged,
+                sender: local_peer_id.to_string(),
+                payload: serde_json::to_string(&change)?,
+                timestamp,
+            };
+
+            match publish_message(swarm, topic, &message) {
+                Ok(_) => {
+                    println!("Published TradeStateChanged: {} -> {:?}", id, state);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Failed to publish TradeStateChanged {} -> {:?}: {:?}",
+                        id, state, e
+                    );
+                }
+            }
         }
 
         Command::Cancel { id } => {

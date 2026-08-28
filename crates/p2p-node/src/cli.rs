@@ -1,4 +1,4 @@
-use protocol::message::{Asset, Market, Side};
+use protocol::message::{Asset, Market, Side, TradeState};
 
 use uuid::Uuid;
 
@@ -19,6 +19,11 @@ pub enum Command {
         amount: u64,
     },
 
+    TradeState {
+        id: Uuid,
+        state: TradeState,
+    },
+
     ShowBalances,
     ShowOrders,
     ShowTrades,
@@ -31,6 +36,31 @@ pub fn parse_command(input: &str) -> Command {
 
     if input.trim() == "balances" {
         return Command::ShowBalances;
+    }
+
+    if parts.len() == 3 && parts[0].eq_ignore_ascii_case("trade-state") {
+        let id = match Uuid::parse_str(parts[1]) {
+            Ok(id) => id,
+            Err(_) => return Command::Unknown,
+        };
+
+        let state = match parts[2].to_lowercase().as_str() {
+            "created" => TradeState::Created,
+            "accepted" => TradeState::Accepted,
+            "escrow-funding" => TradeState::EscrowFunding,
+            "escrow-funded" => TradeState::EscrowFunded,
+            "payment-pending" => TradeState::PaymentPending,
+            "payment-sent" => TradeState::PaymentSent,
+            "payment-confirmed" => TradeState::PaymentConfirmed,
+            "payout-pending" => TradeState::PayoutPending,
+            "settled" => TradeState::Settled,
+            "cancelled" => TradeState::Cancelled,
+            "expired" => TradeState::Expired,
+            "disputed" => TradeState::Disputed,
+            _ => return Command::Unknown,
+        };
+
+        return Command::TradeState { id, state };
     }
 
     if parts.len() == 3 && parts[0].eq_ignore_ascii_case("fund") {
