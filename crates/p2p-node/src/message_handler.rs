@@ -1,6 +1,12 @@
 use anyhow::Result;
 use libp2p::PeerId;
+
 use std::collections::HashMap;
+pub struct PendingTradeState {
+    change: TradeStateChanged,
+    sender: String,
+}
+
 use uuid::Uuid;
 
 use crate::sync::apply_snapshot;
@@ -17,6 +23,10 @@ use crate::orderbook::OrderBook;
 use crate::settlement::settle_local_trade;
 use crate::trade_state::{advance_trade_to_state, trade_state_rank};
 use crate::trades::TradeBook;
+
+fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
+    sender == trade.buyer || sender == trade.seller
+}
 
 pub fn handle_state_request(
     order_book: &OrderBook,
@@ -131,7 +141,7 @@ pub fn handle_trade_created(
     trade: Trade,
     trade_book: &mut TradeBook,
     order_book: &mut OrderBook,
-    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
     balance_book: &mut BalanceBook,
     local_peer_id: &PeerId,
 ) -> Result<()> {
@@ -158,17 +168,24 @@ pub fn handle_trade_created(
             order_book.save_orders()?;
         }
 
-        if let Some(pending_change) = pending_trade_states.remove(&trade.id) {
-            advance_trade_to_state(
-                trade_book,
-                trade.id,
-                pending_change.state.clone(),
-                pending_change.timestamp,
-            )?;
+        if let Some(pending) = pending_trade_states.remove(&trade.id) {
+            if !is_trade_participant(&trade, &pending.sender) {
+                eprintln!(
+                    "Ignoring unauthorized pending state change for trade {} from {}",
+                    trade.id, pending.sender
+                );
+            } else {
+                advance_trade_to_state(
+                    trade_book,
+                    trade.id,
+                    pending.change.state.clone(),
+                    pending.change.timestamp,
+                )?;
 
-            if pending_change.state == TradeState::Settled {
-                if let Some(updated_trade) = trade_book.get_trade(trade.id).cloned() {
-                    settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
+                if pending.change.state == TradeState::Settled {
+                    if let Some(updated_trade) = trade_book.get_trade(trade.id).cloned() {
+                        settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
+                    }
                 }
             }
         }
@@ -180,15 +197,25 @@ pub fn handle_trade_created(
 
     Ok(())
 }
+
 pub fn handle_trade_state_changed(
     change: TradeStateChanged,
+    sender: &str,
     trade_book: &mut TradeBook,
-    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
     balance_book: &mut BalanceBook,
     local_peer_id: &PeerId,
 ) -> Result<()> {
     match trade_book.get_trade(change.trade_id) {
         Some(trade) => {
+            if !is_trade_participant(trade, sender) {
+                eprintln!(
+                    "Ignoring unauthorized state change for trade {} from {}",
+                    change.trade_id, sender
+                );
+                return Ok(());
+            }
+
             let current_state = trade.state.clone();
 
             if current_state != change.state {
@@ -208,19 +235,27 @@ pub fn handle_trade_state_changed(
         }
 
         None => {
+            let pending = PendingTradeState {
+                change: change.clone(),
+                sender: sender.to_string(),
+            };
+
             pending_trade_states
                 .entry(change.trade_id)
                 .and_modify(|existing| {
-                    let existing_rank = trade_state_rank(&existing.state);
+                    let existing_rank = trade_state_rank(&existing.change.state);
                     let incoming_rank = trade_state_rank(&change.state);
 
                     if incoming_rank > existing_rank
-                        || existing.state.can_transition_to(&change.state)
+                        || existing.change.state.can_transition_to(&change.state)
                     {
-                        *existing = change.clone();
+                        *existing = PendingTradeState {
+                            change: change.clone(),
+                            sender: sender.to_string(),
+                        };
                     }
                 })
-                .or_insert(change);
+                .or_insert(pending);
         }
     }
 
@@ -234,7 +269,7 @@ pub fn handle_gossipsub_message(
     order_book: &mut OrderBook,
     trade_book: &mut TradeBook,
     balance_book: &mut BalanceBook,
-    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
 ) -> Result<()> {
     let msg = match serde_json::from_slice::<OpenDexMessage>(data) {
         Ok(msg) => msg,
@@ -318,6 +353,7 @@ pub fn handle_gossipsub_message(
 
             handle_trade_state_changed(
                 change,
+                &msg.sender,
                 trade_book,
                 pending_trade_states,
                 balance_book,
@@ -341,7 +377,7 @@ pub fn handle_swarm_event(
     order_book: &mut OrderBook,
     trade_book: &mut TradeBook,
     balance_book: &mut BalanceBook,
-    pending_trade_states: &mut HashMap<Uuid, TradeStateChanged>,
+    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
 ) -> Result<()> {
     match event {
         libp2p::swarm::SwarmEvent::ConnectionEstablished {

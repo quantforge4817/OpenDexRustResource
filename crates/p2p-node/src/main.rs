@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use uuid::Uuid;
+
 use network::build_swarm;
 
 use crate::cli::parse_command;
@@ -40,8 +42,6 @@ use orderbook::OrderBook;
 use tokio::io::{self, AsyncBufReadExt};
 
 use libp2p::{Multiaddr, PeerId, gossipsub, identity};
-
-use protocol::message::TradeStateChanged;
 
 use std::{fs, path::PathBuf};
 
@@ -154,7 +154,8 @@ async fn main() -> Result<()> {
     let mut trade_book = TradeBook::load_trades(trades_path)?;
     let mut balance_book = BalanceBook::load(balances_path)?;
 
-    let mut pending_trade_states: HashMap<uuid::Uuid, TradeStateChanged> = HashMap::new();
+    let mut pending_trade_states: HashMap<Uuid, message_handler::PendingTradeState> =
+        HashMap::new();
 
     let stdin = io::BufReader::new(io::stdin());
     let mut lines = stdin.lines();

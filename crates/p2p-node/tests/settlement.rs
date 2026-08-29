@@ -1,0 +1,288 @@
+use libp2p::{PeerId, identity};
+use p2p_node::balances::{Balance, BalanceBook};
+use p2p_node::settlement::settle_local_trade;
+use protocol::message::{AMOUNT_SCALE, Asset, Market, PRICE_SCALE, Trade, TradeState};
+use std::path::PathBuf;
+use uuid::Uuid;
+
+fn temp_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("opendex-test-{name}-{}.json", Uuid::new_v4()))
+}
+
+fn peer() -> (PeerId, String) {
+    let key = identity::Keypair::generate_ed25519();
+    let peer_id = PeerId::from(key.public());
+    let trader = peer_id.to_string();
+
+    (peer_id, trader)
+}
+
+fn test_trade(buyer: &str, seller: &str, price: u64, amount: u64) -> Trade {
+    Trade {
+        id: Uuid::new_v4(),
+        buy_order: Uuid::new_v4(),
+        sell_order: Uuid::new_v4(),
+        maker: seller.to_string(),
+        taker: buyer.to_string(),
+        buyer: buyer.to_string(),
+        seller: seller.to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        price,
+        amount,
+        state: TradeState::Settled,
+        created_at: 1,
+        updated_at: 1,
+    }
+}
+
+#[test]
+fn settles_local_buyer_and_is_idempotent() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-buyer"));
+
+    book.credit(&alice, Asset::XMR, 300 * AMOUNT_SCALE).unwrap();
+
+    book.lock(&alice, Asset::XMR, 200 * AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+
+    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: 2 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 100 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.settled_trades.len(), 1);
+
+    // The same settlement must not move funds twice.
+    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: 2 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 100 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.settled_trades.len(), 1);
+}
+
+#[test]
+fn settles_local_seller_and_is_idempotent() {
+    let (bob_peer, bob) = peer();
+    let (_, alice) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-seller"));
+
+    book.credit(&bob, Asset::BTC, 3 * AMOUNT_SCALE).unwrap();
+
+    book.lock(&bob, Asset::BTC, 2 * AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+
+    settle_local_trade(&mut book, &bob_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&bob, &Asset::BTC),
+        Balance {
+            available: AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&bob, &Asset::XMR),
+        Balance {
+            available: 200 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.settled_trades.len(), 1);
+
+    settle_local_trade(&mut book, &bob_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&bob, &Asset::BTC),
+        Balance {
+            available: AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&bob, &Asset::XMR),
+        Balance {
+            available: 200 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.settled_trades.len(), 1);
+}
+
+#[test]
+fn ignores_non_participant() {
+    let (charlie_peer, charlie) = peer();
+    let (_, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-nonparticipant"));
+
+    book.credit(&charlie, Asset::BTC, 10 * AMOUNT_SCALE)
+        .unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+
+    settle_local_trade(&mut book, &charlie_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&charlie, &Asset::BTC),
+        Balance {
+            available: 10 * AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&charlie, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert!(book.settled_trades.is_empty());
+}
+
+#[test]
+fn rejects_quote_overflow_without_mutating_balance() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-overflow"));
+
+    book.credit(&alice, Asset::XMR, 100 * AMOUNT_SCALE).unwrap();
+
+    book.lock(&alice, Asset::XMR, 100 * AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, u64::MAX, u64::MAX);
+
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).is_err());
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 100 * AMOUNT_SCALE,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert!(book.settled_trades.is_empty());
+}
+
+#[test]
+fn partial_trade_consumes_only_traded_locked_amount() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-partial"));
+
+    book.credit(&alice, Asset::XMR, 300 * AMOUNT_SCALE).unwrap();
+
+    book.lock(&alice, Asset::XMR, 200 * AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE / 2);
+
+    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+
+    // 0.5 BTC traded for 50 XMR.
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: AMOUNT_SCALE / 2,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 100 * AMOUNT_SCALE,
+            locked: 150 * AMOUNT_SCALE,
+        }
+    );
+}
+#[test]
+fn settlement_failure_does_not_partially_mutate_balances() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-atomicity"));
+
+    // Give Alice exactly enough locked XMR for the trade.
+    book.credit(&alice, Asset::XMR, 100 * AMOUNT_SCALE).unwrap();
+    book.lock(&alice, Asset::XMR, 100 * AMOUNT_SCALE).unwrap();
+
+    // Force the BTC credit to overflow.
+    book.credit(&alice, Asset::BTC, u64::MAX).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE);
+
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).is_err());
+
+    // XMR must still be locked because settlement failed.
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 100 * AMOUNT_SCALE,
+        }
+    );
+
+    // BTC must be completely unchanged.
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: u64::MAX,
+            locked: 0,
+        }
+    );
+
+    // Failed settlement must not become permanently marked as settled.
+    assert!(book.settled_trades.is_empty());
+}

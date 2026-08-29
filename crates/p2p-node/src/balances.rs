@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use protocol::message::{Asset, Order, PRICE_SCALE, Side, Trade};
+use protocol::message::{Asset, Order, PRICE_SCALE, Side};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -163,7 +163,6 @@ impl BalanceBook {
 
         Ok(())
     }
-
     pub fn transfer_locked(
         &mut self,
         from: &str,
@@ -171,61 +170,30 @@ impl BalanceBook {
         asset: Asset,
         amount: u64,
     ) -> Result<()> {
-        let from_balances = self.balances.entry(from.to_string()).or_default();
+        let source_balance = self.balance(from, &asset);
 
-        let from_balance = from_balances.entry(asset.clone()).or_default();
-
-        if from_balance.locked < amount {
+        if source_balance.locked < amount {
             return Err(anyhow!("insufficient locked balance"));
         }
 
-        from_balance.locked -= amount;
+        let destination_balance = self.balance(to, &asset);
 
-        let to_balances = self.balances.entry(to.to_string()).or_default();
-
-        let to_balance = to_balances.entry(asset).or_default();
-
-        to_balance.available = to_balance
+        destination_balance
             .available
             .checked_add(amount)
             .ok_or_else(|| anyhow!("balance overflow"))?;
-        Ok(())
-    }
 
-    pub fn settle_trade(&mut self, local_trader: &str, trade: &Trade) -> Result<()> {
-        let trade_id = trade.id.to_string();
-
-        // Idempotency: a repeated Settled event must never move funds twice.
-        if self.settled_trades.iter().any(|id| id == &trade_id) {
-            return Ok(());
+        {
+            let balances = self.balances.entry(from.to_string()).or_default();
+            let balance = balances.entry(asset.clone()).or_default();
+            balance.locked -= amount;
         }
 
-        // Ignore trades where this node is neither participant.
-        if local_trader != trade.buyer && local_trader != trade.seller {
-            return Ok(());
+        {
+            let balances = self.balances.entry(to.to_string()).or_default();
+            let balance = balances.entry(asset).or_default();
+            balance.available += amount;
         }
-
-        let quote_amount = trade
-            .price
-            .checked_mul(trade.amount)
-            .ok_or_else(|| anyhow!("trade quote amount overflow"))?
-            / PRICE_SCALE;
-
-        if local_trader == trade.buyer {
-            // Buyer spends locked quote and receives base.
-            self.consume_locked(local_trader, trade.market.quote.clone(), quote_amount)?;
-
-            self.credit(local_trader, trade.market.base.clone(), trade.amount)?;
-        }
-
-        if local_trader == trade.seller {
-            // Seller spends locked base and receives quote.
-            self.consume_locked(local_trader, trade.market.base.clone(), trade.amount)?;
-
-            self.credit(local_trader, trade.market.quote.clone(), quote_amount)?;
-        }
-
-        self.settled_trades.push(trade_id);
 
         Ok(())
     }

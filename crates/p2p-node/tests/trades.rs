@@ -171,6 +171,80 @@ fn transition_trade_allows_cancelled_from_disputed() {
     );
 }
 
+#[test]
+fn stale_trade_state_does_not_move_trade_backward() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-stale-state-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = TradeBook::new(path);
+
+    let mut trade = test_trade();
+    trade.state = TradeState::PaymentConfirmed;
+
+    let trade_id = trade.id;
+
+    assert!(book.add_trade(trade));
+
+    assert!(
+        p2p_node::trade_state::advance_trade_to_state(
+            &mut book,
+            trade_id,
+            TradeState::PaymentPending,
+            2,
+        )
+        .is_err()
+    );
+
+    assert_eq!(
+        book.get_trade(trade_id).unwrap().state,
+        TradeState::PaymentConfirmed
+    );
+}
+
+#[test]
+fn trade_state_can_jump_forward_when_intermediate_states_are_missing() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-state-jump-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = TradeBook::new(path);
+
+    let trade = test_trade();
+    let trade_id = trade.id;
+
+    assert!(book.add_trade(trade));
+
+    p2p_node::trade_state::advance_trade_to_state(&mut book, trade_id, TradeState::Settled, 2)
+        .unwrap();
+
+    assert_eq!(book.get_trade(trade_id).unwrap().state, TradeState::Settled);
+}
+
+#[test]
+fn disputed_trade_can_recover_to_settled() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-disputed-recovery-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = TradeBook::new(path);
+
+    let mut trade = test_trade();
+    trade.state = TradeState::Disputed;
+
+    let trade_id = trade.id;
+
+    assert!(book.add_trade(trade));
+
+    p2p_node::trade_state::advance_trade_to_state(&mut book, trade_id, TradeState::Settled, 2)
+        .unwrap();
+
+    assert_eq!(book.get_trade(trade_id).unwrap().state, TradeState::Settled);
+}
+
 fn market() -> Market {
     Market {
         base: Asset::BTC,
@@ -300,6 +374,7 @@ fn trade_created_then_settled_updates_local_balances() {
 
     handle_trade_state_changed(
         change.clone(),
+        "seller",
         &mut trade_book,
         &mut pending_trade_states,
         &mut balance_book,
@@ -317,6 +392,7 @@ fn trade_created_then_settled_updates_local_balances() {
     // A duplicate Settled message must not transfer the funds again.
     handle_trade_state_changed(
         change,
+        "seller",
         &mut trade_book,
         &mut pending_trade_states,
         &mut balance_book,
@@ -354,6 +430,7 @@ fn settled_state_before_trade_created_is_applied_when_trade_arrives() {
     // The state arrives before the trade itself.
     handle_trade_state_changed(
         change,
+        "seller",
         &mut trade_book,
         &mut pending_trade_states,
         &mut balance_book,
@@ -393,6 +470,7 @@ fn settled_state_before_trade_created_is_applied_when_trade_arrives() {
 
     handle_trade_state_changed(
         duplicate_change,
+        "seller",
         &mut trade_book,
         &mut pending_trade_states,
         &mut balance_book,
