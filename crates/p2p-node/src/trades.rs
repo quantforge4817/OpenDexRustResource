@@ -51,9 +51,7 @@ impl TradeBook {
         // separated by other trades in the file.
         let mut seen = HashSet::new();
 
-        trade_book
-            .trades
-            .retain(|trade| seen.insert(trade.id.clone()));
+        trade_book.trades.retain(|trade| seen.insert(trade.id));
 
         trade_book.save_trades()?;
 

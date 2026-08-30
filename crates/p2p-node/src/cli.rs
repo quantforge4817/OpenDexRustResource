@@ -32,7 +32,7 @@ pub enum Command {
 }
 
 pub fn parse_command(input: &str) -> Command {
-    let parts: Vec<&str> = input.trim().split_whitespace().collect();
+    let parts: Vec<&str> = input.split_whitespace().collect();
 
     if input.trim() == "balances" {
         return Command::ShowBalances;

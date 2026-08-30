@@ -7,6 +7,16 @@ pub struct PendingTradeState {
     sender: String,
 }
 
+pub struct HandlerContext<'a> {
+    pub swarm: &'a mut libp2p::Swarm<crate::OpenDexBehaviour>,
+    pub topic: &'a libp2p::gossipsub::IdentTopic,
+    pub local_peer_id: &'a PeerId,
+    pub order_book: &'a mut OrderBook,
+    pub trade_book: &'a mut TradeBook,
+    pub balance_book: &'a mut BalanceBook,
+    pub pending_trade_states: &'a mut HashMap<Uuid, PendingTradeState>,
+}
+
 use uuid::Uuid;
 
 use crate::sync::apply_snapshot;
@@ -26,6 +36,17 @@ use crate::trades::TradeBook;
 
 fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
     sender == trade.buyer || sender == trade.seller
+}
+pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &PeerId) -> bool {
+    claimed_sender == authenticated_peer_id.to_string()
+}
+
+pub fn is_order_owner(order: &Order, sender: &str) -> bool {
+    order.trader == sender
+}
+
+pub fn is_trade_participant_for_sender(trade: &Trade, sender: &str) -> bool {
+    is_trade_participant(trade, sender)
 }
 
 pub fn handle_state_request(
@@ -182,10 +203,10 @@ pub fn handle_trade_created(
                     pending.change.timestamp,
                 )?;
 
-                if pending.change.state == TradeState::Settled {
-                    if let Some(updated_trade) = trade_book.get_trade(trade.id).cloned() {
-                        settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
-                    }
+                if pending.change.state == TradeState::Settled
+                    && let Some(updated_trade) = trade_book.get_trade(trade.id).cloned()
+                {
+                    settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
                 }
             }
         }
@@ -208,7 +229,7 @@ pub fn handle_trade_state_changed(
 ) -> Result<()> {
     match trade_book.get_trade(change.trade_id) {
         Some(trade) => {
-            if !is_trade_participant(trade, sender) {
+            if !is_trade_participant_for_sender(trade, sender) {
                 eprintln!(
                     "Ignoring unauthorized state change for trade {} from {}",
                     change.trade_id, sender
@@ -226,10 +247,10 @@ pub fn handle_trade_state_changed(
                     change.timestamp,
                 )?;
 
-                if change.state == TradeState::Settled {
-                    if let Some(updated_trade) = trade_book.get_trade(change.trade_id).cloned() {
-                        settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
-                    }
+                if change.state == TradeState::Settled
+                    && let Some(updated_trade) = trade_book.get_trade(change.trade_id).cloned()
+                {
+                    settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
                 }
             }
         }
@@ -261,15 +282,11 @@ pub fn handle_trade_state_changed(
 
     Ok(())
 }
+
 pub fn handle_gossipsub_message(
     data: &[u8],
-    swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
-    topic: &libp2p::gossipsub::IdentTopic,
-    local_peer_id: &PeerId,
-    order_book: &mut OrderBook,
-    trade_book: &mut TradeBook,
-    balance_book: &mut BalanceBook,
-    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
+    authenticated_peer_id: &PeerId,
+    ctx: &mut HandlerContext<'_>,
 ) -> Result<()> {
     let msg = match serde_json::from_slice::<OpenDexMessage>(data) {
         Ok(msg) => msg,
@@ -278,6 +295,16 @@ pub fn handle_gossipsub_message(
             return Ok(());
         }
     };
+
+    let authenticated_sender = authenticated_peer_id.to_string();
+
+    if !is_authenticated_sender(&msg.sender, authenticated_peer_id) {
+        eprintln!(
+            "Rejecting message: sender identity mismatch: claimed={}, authenticated={}",
+            msg.sender, authenticated_sender
+        );
+        return Ok(());
+    }
 
     println!("Received OpenDEX message:");
     println!("{:?}", msg);
@@ -292,7 +319,22 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_order_created(order, order_book, trade_book, swarm, topic, local_peer_id)?;
+            if !is_order_owner(&order, &authenticated_sender) {
+                eprintln!(
+                    "Rejecting unauthorized order {}: trader={}, sender={}",
+                    order.id, order.trader, authenticated_sender
+                );
+                return Ok(());
+            }
+
+            handle_order_created(
+                order,
+                ctx.order_book,
+                ctx.trade_book,
+                ctx.swarm,
+                ctx.topic,
+                ctx.local_peer_id,
+            )?;
         }
 
         MessageType::OrderCancelled => {
@@ -304,11 +346,41 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_order_cancelled(cancelled, order_book)?;
+            let order = match ctx
+                .order_book
+                .orders
+                .iter()
+                .find(|order| order.id == cancelled.order_id)
+            {
+                Some(order) => order,
+                None => {
+                    println!(
+                        "Cancellation received for unknown order: {}",
+                        cancelled.order_id
+                    );
+                    return Ok(());
+                }
+            };
+
+            if !is_order_owner(order, &authenticated_sender) {
+                eprintln!(
+                    "Rejecting unauthorized cancellation for order {}: owner={}, sender={}",
+                    order.id, order.trader, authenticated_sender
+                );
+                return Ok(());
+            }
+
+            handle_order_cancelled(cancelled, ctx.order_book)?;
         }
 
         MessageType::StateRequest => {
-            handle_state_request(order_book, trade_book, swarm, topic, local_peer_id)?;
+            handle_state_request(
+                ctx.order_book,
+                ctx.trade_book,
+                ctx.swarm,
+                ctx.topic,
+                ctx.local_peer_id,
+            )?;
         }
 
         MessageType::StateResponse => {
@@ -320,7 +392,7 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_state_response(state, order_book, trade_book)?;
+            handle_state_response(state, ctx.order_book, ctx.trade_book)?;
         }
 
         MessageType::TradeCreated => {
@@ -334,11 +406,11 @@ pub fn handle_gossipsub_message(
 
             handle_trade_created(
                 trade,
-                trade_book,
-                order_book,
-                pending_trade_states,
-                balance_book,
-                local_peer_id,
+                ctx.trade_book,
+                ctx.order_book,
+                ctx.pending_trade_states,
+                ctx.balance_book,
+                ctx.local_peer_id,
             )?;
         }
 
@@ -353,16 +425,16 @@ pub fn handle_gossipsub_message(
 
             handle_trade_state_changed(
                 change,
-                &msg.sender,
-                trade_book,
-                pending_trade_states,
-                balance_book,
-                local_peer_id,
+                &authenticated_sender,
+                ctx.trade_book,
+                ctx.pending_trade_states,
+                ctx.balance_book,
+                ctx.local_peer_id,
             )?;
         }
 
         MessageType::PeerAnnouncement => {
-            println!("Received PeerAnnouncement from {}", msg.sender);
+            println!("Received PeerAnnouncement from {}", authenticated_sender);
         }
     }
 
@@ -371,13 +443,7 @@ pub fn handle_gossipsub_message(
 
 pub fn handle_swarm_event(
     event: libp2p::swarm::SwarmEvent<crate::OpenDexBehaviourEvent>,
-    swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
-    topic: &libp2p::gossipsub::IdentTopic,
-    local_peer_id: &PeerId,
-    order_book: &mut OrderBook,
-    trade_book: &mut TradeBook,
-    balance_book: &mut BalanceBook,
-    pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
+    ctx: &mut HandlerContext<'_>,
 ) -> Result<()> {
     match event {
         libp2p::swarm::SwarmEvent::ConnectionEstablished {
@@ -410,7 +476,10 @@ pub fn handle_swarm_event(
                 for addr in info.listen_addrs {
                     println!("Adding address to Kademlia: {}", addr);
 
-                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                    ctx.swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .add_address(&peer_id, addr);
                 }
 
                 println!("Kademlia peer added: {:?}", peer_id);
@@ -425,25 +494,20 @@ pub fn handle_swarm_event(
 
                     let request = OpenDexMessage {
                         message_type: MessageType::StateRequest,
-                        sender: local_peer_id.to_string(),
+                        sender: ctx.local_peer_id.to_string(),
                         payload: "{}".to_string(),
                         timestamp: chrono::Utc::now().timestamp() as u64,
                     };
 
-                    publish_message(swarm, topic, &request)?;
+                    publish_message(ctx.swarm, ctx.topic, &request)?;
                 }
 
-                libp2p::gossipsub::Event::Message { message, .. } => {
-                    handle_gossipsub_message(
-                        &message.data,
-                        swarm,
-                        topic,
-                        local_peer_id,
-                        order_book,
-                        trade_book,
-                        balance_book,
-                        pending_trade_states,
-                    )?;
+                libp2p::gossipsub::Event::Message {
+                    propagation_source,
+                    message,
+                    ..
+                } => {
+                    handle_gossipsub_message(&message.data, &propagation_source, ctx)?;
                 }
 
                 _ => {}

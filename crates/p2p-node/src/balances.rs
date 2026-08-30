@@ -163,38 +163,4 @@ impl BalanceBook {
 
         Ok(())
     }
-    pub fn transfer_locked(
-        &mut self,
-        from: &str,
-        to: &str,
-        asset: Asset,
-        amount: u64,
-    ) -> Result<()> {
-        let source_balance = self.balance(from, &asset);
-
-        if source_balance.locked < amount {
-            return Err(anyhow!("insufficient locked balance"));
-        }
-
-        let destination_balance = self.balance(to, &asset);
-
-        destination_balance
-            .available
-            .checked_add(amount)
-            .ok_or_else(|| anyhow!("balance overflow"))?;
-
-        {
-            let balances = self.balances.entry(from.to_string()).or_default();
-            let balance = balances.entry(asset.clone()).or_default();
-            balance.locked -= amount;
-        }
-
-        {
-            let balances = self.balances.entry(to.to_string()).or_default();
-            let balance = balances.entry(asset).or_default();
-            balance.available += amount;
-        }
-
-        Ok(())
-    }
 }

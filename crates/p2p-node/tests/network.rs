@@ -107,18 +107,18 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
         loop {
             tokio::select! {
                 event = swarm_a.select_next_some() => {
-                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
-                        if peer_id == peer_b {
-                            connected_a = true;
-                        }
+                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event
+                        && peer_id == peer_b
+                    {
+                        connected_a = true;
                     }
                 }
 
                 event = swarm_b.select_next_some() => {
-                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event {
-                        if peer_id == peer_a {
-                            connected_b = true;
-                        }
+                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = event
+                        && peer_id == peer_a
+                    {
+                        connected_b = true;
                     }
                 }
             }
@@ -134,17 +134,16 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
     // Wait until A observes B's gossipsub subscription.
     timeout(Duration::from_secs(10), async {
         loop {
-            match swarm_a.select_next_some().await {
-                SwarmEvent::Behaviour(p2p_node::OpenDexBehaviourEvent::Gossipsub(
-                    gossipsub::Event::Subscribed {
-                        peer_id,
-                        topic: subscribed_topic,
-                    },
-                )) if peer_id == peer_b && subscribed_topic == topic.hash() => {
-                    break;
-                }
-
-                _ => {}
+            if let SwarmEvent::Behaviour(p2p_node::OpenDexBehaviourEvent::Gossipsub(
+                gossipsub::Event::Subscribed {
+                    peer_id,
+                    topic: subscribed_topic,
+                },
+            )) = swarm_a.select_next_some().await
+                && peer_id == peer_b
+                && subscribed_topic == topic.hash()
+            {
+                break;
             }
         }
     })
@@ -172,46 +171,51 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
         loop {
             tokio::select! {
                 event = swarm_a.select_next_some() => {
-                    // Poll A so its outbound gossipsub message can actually
-                    // progress through the network.
                     if let SwarmEvent::Behaviour(
                         p2p_node::OpenDexBehaviourEvent::Gossipsub(
-                            gossipsub::Event::Message { .. },
+                            gossipsub::Event::Message { message, .. },
                         ),
-                    ) = event {
-                        // A may receive its own message depending on config.
-                        // We only care about B receiving it below.
+                    ) = event
+                    {
+                        let decoded: OpenDexMessage =
+                            serde_json::from_slice(&message.data)
+                                .expect("received invalid OpenDexMessage");
+
+                        if decoded.message_type == MessageType::OrderCreated {
+                            let received_order: Order =
+                                serde_json::from_str(&decoded.payload)
+                                    .expect("received invalid Order");
+
+                            break received_order;
+                        }
                     }
                 }
 
                 event = swarm_b.select_next_some() => {
-                    match event {
-                        SwarmEvent::Behaviour(
-                            p2p_node::OpenDexBehaviourEvent::Gossipsub(
-                                gossipsub::Event::Message { message, .. },
-                            ),
-                        ) => {
-                            let decoded: OpenDexMessage =
-                                serde_json::from_slice(&message.data)
-                                    .expect("received invalid OpenDexMessage");
+                    if let SwarmEvent::Behaviour(
+                        p2p_node::OpenDexBehaviourEvent::Gossipsub(
+                            gossipsub::Event::Message { message, .. },
+                        ),
+                    ) = event
+                    {
+                        let decoded: OpenDexMessage =
+                            serde_json::from_slice(&message.data)
+                                .expect("received invalid OpenDexMessage");
 
-                            if decoded.message_type == MessageType::OrderCreated {
-                                let received_order: Order =
-                                    serde_json::from_str(&decoded.payload)
-                                        .expect("received invalid Order");
+                        if decoded.message_type == MessageType::OrderCreated {
+                            let received_order: Order =
+                                serde_json::from_str(&decoded.payload)
+                                    .expect("received invalid Order");
 
-                                break received_order;
-                            }
+                            break received_order;
                         }
-
-                        _ => {}
                     }
                 }
             }
         }
     })
     .await
-    .expect("B did not receive gossipsub message");
+    .expect("timed out waiting for OrderCreated");
 
     assert_eq!(received_order.id, order.id);
     assert_eq!(received_order.trader, "alice");

@@ -188,7 +188,7 @@ mod tests {
                 quote: Asset::XMR,
             },
             price: 100 * PRICE_SCALE,
-            amount: 1 * AMOUNT_SCALE,
+            amount: AMOUNT_SCALE,
             state: TradeState::Created,
             created_at: 1,
             updated_at: 1,
@@ -228,12 +228,8 @@ mod tests {
             TradeState::PayoutPending,
             TradeState::Settled,
         ];
-
-        let mut timestamp = 2;
-
-        for state in states {
+        for (timestamp, state) in (2..).zip(states) {
             trade.transition(state, timestamp).unwrap();
-            timestamp += 1;
         }
 
         assert_eq!(trade.state, TradeState::Settled);

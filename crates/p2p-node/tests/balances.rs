@@ -76,34 +76,6 @@ fn cannot_lock_more_than_available() {
 }
 
 #[test]
-fn locked_transfer_moves_funds_between_traders() {
-    let path = std::env::temp_dir().join("opendex-test-balances-transfer.json");
-
-    let mut book = BalanceBook::new(path);
-
-    book.credit("alice", Asset::BTC, 10).unwrap();
-    book.lock("alice", Asset::BTC, 7).unwrap();
-
-    book.transfer_locked("alice", "bob", Asset::BTC, 7).unwrap();
-
-    assert_eq!(
-        book.balance("alice", &Asset::BTC),
-        Balance {
-            available: 3,
-            locked: 0,
-        }
-    );
-
-    assert_eq!(
-        book.balance("bob", &Asset::BTC),
-        Balance {
-            available: 7,
-            locked: 0,
-        }
-    );
-}
-
-#[test]
 fn lock_for_order_reserves_correct_asset() {
     let path = std::env::temp_dir().join("opendex-test-lock-for-order.json");
 

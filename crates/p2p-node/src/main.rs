@@ -45,8 +45,6 @@ use libp2p::{Multiaddr, PeerId, gossipsub, identity};
 
 use std::{fs, path::PathBuf};
 
-use tracing_subscriber;
-
 fn identity_path(port: &str) -> PathBuf {
     let mut path = dirs::home_dir().expect("Cannot find home directory");
 
@@ -162,36 +160,38 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            line = lines.next_line() => {
-                if let Some(input) = line? {
-                    let command = parse_command(&input);
+                    line = lines.next_line() => {
+                        if let Some(input) = line? {
+                            let command = parse_command(&input);
 
-                    handle_command(
-                        command,
-                        &mut swarm,
-                        &topic,
-                        &local_peer_id,
-                        &mut order_book,
-                        &mut trade_book,
-                        &mut balance_book,
-                    )?;
-                }
-            }
+                            handle_command(
+                                command,
+                                &mut swarm,
+                                &topic,
+                                &local_peer_id,
+                                &mut order_book,
+                                &mut trade_book,
+                                &mut balance_book,
+                            )?;
+                        }
+                    }
 
-            event = swarm.next() => {
-                if let Some(event) = event {
-                    message_handler::handle_swarm_event(
-                        event,
-                        &mut swarm,
-                        &topic,
-                        &local_peer_id,
-                        &mut order_book,
-                        &mut trade_book,
-                        &mut balance_book,
-                        &mut pending_trade_states,
-                    )?;
+                    event = swarm.next() => {
+                        if let Some(event) = event {
+                           let mut ctx = message_handler::HandlerContext {
+            swarm: &mut swarm,
+            topic: &topic,
+            local_peer_id: &local_peer_id,
+            order_book: &mut order_book,
+            trade_book: &mut trade_book,
+            balance_book: &mut balance_book,
+            pending_trade_states: &mut pending_trade_states,
+        };
+
+        message_handler::handle_swarm_event(event, &mut ctx)?;
+
+                        }
+                    }
                 }
-            }
-        }
     }
 }
