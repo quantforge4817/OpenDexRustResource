@@ -2,7 +2,7 @@ use libp2p::{PeerId, gossipsub, identity};
 use p2p_node::balances::BalanceBook;
 use p2p_node::message_handler::{
     HandlerContext, handle_gossipsub_message, is_authenticated_sender, is_order_owner,
-    is_trade_participant_for_sender,
+    is_trade_participant,
 };
 use p2p_node::network::build_swarm;
 use p2p_node::orderbook::OrderBook;
@@ -132,7 +132,7 @@ fn rejects_trade_state_change_from_unauthorized_peer() {
     let trade = test_trade(&buyer, &seller);
 
     assert!(
-        !is_trade_participant_for_sender(&trade, &attacker),
+        !is_trade_participant(&trade, &attacker),
         "a non-participant must not be authorized to change trade state"
     );
 }
@@ -156,7 +156,7 @@ fn accepts_trade_state_change_from_buyer() {
 
     let trade = test_trade(&buyer, &seller);
 
-    assert!(is_trade_participant_for_sender(&trade, &buyer));
+    assert!(is_trade_participant(&trade, &buyer));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn accepts_trade_state_change_from_seller() {
 
     let trade = test_trade(&buyer, &seller);
 
-    assert!(is_trade_participant_for_sender(&trade, &seller));
+    assert!(is_trade_participant(&trade, &seller));
 }
 
 #[tokio::test]

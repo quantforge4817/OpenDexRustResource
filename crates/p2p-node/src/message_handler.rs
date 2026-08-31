@@ -49,7 +49,7 @@ fn is_happy_path_state(state: &TradeState) -> bool {
     )
 }
 
-fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
+pub fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
     sender == trade.buyer || sender == trade.seller
 }
 pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &PeerId) -> bool {
@@ -58,10 +58,6 @@ pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &Pee
 
 pub fn is_order_owner(order: &Order, sender: &str) -> bool {
     order.trader == sender
-}
-
-pub fn is_trade_participant_for_sender(trade: &Trade, sender: &str) -> bool {
-    is_trade_participant(trade, sender)
 }
 
 pub fn handle_state_request(
@@ -244,7 +240,7 @@ pub fn handle_trade_state_changed(
 ) -> Result<()> {
     match trade_book.get_trade(change.trade_id) {
         Some(trade) => {
-            if !is_trade_participant_for_sender(trade, sender) {
+            if !is_trade_participant(trade, sender) {
                 eprintln!(
                     "Ignoring unauthorized state change for trade {} from {}",
                     change.trade_id, sender
@@ -442,7 +438,7 @@ pub fn handle_gossipsub_message(
                     return Ok(());
                 }
             };
-            if !is_trade_participant_for_sender(&trade, &authenticated_sender) {
+            if !is_trade_participant(&trade, &authenticated_sender) {
                 eprintln!(
                     "Rejecting unauthorized trade {}: maker={}, taker={}, sender={}",
                     trade.id, trade.maker, trade.taker, authenticated_sender
