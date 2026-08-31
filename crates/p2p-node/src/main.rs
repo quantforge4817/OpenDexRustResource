@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use network::build_swarm;
 
-use crate::cli::parse_command;
+use crate::cli::{CliAction, parse_args, parse_command};
 
 use p2p_node::{OpenDexBehaviour, OpenDexBehaviourEvent};
 
@@ -89,19 +89,18 @@ fn load_or_create_identity(port: &str) -> Result<identity::Keypair> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let port = args
-        .iter()
-        .find(|arg| arg.parse::<u16>().is_ok())
-        .cloned()
-        .unwrap_or_else(|| "4001".to_string());
+    let cli = match parse_args(&args)? {
+        CliAction::Run(config) => config,
+        CliAction::Help => {
+            println!("{}", cli::CliArgs::usage());
+            return Ok(());
+        }
+    };
 
-    let peer_addr = args
-        .iter()
-        .position(|arg| arg == "--peer")
-        .and_then(|i| args.get(i + 1))
-        .cloned();
+    let port = cli.port.to_string();
+    let peer_addr = cli.peer;
 
     tracing_subscriber::fmt::init();
 
