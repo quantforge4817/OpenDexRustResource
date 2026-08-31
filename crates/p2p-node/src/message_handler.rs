@@ -34,6 +34,21 @@ use crate::settlement::settle_local_trade;
 use crate::trade_state::{advance_trade_to_state, trade_state_rank};
 use crate::trades::TradeBook;
 
+fn is_happy_path_state(state: &TradeState) -> bool {
+    matches!(
+        state,
+        TradeState::Created
+            | TradeState::Accepted
+            | TradeState::EscrowFunding
+            | TradeState::EscrowFunded
+            | TradeState::PaymentPending
+            | TradeState::PaymentSent
+            | TradeState::PaymentConfirmed
+            | TradeState::PayoutPending
+            | TradeState::Settled
+    )
+}
+
 fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
     sender == trade.buyer || sender == trade.seller
 }
@@ -264,11 +279,35 @@ pub fn handle_trade_state_changed(
             pending_trade_states
                 .entry(change.trade_id)
                 .and_modify(|existing| {
-                    let existing_rank = trade_state_rank(&existing.change.state);
-                    let incoming_rank = trade_state_rank(&change.state);
+                    let existing_state = &existing.change.state;
+                    let incoming_state = &change.state;
 
-                    if incoming_rank > existing_rank
-                        || existing.change.state.can_transition_to(&change.state)
+                    // A duplicate pending state is harmless. Keep the original
+                    // authenticated sender and timestamp.
+                    if existing_state == incoming_state {
+                        return;
+                    }
+
+                    // If the incoming state is a direct protocol transition from
+                    // the currently pending state, it is the better candidate.
+                    if existing_state.can_transition_to(incoming_state) {
+                        *existing = PendingTradeState {
+                            change: change.clone(),
+                            sender: sender.to_string(),
+                        };
+                        return;
+                    }
+
+                    // For the normal happy path, allow a later state to replace
+                    // an earlier pending state even when intermediate messages
+                    // were missed.
+                    //
+                    // This comparison is deliberately restricted to the linear
+                    // happy-path states. Exceptional states such as Disputed,
+                    // Cancelled and Expired must never be ordered by rank.
+                    if is_happy_path_state(existing_state)
+                        && is_happy_path_state(incoming_state)
+                        && trade_state_rank(incoming_state) > trade_state_rank(existing_state)
                     {
                         *existing = PendingTradeState {
                             change: change.clone(),

@@ -480,3 +480,230 @@ fn settled_state_before_trade_created_is_applied_when_trade_arrives() {
 
     assert_settled_buyer_balance(&balance_book, &local_trader);
 }
+#[test]
+fn unauthorized_pending_state_is_rejected_when_trade_arrives() {
+    let (trade_path, balance_path, order_path) =
+        test_paths("opendex-test-handler-unauthorized-pending");
+
+    let mut trade_book = TradeBook::new(trade_path);
+    let mut balance_book = BalanceBook::new(balance_path);
+    let mut order_book = OrderBook::new(order_path);
+    let mut pending_trade_states = HashMap::new();
+
+    let local_peer_id = PeerId::random();
+    let local_trader = local_peer_id.to_string();
+
+    let buy = buy_order(Uuid::new_v4(), &local_trader);
+    let sell = sell_order(Uuid::new_v4(), "seller");
+    let trade = trade(&buy, &sell);
+
+    fund_buyer(&mut balance_book, &local_trader);
+
+    let change = TradeStateChanged {
+        trade_id: trade.id,
+        state: TradeState::Settled,
+        timestamp: 2,
+    };
+
+    // An unrelated peer sends the state before the trade exists locally.
+    handle_trade_state_changed(
+        change,
+        "attacker",
+        &mut trade_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    // The current implementation queues the state because the trade
+    // does not exist yet.
+    assert!(pending_trade_states.contains_key(&trade.id));
+
+    // When the real trade arrives, the pending state must be rejected
+    // because "attacker" is neither the buyer nor the seller.
+    handle_trade_created(
+        trade.clone(),
+        &mut trade_book,
+        &mut order_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    assert_eq!(
+        trade_book.get_trade(trade.id).unwrap().state,
+        TradeState::Created
+    );
+
+    // The unauthorized pending state must not settle the buyer's funds.
+    assert_eq!(
+        balance_book.balance(&local_trader, &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        balance_book.balance(&local_trader, &Asset::XMR),
+        Balance {
+            available: 100 * AMOUNT_SCALE,
+            locked: 200 * AMOUNT_SCALE,
+        }
+    );
+
+    assert!(!pending_trade_states.contains_key(&trade.id));
+}
+#[test]
+fn pending_trade_state_keeps_highest_happy_path_state() {
+    let (trade_path, balance_path, order_path) = test_paths("opendex-test-handler-pending-highest");
+
+    let mut trade_book = TradeBook::new(trade_path);
+    let mut balance_book = BalanceBook::new(balance_path);
+    let mut order_book = OrderBook::new(order_path);
+    let mut pending_trade_states = HashMap::new();
+
+    let local_peer_id = PeerId::random();
+    let local_trader = local_peer_id.to_string();
+
+    let buy = buy_order(Uuid::new_v4(), &local_trader);
+    let sell = sell_order(Uuid::new_v4(), "seller");
+    let trade = trade(&buy, &sell);
+
+    fund_buyer(&mut balance_book, &local_trader);
+
+    // Receive the later state first.
+    handle_trade_state_changed(
+        TradeStateChanged {
+            trade_id: trade.id,
+            state: TradeState::Settled,
+            timestamp: 10,
+        },
+        "seller",
+        &mut trade_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    // Then receive an older state.
+    handle_trade_state_changed(
+        TradeStateChanged {
+            trade_id: trade.id,
+            state: TradeState::Accepted,
+            timestamp: 11,
+        },
+        "seller",
+        &mut trade_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    // The pending state should still be Settled. We verify this through
+    // the public handler rather than accessing PendingTradeState internals.
+    handle_trade_created(
+        trade.clone(),
+        &mut trade_book,
+        &mut order_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    assert_eq!(
+        trade_book.get_trade(trade.id).unwrap().state,
+        TradeState::Settled
+    );
+
+    assert_settled_buyer_balance(&balance_book, &local_trader);
+    assert!(!pending_trade_states.contains_key(&trade.id));
+}
+
+#[test]
+fn pending_trade_state_advances_through_happy_path() {
+    let (trade_path, balance_path, order_path) = test_paths("opendex-test-handler-pending-advance");
+
+    let mut trade_book = TradeBook::new(trade_path);
+    let mut balance_book = BalanceBook::new(balance_path);
+    let mut order_book = OrderBook::new(order_path);
+    let mut pending_trade_states = HashMap::new();
+
+    let local_peer_id = PeerId::random();
+    let local_trader = local_peer_id.to_string();
+
+    let buy = buy_order(Uuid::new_v4(), &local_trader);
+    let sell = sell_order(Uuid::new_v4(), "seller");
+    let trade = trade(&buy, &sell);
+
+    fund_buyer(&mut balance_book, &local_trader);
+
+    // Receive an early state first.
+    handle_trade_state_changed(
+        TradeStateChanged {
+            trade_id: trade.id,
+            state: TradeState::Accepted,
+            timestamp: 2,
+        },
+        "seller",
+        &mut trade_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    // Then receive a later state while the trade is still unknown.
+    handle_trade_state_changed(
+        TradeStateChanged {
+            trade_id: trade.id,
+            state: TradeState::PaymentConfirmed,
+            timestamp: 6,
+        },
+        "seller",
+        &mut trade_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    handle_trade_created(
+        trade.clone(),
+        &mut trade_book,
+        &mut order_book,
+        &mut pending_trade_states,
+        &mut balance_book,
+        &local_peer_id,
+    )
+    .unwrap();
+
+    assert_eq!(
+        trade_book.get_trade(trade.id).unwrap().state,
+        TradeState::PaymentConfirmed
+    );
+
+    // PaymentConfirmed is not Settled, so no settlement should have happened.
+    assert_eq!(
+        balance_book.balance(&local_trader, &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        balance_book.balance(&local_trader, &Asset::XMR),
+        Balance {
+            available: 100 * AMOUNT_SCALE,
+            locked: 200 * AMOUNT_SCALE,
+        }
+    );
+
+    assert!(!pending_trade_states.contains_key(&trade.id));
+}
