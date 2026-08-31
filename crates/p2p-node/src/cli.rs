@@ -1,6 +1,215 @@
+use anyhow::{Result, bail};
 use protocol::message::{Asset, Market, Side, TradeState};
-
+use std::fmt;
 use uuid::Uuid;
+
+use anyhow::{Result, bail};
+use protocol::message::{Asset, Market, Side, TradeState};
+use std::fmt;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CliArgs {
+    pub port: u16,
+    pub peer: Option<String>,
+    pub new_identity: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CliAction {
+    Run(CliArgs),
+    Help,
+}
+
+impl Default for CliArgs {
+    fn default() -> Self {
+        Self {
+            port: 4001,
+            peer: None,
+            new_identity: false,
+        }
+    }
+}
+
+impl CliArgs {
+    pub fn usage() -> &'static str {
+        "\
+OpenDEX P2P node
+
+USAGE:
+    p2p-node [OPTIONS]
+
+OPTIONS:
+    --port <PORT>          Listening TCP port [default: 4001]
+    --peer <MULTIADDR>     Dial a peer on startup
+    --new-identity         Generate a new identity instead of loading the saved one
+    -h, --help              Print this help message
+"
+    }
+}
+
+impl fmt::Display for CliArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "port={}, peer={:?}, new_identity={}",
+            self.port, self.peer, self.new_identity
+        )
+    }
+}
+
+pub fn parse_args(args: &[String]) -> Result<CliAction> {
+    let mut config = CliArgs::default();
+    let mut i = 0;
+
+    while i < args.len() {
+        match args[i].as_str() {
+            "-h" | "--help" => return Ok(CliAction::Help),
+
+            "--port" => {
+                i += 1;
+
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--port requires a value"))?;
+
+                config.port = value
+                    .parse::<u16>()
+                    .map_err(|_| anyhow::anyhow!("invalid port: {value}"))?;
+
+                if config.port == 0 {
+                    bail!("port must be between 1 and 65535");
+                }
+            }
+
+            "--peer" => {
+                i += 1;
+
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--peer requires a multiaddr"))?;
+
+                if value.trim().is_empty() {
+                    bail!("--peer requires a multiaddr");
+                }
+
+                config.peer = Some(value.clone());
+            }
+
+            "--new-identity" => {
+                config.new_identity = true;
+            }
+
+            value => {
+                bail!("unknown argument: {value}\n\n{}", CliArgs::usage());
+            }
+        }
+
+        i += 1;
+    }
+
+    Ok(CliAction::Run(config))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CliArgs {
+    pub port: u16,
+    pub peer: Option<String>,
+    pub new_identity: bool,
+}
+
+impl Default for CliArgs {
+    fn default() -> Self {
+        Self {
+            port: 4001,
+            peer: None,
+            new_identity: false,
+        }
+    }
+}
+
+impl CliArgs {
+    pub fn parse(args: &[String]) -> Result<Self> {
+        let mut config = Self::default();
+        let mut i = 0;
+
+        while i < args.len() {
+            match args[i].as_str() {
+                "-h" | "--help" => {
+                    println!("{}", Self::usage());
+                    std::process::exit(0);
+                }
+
+                "--port" => {
+                    i += 1;
+
+                    let value = args
+                        .get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--port requires a value"))?;
+
+                    config.port = value
+                        .parse::<u16>()
+                        .map_err(|_| anyhow::anyhow!("invalid port: {value}"))?;
+
+                    if config.port == 0 {
+                        bail!("port must be between 1 and 65535");
+                    }
+                }
+
+                "--peer" => {
+                    i += 1;
+
+                    let value = args
+                        .get(i)
+                        .ok_or_else(|| anyhow::anyhow!("--peer requires a multiaddr"))?;
+
+                    if value.trim().is_empty() {
+                        bail!("--peer requires a multiaddr");
+                    }
+
+                    config.peer = Some(value.clone());
+                }
+
+                "--new-identity" => {
+                    config.new_identity = true;
+                }
+
+                value => {
+                    bail!("unknown argument: {value}\n\n{}", Self::usage());
+                }
+            }
+
+            i += 1;
+        }
+
+        Ok(config)
+    }
+
+    pub fn usage() -> &'static str {
+        "\
+OpenDEX P2P node
+
+USAGE:
+    p2p-node [OPTIONS]
+
+OPTIONS:
+    --port <PORT>          Listening TCP port [default: 4001]
+    --peer <MULTIADDR>     Dial a peer on startup
+    --new-identity         Generate a new identity instead of loading the saved one
+    -h, --help              Print this help message
+"
+    }
+}
+
+impl fmt::Display for CliArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "port={}, peer={:?}, new_identity={}",
+            self.port, self.peer, self.new_identity
+        )
+    }
+}
 
 pub enum Command {
     Order {
