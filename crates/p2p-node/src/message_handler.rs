@@ -442,6 +442,13 @@ pub fn handle_gossipsub_message(
                     return Ok(());
                 }
             };
+            if !is_trade_participant_for_sender(&trade, &authenticated_sender) {
+                eprintln!(
+                    "Rejecting unauthorized trade {}: maker={}, taker={}, sender={}",
+                    trade.id, trade.maker, trade.taker, authenticated_sender
+                );
+                return Ok(());
+            }
 
             handle_trade_created(
                 trade,
