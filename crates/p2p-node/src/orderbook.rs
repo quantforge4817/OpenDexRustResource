@@ -137,14 +137,80 @@ impl OrderBook {
             self.applied_trades.push(trade_id.to_string());
         }
     }
+    pub fn validate_trade(&self, trade: &Trade) -> Result<()> {
+        if trade.amount == 0 {
+            anyhow::bail!("trade amount must be greater than zero");
+        }
 
+        let buy_order = self
+            .orders
+            .iter()
+            .find(|order| order.id == trade.buy_order)
+            .ok_or_else(|| anyhow::anyhow!("buy order {} not found", trade.buy_order))?;
+
+        let sell_order = self
+            .orders
+            .iter()
+            .find(|order| order.id == trade.sell_order)
+            .ok_or_else(|| anyhow::anyhow!("sell order {} not found", trade.sell_order))?;
+
+        // The referenced orders must have the correct sides.
+        if buy_order.side != Side::Buy {
+            anyhow::bail!("buy_order does not reference a Buy order");
+        }
+
+        if sell_order.side != Side::Sell {
+            anyhow::bail!("sell_order does not reference a Sell order");
+        }
+
+        // Trader identities must correspond to the referenced orders.
+        if trade.buyer != buy_order.trader {
+            anyhow::bail!("trade buyer does not match buy order trader");
+        }
+
+        if trade.seller != sell_order.trader {
+            anyhow::bail!("trade seller does not match sell order trader");
+        }
+
+        // Both orders must belong to the same market as the trade.
+        if trade.market != buy_order.market {
+            anyhow::bail!("trade market does not match buy order market");
+        }
+
+        if trade.market != sell_order.market {
+            anyhow::bail!("trade market does not match sell order market");
+        }
+
+        // The trade price must satisfy both limit orders.
+        if trade.price > buy_order.price {
+            anyhow::bail!("trade price exceeds buy order price");
+        }
+
+        if trade.price < sell_order.price {
+            anyhow::bail!("trade price is below sell order price");
+        }
+
+        // A trade cannot consume more than either order has remaining.
+        if trade.amount > buy_order.amount {
+            anyhow::bail!("trade amount exceeds buy order remaining amount");
+        }
+
+        if trade.amount > sell_order.amount {
+            anyhow::bail!("trade amount exceeds sell order remaining amount");
+        }
+
+        Ok(())
+    }
     pub fn apply_trade(&mut self, trade: &Trade) -> bool {
         let trade_id = trade.id.to_string();
 
+        // Idempotency: never apply the same trade twice.
         if self.applied_trades.contains(&trade_id) {
             return false;
         }
 
+        // A trade may arrive before one or both orders.
+        // Keep it pending until the required orders arrive.
         let has_buy_order = self.orders.iter().any(|o| o.id == trade.buy_order);
         let has_sell_order = self.orders.iter().any(|o| o.id == trade.sell_order);
 
@@ -156,7 +222,16 @@ impl OrderBook {
             return false;
         }
 
-        self.applied_trades.push(trade.id.to_string());
+        // Both orders exist, so validate the trade before mutating
+        // the order book.
+        if let Err(error) = self.validate_trade(trade) {
+            eprintln!("Rejecting invalid trade {}: {}", trade.id, error);
+
+            return false;
+        }
+
+        // Mark the trade as applied before changing order quantities.
+        self.applied_trades.push(trade_id);
 
         let mut fully_filled = Vec::new();
 
@@ -174,11 +249,16 @@ impl OrderBook {
             }
         });
 
+        // Fully consumed orders are permanently removed.
         for id in fully_filled {
             if !self.removed_orders.contains(&id) {
                 self.removed_orders.push(id);
             }
         }
+
+        // The trade is no longer pending because it was successfully
+        // validated and applied.
+        self.pending_trades.retain(|pending| pending.id != trade.id);
 
         true
     }

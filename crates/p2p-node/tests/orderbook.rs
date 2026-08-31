@@ -21,6 +21,17 @@ fn order(id: &str, side: Side, price: u64, amount: u64) -> Order {
     }
 }
 
+fn assert_orders_unchanged(before: &[Order], after: &[Order]) {
+    assert_eq!(after.len(), before.len());
+
+    for (before, after) in before.iter().zip(after.iter()) {
+        assert_eq!(before.id, after.id);
+        assert_eq!(before.trader, after.trader);
+        assert_eq!(before.price, after.price);
+        assert_eq!(before.amount, after.amount);
+    }
+}
+
 #[test]
 fn buy_matches_cheapest_sell_first() {
     let path = std::env::temp_dir().join("opendex-test-buy.json");
@@ -903,4 +914,231 @@ fn stale_order_cannot_be_added_after_cancellation() {
     assert!(book.orders.is_empty());
     assert_eq!(book.removed_orders.len(), 1);
     assert_eq!(book.removed_orders[0], order_id);
+}
+#[test]
+fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-invalid-buy-side-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Sell, // deliberately wrong
+        100,
+        10,
+    );
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: "test-trader".to_string(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 4,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let before = book.orders.clone();
+
+    assert!(book.validate_trade(&trade).is_err());
+
+    // Invalid trade must not mutate the orderbook.
+    assert_orders_unchanged(&before, &book.orders);
+    assert!(book.applied_trades.is_empty());
+    assert!(book.pending_trades.is_empty());
+}
+
+#[test]
+fn rejects_trade_with_wrong_seller_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-invalid-seller-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: "attacker".to_string(),
+        market: market(),
+        price: 100,
+        amount: 4,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let before = book.orders.clone();
+
+    assert!(book.validate_trade(&trade).is_err());
+    assert_orders_unchanged(&before, &book.orders);
+    assert!(book.applied_trades.is_empty());
+}
+
+#[test]
+fn rejects_trade_above_buy_limit() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-price-above-buy-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 90, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::new_v4(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 101,
+        amount: 4,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    assert!(book.validate_trade(&trade).is_err());
+}
+
+#[test]
+fn rejects_trade_below_sell_limit() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-price-below-sell-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 90, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::new_v4(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 89,
+        amount: 4,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    assert!(book.validate_trade(&trade).is_err());
+}
+
+#[test]
+fn rejects_trade_exceeding_remaining_amount() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-overfill-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 5);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::new_v4(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 6,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    let before = book.orders.clone();
+
+    assert!(book.validate_trade(&trade).is_err());
+    assert_orders_unchanged(&before, &book.orders);
+    assert!(book.applied_trades.is_empty());
+}
+
+#[test]
+fn rejects_zero_amount_trade() {
+    let path =
+        std::env::temp_dir().join(format!("opendex-test-zero-trade-{}.json", Uuid::new_v4()));
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
+
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    let trade = Trade {
+        id: Uuid::new_v4(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: sell.trader.clone(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 0,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
+
+    assert!(book.validate_trade(&trade).is_err());
 }
