@@ -6,6 +6,7 @@ pub struct PendingTradeState {
     change: TradeStateChanged,
     sender: String,
 }
+const MAX_PENDING_TRADE_STATES: usize = 10_000;
 
 pub struct HandlerContext<'a> {
     pub swarm: &'a mut libp2p::Swarm<crate::OpenDexBehaviour>,
@@ -59,6 +60,8 @@ pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &Pee
 pub fn is_order_owner(order: &Order, sender: &str) -> bool {
     order.trader == sender
 }
+
+pub use crate::sync::validate_state_snapshot;
 
 pub fn handle_state_request(
     order_book: &OrderBook,
@@ -267,11 +270,18 @@ pub fn handle_trade_state_changed(
         }
 
         None => {
+            if pending_trade_states.len() >= MAX_PENDING_TRADE_STATES {
+                eprintln!(
+                    "Rejecting pending state change for trade {}: pending-state cache is full",
+                    change.trade_id
+                );
+                return Ok(());
+            }
+
             let pending = PendingTradeState {
                 change: change.clone(),
                 sender: sender.to_string(),
             };
-
             pending_trade_states
                 .entry(change.trade_id)
                 .and_modify(|existing| {
@@ -380,6 +390,13 @@ pub fn handle_gossipsub_message(
                     return Ok(());
                 }
             };
+            if cancelled.trader != authenticated_sender {
+                eprintln!(
+                    "Rejecting cancellation for order {}: claimed trader={}, authenticated={}",
+                    cancelled.order_id, cancelled.trader, authenticated_sender
+                );
+                return Ok(());
+            }
 
             let order = match ctx
                 .order_book
@@ -427,6 +444,7 @@ pub fn handle_gossipsub_message(
                 }
             };
 
+            validate_state_snapshot(&state, ctx.order_book, ctx.trade_book)?;
             handle_state_response(state, ctx.order_book, ctx.trade_book)?;
         }
 

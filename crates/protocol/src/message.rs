@@ -168,6 +168,7 @@ pub struct StateResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderCancelled {
     pub order_id: Uuid,
+    pub trader: String,
 }
 
 #[cfg(test)]

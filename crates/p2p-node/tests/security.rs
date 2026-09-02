@@ -4,6 +4,7 @@ use p2p_node::message_handler::{
     HandlerContext, handle_gossipsub_message, is_authenticated_sender, is_order_owner,
     is_trade_participant,
 };
+
 use p2p_node::network::build_swarm;
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
@@ -331,7 +332,10 @@ async fn handler_rejects_cancellation_by_non_owner() {
     let order = test_order(&owner);
     let order_id = order.id;
 
-    let cancellation = OrderCancelled { order_id };
+    let cancellation = OrderCancelled {
+        order_id,
+        trader: owner.to_string(),
+    };
 
     let message = test_message(
         MessageType::OrderCancelled,
@@ -503,5 +507,245 @@ async fn handler_state_response_does_not_replace_existing_trade() {
     assert_eq!(
         trade.updated_at, 100,
         "stale state sync must not replace the newer trade"
+    );
+}
+#[tokio::test]
+async fn handler_rejects_invalid_snapshot_without_mutating_state() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    let (_, seller) = peer();
+
+    let existing_order = test_order(&seller);
+    let existing_order_id = existing_order.id;
+
+    let message = test_message(
+        MessageType::StateResponse,
+        &authenticated_peer.to_string(),
+        serde_json::to_string(&StateSnapshot {
+            orders: vec![existing_order.clone()],
+            trades: vec![Trade {
+                id: Uuid::new_v4(),
+                buy_order: Uuid::new_v4(),
+                sell_order: existing_order_id,
+                maker: seller.to_string(),
+                taker: seller.to_string(),
+                buyer: seller.to_string(),
+                seller: seller.to_string(),
+                market: existing_order.market.clone(),
+                price: existing_order.price,
+                amount: 1,
+                state: TradeState::Created,
+                created_at: 1,
+                updated_at: 1,
+            }],
+            removed_orders: Vec::new(),
+            applied_trades: Vec::new(),
+        })
+        .unwrap(),
+    );
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-security-test");
+
+    let mut order_book = OrderBook::new(temp_path("snapshot-invalid-orders"));
+    let mut trade_book = TradeBook::new(temp_path("snapshot-invalid-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("snapshot-invalid-balances"));
+    let mut pending_trade_states = HashMap::new();
+
+    order_book.add_order(existing_order.clone());
+
+    let original_order_count = order_book.orders.len();
+    let original_trade_count = trade_book.trades.len();
+    let original_removed_count = order_book.removed_orders.len();
+    let original_applied_count = order_book.applied_trades.len();
+
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+    };
+
+    let result = handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    );
+
+    assert!(result.is_err(), "invalid snapshot must be rejected");
+
+    assert_eq!(
+        order_book.orders.len(),
+        original_order_count,
+        "invalid snapshot must not change orders"
+    );
+
+    assert_eq!(
+        trade_book.trades.len(),
+        original_trade_count,
+        "invalid snapshot must not add trades"
+    );
+
+    assert_eq!(
+        order_book.removed_orders.len(),
+        original_removed_count,
+        "invalid snapshot must not add removal tombstones"
+    );
+
+    assert_eq!(
+        order_book.applied_trades.len(),
+        original_applied_count,
+        "invalid snapshot must not mark trades as applied"
+    );
+}
+#[tokio::test]
+async fn pending_trade_state_cache_is_bounded() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    let topic = gossipsub::IdentTopic::new("opendex-security-test");
+    let mut swarm = build_swarm(key).unwrap();
+
+    let mut order_book = OrderBook::new(temp_path("pending-limit-orders"));
+    let mut trade_book = TradeBook::new(temp_path("pending-limit-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("pending-limit-balances"));
+    let mut pending_trade_states = HashMap::new();
+
+    for _ in 0..10_000 {
+        let change = TradeStateChanged {
+            trade_id: Uuid::new_v4(),
+            state: TradeState::Accepted,
+            timestamp: 1,
+        };
+
+        let message = test_message(
+            MessageType::TradeStateChanged,
+            &authenticated_peer.to_string(),
+            serde_json::to_string(&change).unwrap(),
+        );
+
+        let mut ctx = HandlerContext {
+            swarm: &mut swarm,
+            topic: &topic,
+            local_peer_id: &authenticated_peer,
+            order_book: &mut order_book,
+            trade_book: &mut trade_book,
+            balance_book: &mut balance_book,
+            pending_trade_states: &mut pending_trade_states,
+        };
+
+        handle_gossipsub_message(
+            &serde_json::to_vec(&message).unwrap(),
+            &authenticated_peer,
+            &mut ctx,
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        pending_trade_states.len(),
+        10_000,
+        "pending trade-state cache must reach, but not exceed, its configured limit"
+    );
+
+    let attack_trade_id = Uuid::new_v4();
+
+    let attack_change = TradeStateChanged {
+        trade_id: attack_trade_id,
+        state: TradeState::Accepted,
+        timestamp: 2,
+    };
+
+    let attack_message = test_message(
+        MessageType::TradeStateChanged,
+        &authenticated_peer.to_string(),
+        serde_json::to_string(&attack_change).unwrap(),
+    );
+
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+    };
+
+    handle_gossipsub_message(
+        &serde_json::to_vec(&attack_message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    assert_eq!(
+        pending_trade_states.len(),
+        10_000,
+        "attacker must not be able to grow the pending trade-state cache beyond its limit"
+    );
+
+    assert!(
+        !pending_trade_states.contains_key(&attack_trade_id),
+        "new pending trade state must be rejected when cache is full"
+    );
+}
+#[tokio::test]
+async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    let (_, owner) = peer();
+    let order = test_order(&owner);
+    let order_id = order.id;
+
+    // The attacker is authenticated as themselves, but the cancellation
+    // payload claims that they are the order owner.
+    let cancellation = OrderCancelled {
+        order_id,
+        trader: authenticated_peer.to_string(),
+    };
+
+    let message = test_message(
+        MessageType::OrderCancelled,
+        &authenticated_peer.to_string(),
+        serde_json::to_string(&cancellation).unwrap(),
+    );
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-security-test");
+
+    let mut order_book = OrderBook::new(temp_path("forged-cancel-orders"));
+    let mut trade_book = TradeBook::new(temp_path("forged-cancel-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("forged-cancel-balances"));
+    let mut pending_trade_states = HashMap::new();
+
+    order_book.add_order(order.clone());
+    order_book.save_orders().unwrap();
+
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+    };
+
+    handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    assert!(
+        order_book.orders.iter().any(|order| order.id == order_id),
+        "forged cancellation must not remove another trader's order"
     );
 }

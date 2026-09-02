@@ -254,7 +254,10 @@ pub fn handle_command(
 
                     println!("Removed local order: {}", id);
 
-                    let cancelled = OrderCancelled { order_id: id };
+                    let cancelled = OrderCancelled {
+                        order_id: id,
+                        trader: order.trader.clone(),
+                    };
 
                     let message = OpenDexMessage {
                         message_type: MessageType::OrderCancelled,
