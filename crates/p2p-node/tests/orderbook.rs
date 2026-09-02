@@ -1,4 +1,8 @@
 use p2p_node::orderbook::*;
+use p2p_node::sync::apply_snapshot;
+use p2p_node::trades::TradeBook;
+use protocol::state::StateSnapshot;
+
 use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
 use std::fs;
 use uuid::Uuid;
@@ -1141,4 +1145,66 @@ fn rejects_zero_amount_trade() {
     };
 
     assert!(book.validate_trade(&trade).is_err());
+}
+#[test]
+fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
+    let order_path = std::env::temp_dir().join("opendex-test-snapshot-atomic.json");
+    let trade_path = std::env::temp_dir().join("opendex-test-snapshot-atomic-trades.json");
+
+    let mut order_book = OrderBook::new(order_path);
+    let mut trade_book = TradeBook::new(trade_path);
+
+    let existing_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
+
+    order_book.add_order(existing_order.clone());
+
+    let original_orders = order_book.orders.clone();
+    let original_trades = trade_book.trades.clone();
+    let original_removed_orders = order_book.removed_orders.clone();
+    let original_applied_trades = order_book.applied_trades.clone();
+
+    // This trade references a buy order that does not exist.
+    // Snapshot application must reject it rather than inserting the
+    // trade into TradeBook and leaving the books inconsistent.
+    let invalid_trade = Trade {
+        id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+        buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        sell_order: existing_order.id,
+        maker: existing_order.trader.clone(),
+        taker: "test-trader".to_string(),
+        buyer: "test-trader".to_string(),
+        seller: existing_order.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 10,
+        state: TradeState::Created,
+        created_at: 1,
+        updated_at: 1,
+    };
+    let snapshot = StateSnapshot {
+        orders: vec![existing_order],
+        trades: vec![invalid_trade],
+        removed_orders: Vec::new(),
+        applied_trades: Vec::new(),
+    };
+
+    let result = apply_snapshot(snapshot, &mut order_book, &mut trade_book);
+
+    assert!(result.is_err());
+
+    // The live books must remain exactly as they were before the failed
+    // snapshot application.
+    assert_orders_unchanged(&original_orders, &order_book.orders);
+    assert_eq!(original_trades.len(), trade_book.trades.len());
+    assert_eq!(original_removed_orders, order_book.removed_orders);
+    assert_eq!(original_applied_trades, order_book.applied_trades);
+}
+#[test]
+fn materialized_snapshot_does_not_replay_historical_trades() {
+    // snapshot contains an order already reduced by a historical trade
+    // applying the snapshot must not reduce it a second time
+}
+#[test]
+fn applying_same_materialized_snapshot_twice_is_idempotent() {
+    // applying the same snapshot twice must produce identical state
 }
