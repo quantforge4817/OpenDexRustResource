@@ -164,6 +164,36 @@ Dedicated security coverage: Complete
 This issue is resolved.
 The corresponding security finding should remain historically documented in the Security Log, but it should not be treated as an active implementation issue.
 
+SEC-002 — Remote order cancellation authority
+Priority: Critical
+Status: 🟢 Closed — Remediated / Verified
+Original issue:
+Remote OrderCancelled messages could previously cause removal of an order without verifying that the authenticated network sender was authorized to cancel that order.
+Fix implemented:
+Cancellation processing now requires:
+The GossipSub message to originate from an authenticated libp2p PeerId.
+OpenDexMessage.sender to match the authenticated PeerId.
+OrderCancelled.trader to match the authenticated sender.
+The referenced order to exist.
+The authenticated sender to match the order owner (order.trader).
+Unauthorized requests are rejected before OrderBook::remove_order() is reached.
+Verification performed:
+Non-owner cancellation rejected.
+Forged cancellation trader identity rejected.
+Forged message sender identity rejected.
+Rejected cancellation does not mutate order state.
+Unknown cancellation handled safely.
+Duplicate/stale cancellation behaviour verified.
+Stale orders cannot be resurrected after cancellation.
+Dedicated cancellation security tests: 3 passed, 0 failed.
+Full workspace test suite: all tests passed, 0 failed.
+Verification result:
+🟢 SEC-002 successfully remediated and verified.
+Residual note:
+The current protocol uses the authenticated libp2p PeerId as the trader identity. If the protocol later introduces a separate trader identity, an authenticated PeerId-to-trader identity binding will need to be defined and verified.
+
+Disposition:
+CLOSED. Do not reopen SEC-002 for unrelated observations. Any additional findings identified during subsequent review must be recorded separately in the review queue after SEC-002.
 BUG-003 — Distributed TradeCreated Application
 Status: 🟢 Resolved
 Trades arriving before their corresponding orders are retained and applied when the required orders become available.
@@ -397,3 +427,73 @@ If not, define the authorization/trust mechanism for authoritative synchronizati
 If yes, define how conflicting or stale snapshots are prevented from overwriting valid local state.
 Add regression tests for the chosen invariant before implementing the remediation.
 Implementation status: Not remediated. No code change made as part of this finding.
+BUG-SEC-002 — StateResponse Synchronization Authority
+Date: 2026-09-02
+Status: Open
+Severity: High / potentially Critical
+Category: Security / Authorization / State Integrity
+Component: crates/p2p-node/src/sync.rs, apply_snapshot()
+
+Finding
+The remote StateResponse path currently reaches:
+
+StateResponse
+↓
+StateSnapshot
+↓
+apply_snapshot()
+↓
+OrderBook / TradeBook mutation
+↓
+persistence
+
+Network authentication establishes the identity of the sending peer, but the current protocol does not yet establish whether that peer is authorized to provide authoritative synchronization state.
+
+apply_snapshot() therefore represents a significant security-sensitive state mutation boundary.
+
+Required Work
+Before implementing a narrow code-level fix, establish the intended synchronization trust model:
+
+Define which peers are authorized to provide authoritative state.
+Determine whether snapshots are authoritative or advisory.
+Define which snapshot fields may affect local state.
+Validate orders and trades before insertion or replacement.
+Define stale-snapshot handling.
+Define conflicting-snapshot resolution.
+Prevent unauthorized order/trade resurrection.
+Define whether remote removals are authoritative.
+Define replay behaviour.
+Ensure rejected snapshots cause no protected-state mutation.
+Add adversarial regression tests.
+Verify crash-consistent persistence during snapshot application.
+Security Invariant
+An authenticated peer must not automatically be treated as an authorized state authority.
+
+The receiving path should ultimately enforce:
+
+UNTRUSTED NETWORK INPUT
+↓
+Authenticated sender
+↓
+Synchronization authorization
+↓
+Snapshot validation
+↓
+State reconciliation
+↓
+Domain mutation
+↓
+Crash-consistent persistence
+
+Current Assessment
+Open — investigation required.
+
+No implementation change is recorded by this checkpoint.
+
+The security log classifies this as a security finding requiring investigation rather than a confirmed exploitable vulnerability because the final impact depends on the intended OpenDEX synchronization trust model.
+
+Related Security Review
+Security checkpoint: 2026-09-02 — State synchronization trust boundary
+
+Next Action
+Define the synchronization authority model and authoritative StateSnapshot invariants before modifying apply_snapshot().

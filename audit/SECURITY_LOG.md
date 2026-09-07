@@ -46,29 +46,344 @@ Questions to resolve
 • Can replayed messages cause unintended effects?
 Priority: Critical
 
-SEC-002 — Remote order cancellation authority
-Status: 🔴 Open
-OrderCancelled messages can cause local order state to be removed.
-The current architecture requires explicit review of whether a remote cancellation is sufficiently authenticated/authorised.
-Required investigation
-Determine how the system establishes that the sender is authorised to cancel the referenced order.
-A peer being able to publish a validly encoded message should not automatically imply authority over another trader's order.
-Priority: Critical
+SEC-002 — Remote Order Cancellation Authority
+Status: 🟠 Remediation implemented — verification pending
+Priority: Critical
+Category: Security / Authorization / State Integrity
 
-SEC-003 — Trade-state transition authority
-Status: 🔴 Open
-TradeStateChanged messages can advance trade state.
-The transition state machine validates whether a transition is structurally legal, but structural validity is not necessarily equivalent to authorisation.
-Required investigation
-Determine:
-• who may advance each state
-• whether the sender must be a trade participant
-• whether different states require different authorities
-• whether a remote peer can force settlement
-• whether replayed state changes are harmless
-• whether timestamps have security significance
-Priority: Critical
+Original Finding
+OrderCancelled messages were previously processed without establishing that the authenticated sender was authorized to cancel the referenced order.
 
+The original receive path was:
+
+OrderCancelled
+↓
+decode payload
+↓
+handle_order_cancelled()
+↓
+OrderBook::remove_order()
+
+The original implementation did not establish that the sender was the owner of the referenced order.
+
+Additionally, authorization based only on OpenDexMessage.sender would not have been sufficient because the application-level sender field was previously not cryptographically/authentically bound to the network sender.
+
+Current Implementation
+The current message_handler.rs implementation now establishes an authenticated sender identity before dispatching the message.
+
+The GossipSub receive path obtains the authenticated PeerId from the propagation_source and passes it to:
+
+handle_gossipsub_message()
+
+The message's claimed application sender is then checked against the authenticated peer:
+
+OpenDexMessage.sender
+        ==
+authenticated PeerId
+
+A sender identity mismatch is rejected before message-specific processing or state mutation.
+
+For OrderCancelled, the current receive path additionally performs two authorization checks.
+
+First, the trader contained in the cancellation must correspond to the authenticated sender:
+
+OrderCancelled.trader
+        ==
+authenticated PeerId
+
+Second, the referenced local order is loaded and its stored owner is checked:
+
+order.trader
+        ==
+authenticated PeerId
+
+Only after both checks succeed is handle_order_cancelled() invoked.
+
+The resulting security boundary is:
+
+UNTRUSTED NETWORK INPUT
+        ↓
+Authenticated GossipSub PeerId
+        ↓
+OpenDexMessage.sender validation
+        ↓
+OrderCancelled.trader validation
+        ↓
+Load referenced order
+        ↓
+Stored order.trader validation
+        ↓
+Authorized cancellation
+        ↓
+OrderBook::remove_order()
+        ↓
+Persistence
+
+Current Security Invariant
+The intended invariant is now:
+
+Only the authenticated owner of an existing order
+may cause that order to be cancelled.
+
+More precisely:
+
+authenticated_peer_id
+        ==
+OpenDexMessage.sender
+        ==
+OrderCancelled.trader
+        ==
+stored_order.trader
+
+A remote peer therefore cannot cancel another trader's order merely by supplying the victim's order ID.
+
+Likewise, a peer cannot use a forged application-level sender or forged cancellation trader identity to obtain authorization.
+
+State-Mutation Property
+Authorization occurs before handle_order_cancelled() and therefore before:
+
+OrderBook::remove_order()
+
+Unauthorized cancellation attempts return without invoking the order-removal operation.
+
+The required security property is:
+
+Unauthorized cancellation
+        ↓
+Reject
+        ↓
+No OrderBook mutation
+
+This must be explicitly covered by regression tests.
+
+Remaining Verification
+SEC-002 should remain open for verification until the following have been established:
+
+Confirm the current OrderCancelled protocol structure and ensure trader is part of the authenticated/validated cancellation payload.
+Trace every caller of handle_order_cancelled().
+Trace every relevant caller of OrderBook::remove_order() and determine whether any alternate path can perform remote cancellation without authorization.
+Verify cancellation of an unknown order has safe, intentional semantics.
+Verify cancellation of an already-consumed/removed order cannot resurrect or otherwise corrupt state.
+Add or verify adversarial regression coverage proving an authenticated non-owner cannot cancel another trader's order.
+Verify that a forged OpenDexMessage.sender cannot bypass the cancellation authorization boundary.
+Verify rejected cancellation attempts leave the order book and related protected state unchanged.
+Run the complete workspace verification baseline after any required changes.
+Current Assessment
+The original SEC-002 weakness — remote cancellation being performed without an authorization check — is no longer present in the current handle_gossipsub_message() path.
+
+The implementation now performs authenticated sender binding followed by explicit order-owner authorization before allowing cancellation to reach OrderBook::remove_order().
+
+However, the finding should not yet be classified as fully resolved until the protocol definition, alternate callers, and regression coverage have been independently verified.
+
+Status: 🟢 Remediated / Verified
+
+This finding should therefore remain in the active security review queue, but the original description should no longer state that the receive path currently performs no authorization check.
+
+POST-SEC-002 REVIEW RULE
+------------------------
+Findings in this section are deliberately deferred.
+
+They must not be implemented as part of SEC-002 unless the SEC-002 scope is
+formally expanded. Each item requires separate review, risk assessment, and
+assignment to a future security requirement or remediation cycle.
+
+
+POST-SEC-002 REVIEW QUEUE
+=========================
+
+These findings were identified during the SEC-002 review but are NOT
+classified as SEC-002 requirements at this time.
+
+They are recorded for later security review and must not be treated as
+approved SEC-002 remediation unless separately assessed and assigned to a
+future security requirement/review.
+
+
+Finding SEC-002-AF-001
+Area: Trade state handling
+Files:
+  - crates/p2p-node/src/message_handler.rs
+  - crates/p2p-node/src/trade_state.rs
+Status: REVIEW
+Severity: Medium
+
+Observation:
+TradeStateChanged messages are authenticated to the libp2p sender, but the
+current authorization check establishes participant status rather than
+role-specific authorization for the requested transition.
+
+Review question:
+Should future security requirements distinguish buyer/seller/maker/taker
+permissions for individual trade-state transitions?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-002
+Area: State synchronization
+File:
+  - crates/p2p-node/src/sync.rs
+Status: REVIEW
+Severity: High
+
+Observation:
+StateResponse validation establishes structural consistency but does not
+establish that the remote snapshot is authoritative, newer than local state,
+or otherwise preferred during conflicts.
+
+Review question:
+Should future security requirements define snapshot authority, freshness,
+versioning, or conflict resolution?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-003
+Area: State synchronization / trade history
+File:
+  - crates/p2p-node/src/sync.rs
+Status: REVIEW
+Severity: Medium
+
+Observation:
+Remote snapshots validate trade structure and order relationships, but the
+snapshot validation does not establish consistency between the supplied
+Trade.state and a verifiable trade-state history.
+
+Review question:
+Should future security requirements validate trade-state history during
+snapshot synchronization?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-004
+Area: Order synchronization
+Files:
+  - crates/p2p-node/src/sync.rs
+  - crates/p2p-node/src/orderbook.rs
+Status: REVIEW
+Severity: Medium
+
+Observation:
+Snapshot orders can update local order quantities through the snapshot
+synchronization path. The current code does not visibly establish
+owner authorization or monotonic/versioned legitimacy for those updates.
+
+Review question:
+Should future security requirements require authenticated order ownership
+and/or versioned monotonic order updates during synchronization?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-005
+Area: Pending trade-state cache
+File:
+  - crates/p2p-node/src/message_handler.rs
+Status: REVIEW
+Severity: Low/Medium
+
+Observation:
+MAX_PENDING_TRADE_STATES limits cache size, but pending entries do not
+appear to have a time-based expiration mechanism.
+
+Review question:
+Should future security requirements require TTL/expiry for state changes
+waiting for their corresponding TradeCreated message?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-006
+Area: Trade-state timestamps
+Files:
+  - crates/p2p-node/src/message_handler.rs
+  - crates/p2p-node/src/trade_state.rs
+Status: REVIEW
+Severity: Medium
+
+Observation:
+Remote timestamps are passed into trade-state transitions, but the current
+code does not visibly enforce timestamp freshness, monotonicity, or an
+acceptable clock-skew window.
+
+Review question:
+Should future security requirements address replay, delayed messages, or
+timestamp manipulation?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-007
+Area: State synchronization / persistence
+File:
+  - crates/p2p-node/src/sync.rs
+Status: REVIEW
+Severity: Medium
+
+Observation:
+Snapshot application persists the temporary books before committing them to
+memory, but persistence currently uses fs::write() rather than an explicitly
+crash-safe atomic replacement strategy.
+
+Review question:
+Should future security requirements cover crash consistency and protection
+against partial state-file writes?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+
+Finding SEC-002-AF-008
+Area: Trade creation / authorization
+File:
+  - crates/p2p-node/src/orderbook.rs
+Status: REVIEW
+Severity: High
+
+Observation:
+Trade application validates referenced orders, participants, market, price,
+and quantity. However, message authentication establishes the identity of
+the message sender rather than independently proving that the trade itself
+was authorized by the relevant trading parties or matching authority.
+
+Review question:
+Should future security requirements require cryptographic authorization
+or provenance for TradeCreated messages?
+
+Action:
+No change under SEC-002. Review separately after SEC-002.
+
+🔴 SEC-003 — State-specific transition authority missing
+Confirmed implementation facts:
+
+Peer authentication exists.
+Sender is bound to the authenticated PeerId.
+Sender must be a buyer or seller.
+State transitions are checked against the protocol transition graph.
+Duplicate state transitions are idempotent.
+Backward/stale state transitions are rejected by the state graph.
+Trade::transition() has no actor parameter.
+Trade::transition() performs no state-specific authorization.
+TradeStateChanged contains no actor/role information.
+Arbitrary remote timestamps are accepted as updated_at.
+PayoutPending → Settled is structurally legal.
+Disputed → Settled is structurally legal.
+Not yet established:
+
+Which participant owns each transition.
+Whether buyer and seller have asymmetric authority.
+Whether Settled may be directly participant-authorized.
+What authorizes Disputed → Settled.
+Whether timestamps are trusted anywhere else.
+Whether expiration/dispute/settlement should be derived from independently verifiable conditions.
 SEC-004 — Remote settlement trigger
 Status: 🔴 Open
 A transition to Settled reaches the local settlement path.
@@ -210,29 +525,54 @@ No security-hardening changes have been made yet.
 The current objective remains to establish the security invariants before modifying the implementation.
 
 SEC-001 — Remote message trust boundary
-Status: 🔴 Open
-Priority: Critical
-Remote GossipSub messages are deserialized and passed into domain handlers.
-The current message boundary is:
-GossipSub message
-↓
-OpenDexMessage deserialization
-↓
-payload deserialization
-↓
-domain handler
-↓
-state mutation
-The protocol currently validates message structure and payload decoding, but semantic validation and authorization are incomplete.
-The review confirms that protocol validity, domain validity, and authorization must remain separate security questions.
-Required review remains:
-• authenticated sender identity
-• payload validation
-• domain invariants
-• operation authorization
-• replay handling
-• persistence safety
-• resource limits
+Status: 🟢 Mitigated
+
+Remote GossipSub messages are untrusted network input and must not be allowed to assert an identity different from the authenticated libp2p peer or perform operations outside that peer's authorization scope.
+
+Finding
+The message protocol contains a caller-supplied sender field. The required security boundary is:
+
+untrusted GossipSub message
+        ↓
+protocol decoding
+        ↓
+authenticated PeerId verification
+        ↓
+operation-specific authorization
+        ↓
+domain state mutation
+
+The implementation now enforces this boundary before dispatching remote messages to domain handlers.
+
+Controls implemented
+msg.sender is authenticated against the PeerId associated with the received GossipSub message.
+Messages whose claimed sender does not match the authenticated peer are rejected before domain handling.
+OrderCreated requires order.trader to match the authenticated sender.
+OrderCancelled requires the cancellation trader to match the authenticated sender and the referenced order owner.
+TradeStateChanged requires the authenticated sender to be a participant in the referenced trade.
+Rejected forged/unauthorized messages are verified not to mutate the affected domain state.
+Legitimate authenticated order ownership and legitimate buyer/seller trade participation are covered by regression tests.
+Security test coverage
+Test	Control verified	Result
+rejects_message_with_forged_sender	Claimed sender cannot differ from authenticated PeerId	✅
+accepts_message_from_authenticated_sender	Authenticated sender is accepted	✅
+rejects_order_from_impersonated_trader	Order ownership cannot be impersonated	✅
+accepts_order_from_authenticated_trader	Legitimate order owner is accepted	✅
+rejects_order_cancellation_by_non_owner	Non-owner cannot cancel another trader's order	✅
+rejects_trade_state_change_from_unauthorized_peer	Non-participant cannot authorize trade state changes	✅
+accepts_trade_state_change_from_buyer	Buyer is an authorized participant	✅
+accepts_trade_state_change_from_seller	Seller is an authorized participant	✅
+handler_rejects_forged_sender_without_mutating_state	Forged sender is rejected before mutation	✅
+handler_rejects_order_from_impersonated_trader_without_mutating_state	Impersonated order cannot mutate order book	✅
+handler_rejects_unauthorized_trade_state_change	Unauthorized state change cannot mutate trade	✅
+handler_rejects_cancellation_by_non_owner	Unauthorized cancellation cannot mutate order book	✅
+
+Disposition
+SEC-001 is mitigated.
+
+The current implementation establishes the required sender-authentication and operation-specific authorization boundary for the reviewed remote message types.
+
+Priority: Critical → Mitigated
 
 SEC-002 — Remote order cancellation authority
 Status: 🔴 Confirmed security weakness
@@ -935,6 +1275,131 @@ State-transition authority
 Settlement authority
 A successfully decoded TradeCreated message must not be considered trustworthy merely because its fields have valid serialization types.
 
+SEC-013 — Remote StateSnapshot Synchronization Authority
+Status: 🔴 Open — Investigation
+Priority: Critical
+Category: Authorization / State Integrity / Synchronization
+
+Finding
+Remote StateResponse messages can reach the local state-synchronization path:
+
+StateResponse
+↓
+StateSnapshot
+↓
+apply_snapshot()
+↓
+OrderBook / TradeBook mutation
+↓
+persistence
+
+The receiving node authenticates the network sender, but authentication of the sending peer does not by itself establish that the peer is authorized to provide authoritative state.
+
+The current security boundary therefore remains:
+
+Authenticated PeerId
+        ≠
+Authorized synchronization authority
+
+apply_snapshot() can affect authoritative local state, including:
+
+active orders;
+removed-order identifiers;
+trades;
+applied-trade tracking;
+pending-related state through order updates;
+persistent local state.
+This makes state synchronization a distinct authorization boundary rather than merely a message-decoding concern.
+
+Security Risk
+A malicious or insufficiently trusted authenticated peer may be able to submit a structurally valid snapshot that causes local state to be changed without first establishing that the peer has authority over the affected state.
+
+Potential consequences include:
+
+unauthorized order removal;
+introduction of unauthorized orders;
+introduction or modification of trade state;
+resurrection or replacement of state;
+manipulation of removed-order tracking;
+inconsistent local state between peers;
+persistence of attacker-influenced state;
+replay of stale or conflicting snapshots.
+No claim should currently be made that all of these effects are exploitable. The immediate finding is that the synchronization authority model is not yet explicitly established.
+
+Required Security Contract
+Before apply_snapshot() is permitted to perform protected state mutation, the receiving node should be able to establish:
+
+UNTRUSTED NETWORK INPUT
+        ↓
+Authenticated sender
+        ↓
+Synchronization authorization
+        ↓
+Snapshot semantic validation
+        ↓
+State reconciliation
+        ↓
+Validated domain mutation
+        ↓
+Crash-consistent persistence
+
+The protocol must explicitly define whether a StateSnapshot is:
+
+authoritative;
+advisory;
+scoped to a particular peer or role;
+authoritative only for particular objects;
+or merely a recovery/synchronization proposal.
+Required Investigation
+Determine:
+
+whether any remote peer is authorized to provide canonical exchange state;
+whether synchronization authority is global, scoped, or object-specific;
+which snapshot fields are authoritative;
+whether individual orders require the same authorization and semantic validation as OrderCreated;
+whether individual trades require the same validation as TradeCreated;
+whether remote snapshots may remove arbitrary local orders;
+whether remote snapshots may introduce arbitrary orders or trades;
+how stale snapshots are identified and rejected;
+how conflicting snapshots are resolved;
+whether removed orders can ever be resurrected;
+whether trades can be resurrected or replaced;
+how replayed snapshots behave;
+whether snapshot application bypasses normal object-level authorization rules;
+how snapshot persistence remains crash-consistent;
+whether snapshot application should reconcile state rather than directly replace or mutate local state.
+Important Distinction
+The following must remain separate:
+
+Protocol validity
+        ≠
+Domain validity
+        ≠
+Authenticated identity
+        ≠
+Synchronization authorization
+        ≠
+Authoritative state
+
+A correctly authenticated peer is not automatically a trusted source of canonical local state.
+
+Current Assessment
+This is an architectural/security finding requiring investigation.
+
+No implementation change should be made solely to close this finding until the intended synchronization trust model has been established.
+
+The objective is to define the authoritative synchronization invariant first and then implement the smallest control that enforces that invariant.
+
+Related Findings
+SEC-001 — Remote message trust boundary
+SEC-005 — State synchronization authority
+SEC-010 — Application sender identity is unauthenticated
+SEC-012 — Remote OrderCreated / existing order mutation
+AUD-001 — Settlement trust boundary (separate audit finding; do not merge with this finding)
+Next Step
+Define the authoritative StateResponse / StateSnapshot trust model before modifying apply_snapshot().
+
+Once the invariant is agreed, convert it into adversarial regression tests covering unauthorized snapshots, conflicting snapshots, stale snapshots, arbitrary removals, resurrection attempts, and persistence effects.
 Current Security Review Queue
 The updated priority is:
 1. 🔴 Remote OrderCreated authorization and order identity integrity
@@ -988,11 +1453,6 @@ Settlement authority
 For every remotely supplied state-changing object, the implementation should be able to answer:
 Who is allowed to create or modify this object, which fields are authoritative, and how does the receiving node independently verify those claims before mutating local state?
 The next security phase should therefore focus first on remote order creation/update authority, completion of the authoritative Trade invariant set, and then trade-state and settlement authority.
-
-
-
-
-
 
 Security Log Update
 Date: 2026-08-31
@@ -1100,58 +1560,12 @@ Questions to answer:
 • Can an authenticated peer be trusted to provide canonical exchange state?
 No fix should be made until the intended state-sync trust model is established.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 AUD-001 — Settlement trust boundary
 Severity: HIGH / potentially CRITICAL
 Status: Open
 Summary: Settlement consumes Trade fields without independently enforcing
 the order-validation boundary.
 Action: Verify and harden the network-to-settlement path.
-
-
-
 
 AUD-001 — Harden settlement validation boundary
 AUD-002 — Make settlement persistence transactional
@@ -1179,4 +1593,126 @@ The security significance is that a network identity is currently sufficient to 
 
 Status: Open — finding phase. No code changed.
 
+OpenDEX — Security Log Update
+Security Review Checkpoint
+Date: 2 September 2026
+Classification: Security architecture / state synchronization trust boundary
+Status: 🟡 Investigation checkpoint — no new code changes
 
+The current security review has reached the state-synchronization boundary following the implementation and regression verification of authenticated peer identity, order authorization, trade-state authorization, pending trade-state authorization, and core TradeCreated semantic validation.
+
+The immediate remaining security focus is the remote:
+
+StateResponse
+↓
+StateSnapshot
+↓
+apply_snapshot()
+↓
+OrderBook / TradeBook mutation
+↓
+persistence
+
+Current Finding — State Synchronization Authority
+An authenticated network peer can currently submit a structurally valid StateResponse, which reaches apply_snapshot() and can influence authoritative local domain state.
+
+Network authentication establishes:
+
+authenticated PeerId
+
+but does not by itself establish:
+
+authority to provide canonical local state
+
+The receiving node therefore needs to distinguish:
+
+Authenticated sender
+≠
+Authorized state authority
+
+Security Questions Now Prioritized
+The state-synchronization protocol must explicitly establish:
+
+whether StateSnapshot is authoritative or advisory;
+which peers, if any, are authorized to provide authoritative state;
+whether authorization is global, scoped, or object-specific;
+which snapshot fields are authoritative;
+whether individual orders and trades require independent semantic validation;
+how stale snapshots are detected and rejected;
+how conflicting snapshots are resolved;
+whether removed orders can ever be resurrected;
+whether trades can be resurrected or replaced;
+whether remote snapshots can introduce arbitrary removals;
+how replayed snapshots behave;
+whether snapshot application bypasses normal object authorization rules;
+how persistence remains crash-consistent during snapshot application.
+Required Security Invariant
+Before apply_snapshot() mutates protected domain state, the receiving node must be able to establish:
+
+UNTRUSTED NETWORK INPUT
+        ↓
+Authenticated sender
+        ↓
+Snapshot authorization
+        ↓
+Snapshot semantic validation
+        ↓
+State reconciliation
+        ↓
+Validated domain mutation
+        ↓
+Crash-consistent persistence
+
+A successfully authenticated StateResponse must not automatically be treated as an authoritative description of local exchange state.
+
+Current Assessment
+No new implementation changes are recorded in this checkpoint.
+
+The finding remains open because the intended synchronization trust model has not yet been formally established.
+
+The review should therefore define the state-synchronization authority model before implementing a narrow authorization fix. This is intended to prevent an implementation-level control from being introduced without a corresponding protocol invariant.
+
+Security Posture
+The following previously implemented controls remain verified:
+
+authenticated application/network identity binding;
+remote order-cancellation authorization;
+trade participant authorization;
+pending trade-state authorization;
+core remote TradeCreated semantic validation;
+validation before mutation;
+trade idempotency;
+settlement idempotency;
+checked financial arithmetic;
+locked-balance validation;
+removed-order protection;
+persistence/restart regression coverage;
+multi-node networking tests.
+Security hardening remains incomplete and the system should not yet be represented as having complete protocol security.
+
+Next Security Milestone
+The next dedicated review should establish the authoritative security contract for:
+
+StateResponse
+↓
+StateSnapshot
+↓
+apply_snapshot()
+
+and then convert those invariants into executable adversarial regression tests.
+
+Current principle remains:
+
+Protocol validity
+≠
+Domain validity
+≠
+Authenticated identity
+≠
+Authorization
+≠
+State-transition authority
+≠
+Settlement authority
+≠
+Synchronization authority

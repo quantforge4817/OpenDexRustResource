@@ -1,97 +1,104 @@
-OpenDEX — Architecture Development Master Plan
-“The old v2.0 can be retained in Git history...”
-Version: 3.0
-Date: 2 September 2026
-Status: Active — Architectural Redesign & Simplification
-Supersedes: Version 2.0
+ # OpenDEX — Architecture Development Master Plan
 
-1. Mission
+ > “The old v2.0 can be retained in Git history…”
 
-The objective is to evolve OpenDEX into a modular, comprehensible, auditable and security-conscious P2P exchange implementation.
+ **Version:** 3.0\
+ **Date:** 6 September 2026\
+ **Status:** Active — Architectural Redesign & Simplification\
+ **Supersedes:** Version 2.0
 
-The project must avoid reproducing the original monolithic architecture as functionality is migrated or redesigned.
+---
 
-The guiding principle remains:
+ ## 1\. Mission
 
-Simple code, narrow responsibilities, explicit boundaries, minimal authority and predictable state transitions.
+ The objective is to evolve OpenDEX into a modular, comprehensible, auditable and security-conscious P2P exchange implementation.
 
-The purpose of the architecture work is therefore not simply code organisation.
+ The project must avoid reproducing the original monolithic architecture as functionality is migrated or redesigned.
 
-The eventual system should be:
+ The guiding principle remains:
 
-easier to understand
-easier to test
-easier to maintain
-easier to audit
-harder to misuse
-less coupled
-less exposed to unexpected interactions
-easier to reason about from a security perspective
+ > **Simple code, narrow responsibilities, explicit boundaries, minimal authority and predictable state transitions.**
 
-This document is the single architectural and development plan for OpenDEX.
+ The purpose of the architecture work is therefore not simply code organisation.
 
-2. Governing Architectural Principles
+ The eventual system should be:
 
-These principles govern all future development.
+ - easier to understand
+- easier to test
+- easier to maintain
+- easier to audit
+- harder to misuse
+- less coupled
+- less exposed to unexpected interactions
+- easier to reason about from a security perspective
 
-2.1 Simplicity
+ This document is the single architectural and development plan for OpenDEX.
 
-Prefer the simplest design that correctly expresses the required behaviour.
+---
 
-Additional abstraction, indirection or modules must have a clear purpose.
+ ## 2\. Governing Architectural Principles
 
-We will not create abstractions merely because they appear architecturally sophisticated.
+ These principles govern all future development.
 
-2.2 Narrow Responsibilities
+ ### 2.1 Simplicity
 
-Each component should have one clear primary responsibility.
+ Prefer the simplest design that correctly expresses the required behaviour.
 
-A component should not simultaneously become responsible for:
+ Additional abstraction, indirection or modules must have a clear purpose.
 
-networking
-message decoding
-order matching
-trade state
-balances
-settlement
-persistence
-peer management
+ We will not create abstractions merely because they appear architecturally sophisticated.
 
-unless there is a compelling architectural reason.
+ ### 2.2 Narrow Responsibilities
 
-2.3 Minimal Authority
+ Each component should have one clear primary responsibility.
 
-Every function and module should receive only the state and capabilities it actually requires.
+ A component should not simultaneously become responsible for:
 
-A network message handler should not automatically have unrestricted authority over financial state.
+ - networking
+- message decoding
+- order matching
+- trade state
+- balances
+- settlement
+- persistence
+- peer management
 
-A balance component should not need to understand libp2p.
+ unless there is a compelling architectural reason.
 
-A domain operation should not need to understand Gossipsub.
+ ### 2.3 Minimal Authority
 
-2.4 Explicit Boundaries
+ Every function and module should receive only the state and capabilities it actually requires.
 
-The boundaries between:
+ A network message handler should not automatically have unrestricted authority over financial state.
 
-network
-messages
-validation
-authorisation
-domain logic
-state
-persistence
-publication
+ A balance component should not need to understand libp2p.
 
-must be explicit.
+ A domain operation should not need to understand Gossipsub.
 
-Raw network input must not flow directly into sensitive state mutation.
+ ### 2.4 Explicit Boundaries
 
-2.5 Predictable State Transitions
+ The boundaries between:
 
-Security-sensitive state changes must be explicit and traceable.
+ - network
+- messages
+- validation
+- authorisation
+- domain logic
+- state
+- persistence
+- publication
 
-An auditor should be able to follow:
+ must be explicit.
 
+ Raw network input must not flow directly into sensitive state mutation.
+
+ ### 2.5 Predictable State Transitions
+
+ Security-sensitive state changes must be explicit and traceable.
+
+ An auditor should be able to follow:
+
+```
 Input
   ↓
 Decode
@@ -107,28 +114,31 @@ State transition
 Persistence
   ↓
 Event/publication
+```
 
+ without tracing through a large event handler.
 
-without tracing through a large event handler.
+ ### 2.6 Preserve Behaviour Unless Intentionally Changed
 
-2.6 Preserve Behaviour Unless Intentionally Changed
+ The redesign is permitted to replace the implementation.
 
-The redesign is permitted to replace the implementation.
+ It is not permitted to accidentally change protocol or business behaviour.
 
-It is not permitted to accidentally change protocol or business behaviour.
+ Where behaviour is intentionally changed to correct a bug or security weakness, the change must be documented and tested.
 
-Where behaviour is intentionally changed to correct a bug or security weakness, the change must be documented and tested.
+---
 
-3. Why the Architecture Is Being Redesigned
+ ## 3\. Why the Architecture Is Being Redesigned
 
-The existing modularisation successfully removed much of the original networking monolith.
+ The existing modularisation successfully removed much of the original networking monolith.
 
-However, further inspection has demonstrated that simply continuing a file-by-file complexity refactor is not necessarily the simplest or safest path.
+ However, further inspection has demonstrated that simply continuing a file-by-file complexity refactor is not necessarily the simplest or safest path.
 
-Important state transitions remain distributed across multiple components.
+ Important state transitions remain distributed across multiple components.
 
-Examples include:
+ Examples include:
 
+```
 command_handler
     ↓
 lock_for_order()
@@ -146,10 +156,11 @@ settlement
 consume_locked()
     ↓
 balances
+```
 
+ and:
 
-and:
-
+```
 order cancellation
     ↓
 remove_order()
@@ -157,100 +168,108 @@ remove_order()
 unlock_for_order()
     ↓
 balances
+```
 
+ This creates several architectural concerns:
 
-This creates several architectural concerns:
+ - financial state mutations are distributed
+- order and trade state have overlapping responsibilities
+- settlement is triggered from message-processing paths
+- multiple event paths can reach related state transitions
+- persistence boundaries are not sufficiently centralised
+- handlers have more authority than their names suggest
+- correctness depends on interactions between modules
+- security auditing becomes unnecessarily difficult
 
-financial state mutations are distributed
-order and trade state have overlapping responsibilities
-settlement is triggered from message-processing paths
-multiple event paths can reach related state transitions
-persistence boundaries are not sufficiently centralised
-handlers have more authority than their names suggest
-correctness depends on interactions between modules
-security auditing becomes unnecessarily difficult
+ The redesign therefore changes the objective from:
 
-The redesign therefore changes the objective from:
+ > Refactor the existing architecture file by file
 
-Refactor the existing architecture file by file
+ to:
 
-to:
+ > **Define a simpler state and authority model, then migrate the implementation toward it.**
 
-Define a simpler state and authority model, then migrate the implementation toward it.
+---
 
-4. Architectural Direction
+ ## 4\. Architectural Direction
 
-The target architecture is based on a strict separation between network concerns and domain concerns.
+ The target architecture is based on a strict separation between network concerns and domain concerns.
 
-The conceptual architecture is:
+ The conceptual architecture is:
 
-                         NETWORK
-                            │
-                            ▼
-                 ┌─────────────────────┐
-                 │  Message Boundary   │
-                 │                     │
-                 │ decode              │
-                 │ basic validation    │
-                 │ authentication      │
-                 └──────────┬──────────┘
-                            │
-                            ▼
-                 ┌─────────────────────┐
-                 │   Message Router    │
-                 └──────────┬──────────┘
-                            │
-             ┌──────────────┼──────────────┐
-             ▼              ▼              ▼
-          Orders          Trades        State Sync
-             │              │              │
-             └──────────────┼──────────────┘
-                            ▼
-                 ┌─────────────────────┐
-                 │    Domain Layer     │
-                 │                     │
-                 │ validation          │
-                 │ authorisation       │
-                 │ state transitions   │
-                 └──────────┬──────────┘
-                            │
-                 ┌──────────┴──────────┐
-                 ▼                     ▼
-          ┌─────────────┐       ┌─────────────┐
-          │    State    │       │  Balances   │
-          │             │       │             │
-          │ orders      │       │ available   │
-          │ trades      │       │ locked      │
-          │ lifecycle   │       │ mutations   │
-          └─────────────┘       └──────┬──────┘
-                                       │
-                                       ▼
-                                ┌─────────────┐
-                                │ Settlement  │
-                                └─────────────┘
-                                       │
-                                       ▼
-                                  Persistence
+```
+                          NETWORK
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │  Message Boundary   │
+                  │                     │
+                  │ decode              │
+                  │ basic validation    │
+                  │ authentication      │
+                  └──────────┬──────────┘
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │   Message Router    │
+                  └──────────┬──────────┘
+                             │
+                 ┌───────────┼───────────┐
+                 ▼           ▼           ▼
+              Orders       Trades     State Sync
+                 │           │           │
+                 └───────────┼───────────┘
+                             ▼
+                  ┌─────────────────────┐
+                  │    Domain Layer     │
+                  │                     │
+                  │ validation          │
+                  │ authorisation       │
+                  │ state transitions   │
+                  └──────────┬──────────┘
+                             │
+                  ┌──────────┴──────────┐
+                  ▼                     ▼
+           ┌─────────────┐       ┌─────────────┐
+           │    State    │       │  Balances   │
+           │             │       │             │
+           │ orders      │       │ available   │
+           │ trades      │       │ locked      │
+           │ lifecycle   │       │ mutations   │
+           └─────────────┘       └──────┬──────┘
+                                        │
+                                        ▼
+                                 ┌─────────────┐
+                                 │ Settlement  │
+                                 └─────────────┘
+                                        │
+                                        ▼
+                                   Persistence
+```
 
+ This is a target architectural model rather than a requirement that every box become a separate Rust module.
 
-This is a target architectural model rather than a requirement that every box become a separate Rust module.
+ The implementation should follow responsibilities, not the diagram mechanically.
 
-The implementation should follow the responsibilities, not the diagram mechanically.
+---
 
-5. Trust Boundary
+ ## 5\. Trust Boundary
 
-The most important security boundary is the transition from:
+ The most important security boundary is the transition from:
 
+```
 UNTRUSTED NETWORK INPUT
+```
 
+ to:
 
-to:
-
+```
 TRUSTED INTERNAL DOMAIN OPERATION
+```
 
+ The intended flow is:
 
-The intended flow is:
-
+```
 Network
    ↓
 Raw Message
@@ -268,16 +287,19 @@ Convert to domain operation
 Domain logic
    ↓
 Controlled state mutation
+```
 
+ Raw network structures must not directly control balances or settlement.
 
-Raw network structures must not directly control balances or settlement.
+---
 
-6. Domain Independence
+ ## 6\. Domain Independence
 
-Core exchange logic should be independent of libp2p wherever practical.
+ Core exchange logic should be independent of libp2p wherever practical.
 
-The preferred relationship is:
+ The preferred relationship is:
 
+```
 libp2p
    ↓
 transport
@@ -287,89 +309,110 @@ message boundary
 domain operation
    ↓
 state
+```
 
+ rather than:
 
-rather than:
-
+```
 domain logic
-   ↔
+    ↕
 libp2p
-   ↔
+    ↕
 Gossipsub
-   ↔
+    ↕
 Kademlia
+```
 
+ This allows core exchange behaviour to be tested without requiring a running P2P network.
 
-This allows core exchange behaviour to be tested without requiring a running P2P network.
+---
 
-7. State Ownership
+ ## 7\. State Ownership
 
-The redesign will explicitly define ownership of mutable state.
+ The redesign will explicitly define ownership of mutable state.
 
-The following questions must have one clear answer:
+ The following questions must have one clear answer:
 
-Who creates orders?
-Who removes orders?
-Who matches orders?
-Who creates trades?
-Who changes trade state?
-Who locks funds?
-Who unlocks funds?
-Who consumes locked funds?
-Who credits balances?
-Who performs settlement?
-Who persists state?
-Who publishes resulting protocol events?
+ - Who creates orders?
+- Who removes orders?
+- Who matches orders?
+- Who creates trades?
+- Who changes trade state?
+- Who locks funds?
+- Who unlocks funds?
+- Who consumes locked funds?
+- Who credits balances?
+- Who performs settlement?
+- Who persists state?
+- Who publishes resulting protocol events?
 
-There should not be multiple unrelated paths capable of performing the same sensitive mutation.
+ There should not be multiple unrelated paths capable of performing the same sensitive mutation.
 
-8. Order State
+ Each sensitive state component must have:
 
-Orders represent trading intent.
+ - a clearly identified owner
+- defined mutation operations
+- defined validation requirements
+- defined authorisation requirements
+- defined persistence behaviour
+- defined event/publication behaviour where applicable
 
-Order-related responsibilities should include:
+ Broad mutable access should be avoided wherever practical.
 
-order validation
-order ownership
-order lifecycle
-order matching
-remaining quantity
-removal/cancellation
-order-book state
+---
 
-The order system should not directly contain network-specific behaviour.
+ ## 8\. Order State
 
-The order system should not be responsible for interpreting arbitrary network messages.
+ Orders represent trading intent.
 
-9. Trade State
+ Order-related responsibilities should include:
 
-Trades represent the result of a successful match.
+ - order validation
+- order ownership
+- order lifecycle
+- order matching
+- remaining quantity
+- removal/cancellation
+- order-book state
 
-Trade responsibilities should include:
+ The order system should not directly contain network-specific behaviour.
 
-trade identity
-participating orders
-buyer
-seller
-market
-price
-amount
-lifecycle state
-valid state transitions
-trade idempotency
+ The order system should not be responsible for interpreting arbitrary network messages.
 
-Trade state transitions must be explicit.
+---
 
-A trade should not become settled merely because a particular message was received.
+ ## 9\. Trade State
 
-The domain must determine whether the transition is valid.
+ Trades represent the result of a successful match.
 
-10. Balance Architecture
+ Trade responsibilities should include:
 
-Balances represent financial state and therefore require a particularly narrow authority boundary.
+ - trade identity
+- participating orders
+- buyer
+- seller
+- market
+- price
+- amount
+- lifecycle state
+- valid state transitions
+- trade idempotency
 
-A balance system should explicitly distinguish:
+ Trade state transitions must be explicit.
 
+ A trade should not become settled merely because a particular message was received.
+
+ The domain must determine whether the transition is valid.
+
+---
+
+ ## 10\. Balance Architecture
+
+ Balances represent financial state and therefore require a particularly narrow authority boundary.
+
+ A balance system should explicitly distinguish:
+
+```
 available funds
        │
        ▼
@@ -378,27 +421,30 @@ locked funds
        ├── unlock
        │
        └── consume during settlement
+```
 
+ Balance mutations must be explicit.
 
-Balance mutations must be explicit.
+ The following operations require particular scrutiny:
 
-The following operations require particular scrutiny:
+ - credit
+- debit
+- lock
+- unlock
+- consume locked funds
+- settlement transfers
 
-credit
-debit
-lock
-unlock
-consume locked funds
-settlement transfers
+ The redesign must prevent unrelated network or order-book code from directly manipulating balances.
 
-The redesign must prevent unrelated network or order-book code from directly manipulating balances.
+---
 
-11. Settlement Architecture
+ ## 11\. Settlement Architecture
 
-Settlement is a financial state transition, not merely a consequence of receiving a network message.
+ Settlement is a financial state transition, not merely a consequence of receiving a network message.
 
-The intended conceptual operation is:
+ The intended conceptual operation is:
 
+```
 Validated Trade
       ↓
 Authorised Participants
@@ -418,35 +464,39 @@ Seller:
 Trade marked/recorded as settled
       ↓
 Persist
+```
 
+ Settlement must be:
 
-Settlement must be:
+ - deterministic
+- idempotent
+- explicitly authorised
+- validated before mutation
+- protected against arithmetic overflow
+- protected against insufficient funds
+- independent of network transport
 
-deterministic
-idempotent
-explicitly authorised
-validated before mutation
-protected against arithmetic overflow
-protected against insufficient funds
-independent of network transport
+ The implementation must avoid partial financial transitions.
 
-The implementation must avoid partial financial transitions.
+---
 
-12. Atomicity Principle
+ ## 12\. Atomicity Principle
 
-A financial operation must not leave the balance system partially modified if a later part of the same operation fails.
+ A financial operation must not leave the balance system partially modified if a later part of the same operation fails.
 
-The preferred model is:
+ The preferred model is:
 
+```
 validate everything
        ↓
 perform complete transition
        ↓
 persist result
+```
 
+ rather than:
 
-rather than:
-
+```
 mutate
    ↓
 try something else
@@ -454,52 +504,58 @@ try something else
 discover failure
    ↓
 attempt recovery
+```
 
+ Where persistence itself can fail after in-memory mutation, the architecture must explicitly determine the appropriate recovery or transactional strategy.
 
-Where persistence itself can fail after in-memory mutation, the architecture must explicitly determine the appropriate recovery or transactional strategy.
+ This issue must be addressed during the balance/settlement redesign rather than hidden inside handlers.
 
-This issue must be addressed during the balance/settlement redesign rather than hidden inside handlers.
+---
 
-13. Idempotency
+ ## 13\. Idempotency
 
-Distributed systems inevitably receive:
+ Distributed systems inevitably receive:
 
-duplicate messages
-delayed messages
-reordered messages
-repeated state notifications
-duplicate trade announcements
+ - duplicate messages
+- delayed messages
+- reordered messages
+- repeated state notifications
+- duplicate trade announcements
 
-Idempotency must therefore be a domain property wherever appropriate.
+ Idempotency must therefore be a domain property wherever appropriate.
 
-Trade settlement in particular must guarantee:
+ Trade settlement in particular must guarantee:
 
+```
 same trade
-     ↓
+    ↓
 first valid settlement → applied
-     ↓
+    ↓
 duplicate settlement → no second financial mutation
+```
 
+ Idempotency should not depend solely on a particular network handler behaving correctly.
 
-Idempotency should not depend solely on a particular network handler behaving correctly.
+---
 
-14. Message Architecture
+ ## 14\. Message Architecture
 
-Network messages should be treated as untrusted input.
+ Network messages should be treated as untrusted input.
 
-The message layer should be responsible for:
+ The message layer should be responsible for:
 
-decoding
-message-size considerations
-message-type validation
-sender authentication
-basic structural validation
-routing
+ - decoding
+- message-size considerations
+- message-type validation
+- sender authentication
+- basic structural validation
+- routing
 
-It should not become the primary owner of domain state.
+ It should not become the primary owner of domain state.
 
-The desired model is:
+ The desired model is:
 
+```
 Message
    ↓
 Validate
@@ -509,57 +565,68 @@ Authenticate
 Create domain operation
    ↓
 Domain
+```
 
-15. Authorisation
+---
 
-Authentication and authorisation are separate concerns.
+ ## 15\. Authorisation
 
-Knowing who sent a message does not automatically mean that the sender is authorised to perform the requested operation.
+ Authentication and authorisation are separate concerns.
 
-For operations involving orders or trades, ownership and participation must be explicitly checked.
+ Knowing who sent a message does not automatically mean that the sender is authorised to perform the requested operation.
 
-The system should be able to answer:
+ For operations involving orders or trades, ownership and participation must be explicitly checked.
 
+ The system should be able to answer:
+
+```
 Who sent this?
-        ↓
+       ↓
 What operation are they requesting?
-        ↓
+       ↓
 Are they authorised to perform it?
-        ↓
+       ↓
 What state may they change?
+```
 
-16. Network Architecture
+---
 
-Networking should remain responsible for network concerns.
+ ## 16\. Network Architecture
 
-Existing functionality includes:
+ Networking should remain responsible for network concerns.
 
-libp2p
-peer identity
-listening
-direct dialing
-Identify
-Kademlia
-Gossipsub
-topic subscription
-connection lifecycle
-network event processing
+ Existing functionality includes:
 
-These capabilities should remain operational while being progressively isolated from domain logic.
+ - libp2p
+- peer identity
+- listening
+- direct dialing
+- Identify
+- Kademlia
+- Gossipsub
+- topic subscription
+- connection lifecycle
+- network event processing
 
-Networking should not directly implement:
+ These capabilities should remain operational while being progressively isolated from domain logic.
 
-settlement rules
-balance rules
-trade lifecycle rules
-financial validation
-core matching semantics
-17. Message Router
+ Networking should not directly implement:
 
-The message router should become a thin boundary.
+ - settlement rules
+- balance rules
+- trade lifecycle rules
+- financial validation
+- core matching semantics
 
-Conceptually:
+---
 
+ ## 17\. Message Router
+
+ The message router should become a thin boundary.
+
+ Conceptually:
+
+```
 incoming message
        ↓
 decode
@@ -571,65 +638,75 @@ route
        ├── trade operation
        ├── state synchronisation
        └── network operation
+```
 
+ The router should not become another monolith.
 
-The router should not become another monolith.
+ If routing logic begins accumulating domain behaviour, that behaviour must be moved into the appropriate domain component.
 
-If routing logic begins accumulating domain behaviour, that behaviour must be moved into the appropriate domain component.
+---
 
-18. State Synchronisation
+ ## 18\. State Synchronisation
 
-State synchronisation is a separate concern from ordinary domain operations.
+ State synchronisation is a separate concern from ordinary domain operations.
 
-State snapshots must be:
+ State snapshots must be:
 
-structurally validated
-bounded
-checked for consistency
-applied through controlled state operations
+ - structurally validated
+- bounded
+- checked for consistency
+- applied through controlled state operations
 
-A remote snapshot must never automatically grant authority to mutate protected financial state.
+ A remote snapshot must never automatically grant authority to mutate protected financial state.
 
-Particular attention will be given to:
+ Particular attention will be given to:
 
-stale snapshots
-malicious snapshots
-conflicting state
-oversized state
-repeated synchronisation
-trade/order inconsistencies
-19. Persistence
+ - stale snapshots
+- malicious snapshots
+- conflicting state
+- oversized state
+- repeated synchronisation
+- trade/order inconsistencies
 
-Persistence should have a clearly defined responsibility.
+---
 
-The system must distinguish between:
+ ## 19\. Persistence
 
+ Persistence should have a clearly defined responsibility.
+
+ The system must distinguish between:
+
+```
 domain state
+```
 
+ and:
 
-and:
-
+```
 storage representation
+```
 
+ Persistence should not silently contain business logic.
 
-Persistence should not silently contain business logic.
+ The redesign will evaluate whether:
 
-The redesign will evaluate whether:
+ - each state component should persist independently
+- a unified state store is simpler
+- operations require transactional persistence
+- crash recovery needs additional mechanisms
+- corrupted state can be detected and rejected
 
-each state component should persist independently
-a unified state store is simpler
-operations require transactional persistence
-crash recovery needs additional mechanisms
-corrupted state can be detected and rejected
+ The simplest safe approach should be preferred.
 
-The simplest safe approach should be preferred.
+---
 
-20. Module Direction
+ ## 20\. Module Direction
 
-The exact final module structure will be determined during implementation.
+ The exact final module structure will be determined during implementation.
 
-A possible target structure is:
+ A possible target structure is:
 
+```
 crates/p2p-node/src/
 
     main.rs
@@ -645,37 +722,41 @@ crates/p2p-node/src/
         state.rs
 
     persistence.rs
+```
 
+ This is illustrative only.
 
-This is illustrative only.
+ We will not create modules simply to match this diagram.
 
-We will not create modules simply to match this diagram.
+ If two responsibilities are genuinely simpler together, they may remain together.
 
-If two responsibilities are genuinely simpler together, they may remain together.
+ If a component becomes too authoritative or complex, it should be split.
 
-If a component becomes too authoritative or complex, it should be split.
+ The principle is responsibility, not file count.
 
-The principle is responsibility, not file count.
+---
 
-21. API Narrowing
+ ## 21\. API Narrowing
 
-Public interfaces should be reduced wherever practical.
+ Public interfaces should be reduced wherever practical.
 
-A function should receive:
+ A function should receive:
 
-the exact state it needs
-the exact command it needs
-the minimum capability required
+ - the exact state it needs
+- the exact command it needs
+- the minimum capability required
 
-Avoid passing broad collections of mutable state when a narrower interface is possible.
+ Avoid passing broad collections of mutable state when a narrower interface is possible.
 
-For example, prefer:
+ For example, prefer:
 
+```
 settle(trade, balances)
+```
 
+ over a function that receives:
 
-over a function that receives:
-
+```
 network
 order_book
 trade_book
@@ -683,16 +764,19 @@ balance_book
 pending_states
 swarm
 topic
+```
 
+ when most of those objects are irrelevant to settlement.
 
-when most of those objects are irrelevant to settlement.
+---
 
-22. Error Handling
+ ## 22\. Error Handling
 
-Errors should be explicit and predictable.
+ Errors should be explicit and predictable.
 
-Preferred pattern:
+ Preferred pattern:
 
+```
 validate
    ↓
 reject invalid input early
@@ -700,408 +784,710 @@ reject invalid input early
 perform operation
    ↓
 return result
+```
 
+ Avoid unnecessarily deep nesting.
 
-Avoid unnecessarily deep nesting.
+ Errors must not be hidden by logging.
 
-Errors must not be hidden by logging.
+ Logging should describe an error; it should not determine whether an operation succeeds.
 
-Logging should describe an error; it should not determine whether an operation succeeds.
+---
 
-23. Logging
+ ## 23\. Logging
 
-Logging will be separated conceptually into:
+ Logging will be separated conceptually into:
 
-operational events
-debugging information
-protocol events
-errors
-security-relevant events
+ - operational events
+- debugging information
+- protocol events
+- errors
+- security-relevant events
 
-Logging must never become part of the correctness mechanism.
+ Logging must never become part of the correctness mechanism.
 
-The system must not rely on:
+ The system must not rely on:
 
+```
 "we logged that settlement happened"
+```
 
+ as evidence that settlement actually occurred.
 
-as evidence that settlement actually occurred.
+ State determines truth.
 
-State determines truth.
+---
 
-24. Legacy and Dead Code
+ ## 24\. Legacy and Dead Code
 
-Legacy implementations will be removed where they are no longer required.
+ Legacy implementations will be removed where they are no longer required.
 
-Known examples requiring review include:
+ Known examples requiring review include:
 
+```
 main.rs.save
 main.rs.save.1
+```
 
+ and previously identified unused functionality such as:
 
-and previously identified unused functionality such as:
-
+```
 debit_available
 transfer_locked
+```
 
+ Legacy code must not remain simply because it might be useful someday.
 
-Legacy code must not remain simply because it might be useful someday.
+ Before removal, determine whether it is:
 
-Before removal, determine whether it is:
+ - required
+- part of an incomplete migration
+- obsolete
+- duplicated
+- incorrectly disconnected
 
-required
-part of an incomplete migration
-obsolete
-duplicated
-incorrectly disconnected
+ Once confirmed obsolete, it should be removed.
 
-Once confirmed obsolete, it should be removed.
+ The final security review should not have to reason about abandoned implementations.
 
-The final security review should not have to reason about abandoned implementations.
+---
 
-25. Migration Strategy
+ # 25\. Implementation / Migration Plan
 
-The redesign will proceed in controlled stages.
+ The redesign will proceed in controlled stages.
 
-Phase 1 — Architecture Definition
+ The purpose of this migration is **not** to move existing code into new files mechanically.
 
-Define:
+ The target architecture must be established first, and existing behaviour should be migrated only where it is compatible with the new state and authority model.
 
-state ownership
-trust boundaries
-domain operations
-mutation authority
-invariants
-module responsibilities
-persistence boundaries
+ Where the existing implementation conflicts with the target architecture, behaviour should be deliberately reimplemented rather than carrying the old architectural assumptions into new modules.
 
-No unnecessary implementation changes should be made before these are understood.
+ ### Phase 1 — Freeze the Current Implementation
 
-Phase 2 — Domain Core
+ Establish a regression baseline before beginning architectural migration.
 
-Build or restructure the core exchange operations independently of libp2p.
+ Run:
 
-Priority areas:
+```
+cargo check
+cargo test
+```
 
-orders
-trades
-balances
-settlement
-state transitions
+ Record:
 
-The domain core must be testable without a running network.
+ - current build status
+- current test status
+- known protocol behaviour
+- known business behaviour
+- existing P2P behaviour
+- known architectural or security issues
 
-Phase 3 — State Mutation Consolidation
+ Do not modify the old architecture simply to make migration easier.
 
-Reduce the number of places capable of changing sensitive state.
+ The existing implementation remains the behavioural reference until replacement behaviour has been verified.
 
-Particular attention:
+ ### Phase 2 — Map the Domain
 
-orders
-trades
-balances
-locked funds
-settlement
+ Identify the actual domain state and operations before deciding the final module structure.
 
+ The initial domain map must include:
 
-Each important mutation should have an identifiable owner.
+ - orders
+- order matching
+- trades
+- trade lifecycle
+- balances
+- locked funds
+- settlement
+- persistence
+- state synchronisation
 
-Phase 4 — Message Boundary Migration
+ For each state component, determine:
 
-Move network message handling toward:
+ - what state exists
+- who creates it
+- who owns it
+- who may mutate it
+- what operations may mutate it
+- what validation is required
+- what authorisation is required
+- whether the operation must be atomic
+- whether the operation must be idempotent
+- whether the state must be persisted
+- what events result from the operation
 
-decode
-  ↓
-validate
-  ↓
-authenticate
-  ↓
-authorise
-  ↓
-domain command
+ This domain map is authoritative for subsequent implementation work.
 
+ ### Phase 3 — Define State Ownership
 
-Network handlers should become progressively thinner.
+ Define exactly one primary owner for each sensitive mutable state component.
 
-Phase 5 — Network Integration
+ The implementation must identify the permitted mutation paths for:
 
-Reconnect the simplified domain core to:
+ - orders
+- order-book state
+- trades
+- trade lifecycle
+- available balances
+- locked balances
+- settlement state
+- synchronisation state
 
+ Broad mutable access should be reduced wherever practical.
+
+ Each sensitive mutation should have an identifiable owner and a small, explicit API.
+
+ ### Phase 4 — Define the New Module Boundaries
+
+ Establish the dependency direction before migrating implementation code.
+
+ The intended relationship is:
+
+```
 libp2p
-Identify
-Kademlia
-Gossipsub
-peer discovery
-message publication
+    ↓
+network transport
+    ↓
+message boundary
+    ↓
+authentication / authorisation
+    ↓
+domain command
+    ↓
+domain operation
+    ↓
+state mutation
+    ↓
+persistence
+    ↓
+event publication
+```
 
-The domain must remain independent of these mechanisms.
+ The domain must not depend unnecessarily on:
 
-Phase 6 — Persistence Integration
+ - libp2p
+- Gossipsub
+- Kademlia
+- network event types
+- transport-specific behaviour
 
-Establish clear persistence boundaries.
+ The network layer should transport messages rather than contain exchange logic.
 
-Verify:
+ The message layer should decode, structurally validate, authenticate, authorise and route messages rather than own financial state.
 
-successful operations persist
-failed operations do not create inconsistent state
-restart behaviour is correct
-duplicate operations remain safe
-corrupted data is handled safely
-Phase 7 — Legacy Removal
+ The persistence layer should store domain state rather than silently become another business-logic layer.
 
-Remove:
+ The exact Rust module structure will be determined by these responsibilities rather than imposed mechanically.
 
-obsolete handlers
-duplicate state mutation paths
-migration remnants
-unused APIs
-obsolete files
+ ### Phase 5 — Redesign Balances and Settlement
 
-Only after the replacement behaviour has been verified.
+ Balances and settlement receive special attention because the current implementation has coupling between:
 
-26. Development Rules
-Rule 1 — Preserve behaviour
+ - orders
+- locked funds
+- trades
+- balances
+- settlement
 
-Do not introduce unrelated protocol or business changes during architectural work.
+ Define the financial invariants before implementing the replacement.
 
-Rule 2 — Small logical changes
+ At minimum, establish and test:
 
-Each change should have one clear purpose.
+ - available funds cannot become negative
+- locked funds cannot exceed legitimately available funds
+- funds cannot be spent twice
+- settlement cannot create funds from nothing
+- settlement cannot be applied twice
+- failed operations cannot leave partial financial state
+- arithmetic overflow is rejected
+- insufficient funds are rejected
 
-Rule 3 — Compile frequently
+ The conceptual flow is:
 
-After meaningful changes:
+```
+validated trade
+      ↓
+authorised participants
+      ↓
+settlement preconditions
+      ↓
+complete financial transition
+      ↓
+trade marked settled
+      ↓
+persist
+```
 
+ Settlement must be deterministic, explicitly authorised, validated before mutation, idempotent and independent of network transport.
+
+ **Do not migrate existing settlement code merely because it already exists.**
+
+ If the existing implementation conflicts with these requirements, reimplement the behaviour within the new model.
+
+ ### Phase 6 — Implement the Domain Core
+
+ Build or restructure the core exchange operations independently of libp2p.
+
+ The domain core should provide explicit operations for the required behaviour, including as applicable:
+
+```
+create order
+cancel order
+match orders
+create trade
+transition trade
+lock funds
+unlock funds
+consume locked funds
+settle trade
+```
+
+ The exact API should be determined by the state-ownership model.
+
+ The domain core must be testable without a running P2P network.
+
+ State transitions must be explicit and invalid transitions must be rejected.
+
+ Focused unit tests should be added as each operation is implemented.
+
+ ### Phase 7 — Build the Message Boundary
+
+ Move network message handling toward the following sequence:
+
+```
+raw network message
+        ↓
+decode
+        ↓
+structural validation
+        ↓
+authenticate sender
+        ↓
+authorise operation
+        ↓
+convert to domain command
+        ↓
+execute domain operation
+        ↓
+produce result/event
+```
+
+ Network handlers should become progressively thinner.
+
+ Raw network structures must not directly control balances, trades or settlement.
+
+ Authentication must remain separate from authorisation.
+
+ Knowing the identity of the sender does not by itself grant permission to perform the requested operation.
+
+ ### Phase 8 — Reconnect P2P Networking
+
+ Reconnect the simplified domain core to the existing P2P functionality.
+
+ This includes:
+
+ - libp2p
+- peer identity
+- Identify
+- Kademlia
+- Gossipsub
+- peer discovery
+- topic subscription
+- connection lifecycle
+- message publication
+- state requests
+- state responses
+- trade synchronisation
+
+ The domain must remain independent of these mechanisms.
+
+ P2P components should act as transport and synchronisation infrastructure around the domain rather than become alternative owners of domain state.
+
+ ### Phase 9 — Integrate Persistence
+
+ Establish explicit persistence boundaries around the new state model.
+
+ Determine:
+
+ - what state is persisted
+- when state is persisted
+- whether operations require transactional persistence
+- how failed persistence is handled
+- how restart/recovery works
+- how corrupted state is detected
+- whether duplicate operations remain safe after restart
+
+ The architecture must explicitly address the case where an in-memory state transition succeeds but persistence fails.
+
+ Persistence must not become an alternative state-mutation mechanism outside the domain's authority model.
+
+ ### Phase 10 — Integration and Regression Testing
+
+ Verify the replacement architecture progressively.
+
+ Begin with:
+
+```
+single-node domain tests
+```
+
+ Then verify:
+
+```
+Node A
+   ↕
+Node B
+```
+
+ and subsequently:
+
+```
+Node A
+   ↕
+Node B
+   ↕
+Node C
+```
+
+ Test at minimum:
+
+ - connectivity
+- peer identity
+- Identify
+- Kademlia
+- Gossipsub
+- order propagation
+- order matching
+- trade creation
+- trade propagation
+- state requests
+- state responses
+- state synchronisation
+- duplicate handling
+- replay handling
+- trade lifecycle
+- settlement
+- balance invariants
+- restart/recovery where applicable
+
+ The replacement must demonstrate functional parity before the old implementation is removed, except where a deliberate bug or security correction has been documented and tested.
+
+ ### Phase 11 — Remove the Old Architecture
+
+ Only after the replacement behaviour has been verified should obsolete implementation paths be removed.
+
+ Review and remove, where confirmed obsolete:
+
+ - legacy handlers
+- duplicate state mutation paths
+- migration remnants
+- unused APIs
+- `.save` legacy implementations
+- obsolete files
+- disconnected or duplicated functionality
+
+ Before removal, determine whether each legacy component is:
+
+ - required
+- part of an incomplete migration
+- obsolete
+- duplicated
+- incorrectly disconnected
+
+ The final security review should not have to reason about abandoned implementations.
+
+ ### Phase 12 — Architecture and Security Review
+
+ After migration, perform a cross-module architecture review.
+
+ Review:
+
+ - dependency direction
+- state ownership
+- mutation authority
+- trust boundaries
+- authentication
+- authorisation
+- every financial mutation
+- every trade-state transition
+- persistence boundaries
+- network-to-domain boundaries
+- duplicate and replay handling
+- resource limits
+- error paths
+- remaining legacy code
+
+ Confirm that the final architecture satisfies the security invariants defined in this document.
+
+ Only after this review should the project proceed toward the formal security audit.
+
+---
+
+ ## 26\. Development Rules
+
+ ### Rule 1 — Preserve Behaviour
+
+ Do not introduce unrelated protocol or business changes during architectural work.
+
+ ### Rule 2 — Small Logical Changes
+
+ Each change should have one clear purpose.
+
+ ### Rule 3 — Compile Frequently
+
+ After meaningful changes:
+
+```
 cargo check
+```
 
-Rule 4 — Test frequently
+ ### Rule 4 — Test Frequently
 
-Run:
+ Run:
 
+```
 cargo test
+```
 
-Rule 5 — Test domain logic independently
+ ### Rule 5 — Test Domain Logic Independently
 
-Financial and state-transition logic should have tests that do not require networking.
+ Financial and state-transition logic should have tests that do not require networking.
 
-Rule 6 — Verify P2P after network changes
+ ### Rule 6 — Verify P2P After Network Changes
 
-Whenever networking behaviour changes, perform multi-node verification.
+ Whenever networking behaviour changes, perform multi-node verification.
 
-Rule 7 — Do not abstract for abstraction's sake
+ ### Rule 7 — Do Not Abstract for Abstraction's Sake
 
-More modules do not automatically mean better architecture.
+ More modules do not automatically mean better architecture.
 
-Rule 8 — Prefer explicit code
+ ### Rule 8 — Prefer Explicit Code
 
-Especially around:
+ Especially around:
 
-validation
-authorisation
-state transitions
-balances
-settlement
-peer identity
-message handling
-Rule 9 — Minimise authority
+ - validation
+- authorisation
+- state transitions
+- balances
+- settlement
+- peer identity
+- message handling
 
-A function should receive only the capabilities it needs.
+ ### Rule 9 — Minimise Authority
 
-Rule 10 — One owner for sensitive mutation
+ A function should receive only the capabilities it needs.
 
-Avoid multiple independent paths capable of changing the same protected state.
+ ### Rule 10 — One Owner for Sensitive Mutation
 
-Rule 11 — Domain logic must be network-independent
+ Avoid multiple independent paths capable of changing the same protected state.
 
-Where practical, domain operations must be testable without libp2p.
+ ### Rule 11 — Domain Logic Must Be Network-Independent
 
-Rule 12 — Security is part of implementation
+ Where practical, domain operations must be testable without libp2p.
 
-Do not postpone security considerations until the final audit.
+ ### Rule 12 — Security Is Part of Implementation
 
-27. Testing Strategy
+ Do not postpone security considerations until the final audit.
 
-Every architectural change must maintain a regression baseline.
+---
 
-Build
+ ## 27\. Testing Strategy
+
+ Every architectural change must maintain a regression baseline.
+
+ ### Build
+
+```
 cargo check
+```
 
-Unit tests
+ ### Unit Tests
+
+```
 cargo test
+```
 
+ Tests should cover:
 
-Tests should cover:
+ - order creation
+- order validation
+- order matching
+- order cancellation
+- trade creation
+- trade state transitions
+- balance credit
+- balance debit
+- locking
+- unlocking
+- locked-fund consumption
+- settlement
+- settlement idempotency
+- arithmetic overflow
+- insufficient balances
+- invalid state transitions
+- authorisation failures
+- P2P integration
 
-order creation
-order validation
-order matching
-order cancellation
-trade creation
-trade state transitions
-balance credit
-balance debit
-locking
-unlocking
-locked-fund consumption
-settlement
-settlement idempotency
-arithmetic overflow
-insufficient balances
-invalid state transitions
-authorisation failures
-P2P integration
+ ### Multi-Node Testing
 
-At minimum:
+ At minimum:
 
+```
 Node A
   ↕
 Node B
   ↕
 Node C
+```
 
+ Verify:
 
-Verify:
+ - connectivity
+- Identify
+- Kademlia
+- Gossipsub
+- order propagation
+- trade propagation
+- state request
+- state response
+- duplicate handling
+- trade lifecycle
+- settlement
+- balances
+- restart/recovery where applicable
 
-connectivity
-Identify
-Kademlia
-Gossipsub
-order propagation
-trade propagation
-state request
-state response
-duplicate handling
-trade lifecycle
-settlement
-balances
-restart/recovery where applicable
-28. Security Review Areas
+---
 
-After the architectural migration, conduct a dedicated attack-surface review.
+ ## 28\. Security Review Areas
 
-Network surface
+ After the architectural migration, conduct a dedicated attack-surface review.
 
-Review:
+ ### Network Surface
 
-listening interfaces
-inbound connections
-peer connections
-connection lifecycle
-discovery
-Identify
-Kademlia
-Gossipsub
-resource exhaustion
-Message surface
+ Review:
 
-Review:
+ - listening interfaces
+- inbound connections
+- peer connections
+- connection lifecycle
+- discovery
+- Identify
+- Kademlia
+- Gossipsub
+- resource exhaustion
 
-deserialisation
-malformed messages
-oversized messages
-unexpected message types
-duplicate messages
-replay
-sender identity
-authorisation
-state synchronisation
-State surface
+ ### Message Surface
 
-Review:
+ Review:
 
-order mutation
-trade mutation
-balance mutation
-locked funds
-settlement
-persistence
-state transitions
-Resource surface
+ - deserialisation
+- malformed messages
+- oversized messages
+- unexpected message types
+- duplicate messages
+- replay
+- sender identity
+- authorisation
+- state synchronisation
 
-Review:
+ ### State Surface
 
-unbounded collections
-pending messages
-pending trades
-pending state changes
-repeated synchronisation
-computationally expensive operations
-connection exhaustion
-29. Security Invariants
+ Review:
 
-The following invariants should become explicit testable properties.
+ - order mutation
+- trade mutation
+- balance mutation
+- locked funds
+- settlement
+- persistence
+- state transitions
 
-Financial invariants
+ ### Resource Surface
 
-Funds cannot be spent twice.
+ Review:
 
-Locked funds cannot exceed the funds legitimately locked.
+ - unbounded collections
+- pending messages
+- pending trades
+- pending state changes
+- repeated synchronisation
+- computationally expensive operations
+- connection exhaustion
 
-A settlement cannot create funds from nothing.
+---
 
-A settlement cannot be applied twice.
+ ## 29\. Security Invariants
 
-A failed operation must not produce a partial financial transition.
+ The following invariants should become explicit testable properties.
 
-Ownership invariants
+ ### Financial Invariants
 
-A peer cannot modify another peer's protected state without authorisation.
+ - Funds cannot be spent twice.
+- Locked funds cannot exceed the funds legitimately locked.
+- A settlement cannot create funds from nothing.
+- A settlement cannot be applied twice.
+- A failed operation must not produce a partial financial transition.
 
-Trade participants must be authenticated.
+ ### Ownership Invariants
 
-State-changing messages must be associated with an authorised participant where required.
+ - A peer cannot modify another peer's protected state without authorisation.
+- Trade participants must be authenticated.
+- State-changing messages must be associated with an authorised participant where required.
 
-State invariants
+ ### State Invariants
 
-Invalid trade transitions are rejected.
+ - Invalid trade transitions are rejected.
+- Duplicate operations are harmless where the protocol requires idempotency.
+- Remote messages cannot directly bypass domain validation.
 
-Duplicate operations are harmless where the protocol requires idempotency.
+ ### Architectural Invariants
 
-Remote messages cannot directly bypass domain validation.
+ - Network code does not directly implement financial rules.
+- Domain logic does not depend unnecessarily on libp2p.
+- Sensitive state has clearly defined mutation owners.
 
-Architectural invariants
+---
 
-Network code does not directly implement financial rules.
+ ## 30\. Definition of Done
 
-Domain logic does not depend unnecessarily on libp2p.
+ The redesign is not complete merely because:
 
-Sensitive state has clearly defined mutation owners.
-
-30. Definition of Done
-
-The redesign is not complete merely because:
-
+```
 cargo check
+```
 
+ passes.
 
-passes.
+ The architecture is considered complete when:
 
-The architecture is considered complete when:
+ - responsibilities are clear
+- state ownership is explicit
+- trust boundaries are clear
+- complex blocks have been reviewed
+- unnecessary nesting has been addressed
+- duplicated logic has been removed or justified
+- unnecessary authority has been reduced
+- dead code has been assessed
+- financial mutations have clear owners
+- settlement is explicit and idempotent
+- error paths are understandable
+- security-sensitive state changes are identifiable
+- domain logic can be tested independently
+- persistence behaviour is understood
+- P2P behaviour remains functional
+- tests pass
+- behaviour remains unchanged unless an intentional bug/security fix was made
+- obsolete architecture has been removed
 
-responsibilities are clear
-state ownership is explicit
-trust boundaries are clear
-complex blocks have been reviewed
-unnecessary nesting has been addressed
-duplicated logic has been removed or justified
-unnecessary authority has been reduced
-dead code has been assessed
-financial mutations have clear owners
-settlement is explicit and idempotent
-error paths are understandable
-security-sensitive state changes are identifiable
-domain logic can be tested independently
-persistence behaviour is understood
-P2P behaviour remains functional
-tests pass
-behaviour remains unchanged unless an intentional bug/security fix was made
-obsolete architecture has been removed
-31. Current Project Position
+---
 
-OpenDEX has already achieved substantial functional P2P migration.
+ ## 31\. Current Project Position
 
-Existing capabilities include:
+ OpenDEX has already achieved substantial functional P2P migration.
 
+ Existing capabilities include:
+
+```
 OpenDEX
    │
    ▼
@@ -1118,10 +1504,11 @@ P2P Node
    ├── Trade synchronisation
    ├── Trade deduplication
    └── Removed-order synchronisation
+```
 
+ The project now enters:
 
-The project now enters:
-
+```
 ARCHITECTURAL REDESIGN
         │
         ▼
@@ -1156,32 +1543,40 @@ SECURITY AUDIT PREPARATION
         │
         ▼
 FORMAL SECURITY REVIEW
+```
 
-32. Immediate Development Plan
+---
 
-The immediate objective is not to continue patching message_handler.rs.
+ ## 32\. Immediate Development Plan
 
-The immediate objective is to design the replacement state and authority model.
+ The immediate objective is **not** to continue patching `message_handler.rs`.
 
-The first implementation questions are:
+ The immediate objective is to design and implement the replacement state and authority model.
 
-What state exists?
-Who owns each state component?
-What operations may mutate it?
-What validation is required before mutation?
-What authorisation is required?
-What operations must be atomic?
-What must be idempotent?
-What must be persisted?
-What events need to be published?
-What code should have no knowledge of networking?
+ The first implementation questions are:
 
-Only after these questions are answered should implementation migration begin.
+ - What state exists?
+- Who owns each state component?
+- What operations may mutate it?
+- What validation is required before mutation?
+- What authorisation is required?
+- What operations must be atomic?
+- What must be idempotent?
+- What must be persisted?
+- What events need to be published?
+- What code should have no knowledge of networking?
 
-33. Architectural Success Criteria
+ These questions are addressed through the implementation/migration phases defined in Section 25.
 
-The final architecture should make the following flow easy to understand:
+ Implementation should proceed according to those phases rather than through uncontrolled file-by-file refactoring.
 
+---
+
+ ## 33\. Architectural Success Criteria
+
+ The final architecture should make the following flow easy to understand:
+
+```
 UNTRUSTED NETWORK INPUT
           │
           ▼
@@ -1197,10 +1592,10 @@ UNTRUSTED NETWORK INPUT
       AUTHORISE
           │
           ▼
-   DOMAIN OPERATION
+    DOMAIN OPERATION
           │
           ▼
- EXPLICIT STATE CHANGE
+  EXPLICIT STATE CHANGE
           │
       ┌───┴────┐
       ▼        ▼
@@ -1208,161 +1603,77 @@ UNTRUSTED NETWORK INPUT
       │        │
       └───┬────┘
           ▼
-      PERSIST
+       PERSIST
           │
           ▼
-   PUBLISH EVENT
+    PUBLISH EVENT
+```
 
+ A security auditor should be able to trace a sensitive operation through this sequence without having to reconstruct behaviour from unrelated event handlers.
 
-A security auditor should be able to trace a sensitive operation through this sequence without having to reconstruct behaviour from unrelated event handlers.
+---
 
-34. Core Objective
+ ## 34\. Core Objective
 
-The most important objective of this version of the plan is:
+ The most important objective of this version of the plan is:
 
-Do not merely make the existing architecture smaller. Build the simplest architecture that gives each responsibility a clear owner and each sensitive state transition an explicit boundary.
+ > **Do not merely make the existing architecture smaller. Build the simplest architecture that gives each responsibility a clear owner and each sensitive state transition an explicit boundary.**
 
-The project should favour:
+ The project should favour:
 
-less code
-less coupling
-less authority
-less implicit behaviour
-less duplicated state mutation
+ - less code
+- less coupling
+- less authority
+- less implicit behaviour
+- less duplicated state mutation
 
+ while increasing:
 
-while increasing:
+ - clarity
+- testability
+- auditability
+- isolation
+- traceability
+- predictability
 
-clarity
-testability
-auditability
-isolation
-traceability
-predictability
+ The redesign is successful when the architecture itself makes incorrect behaviour difficult to express.
 
+---
 
-The redesign is successful when the architecture itself makes incorrect behaviour difficult to express.
+ ## 35\. Final Architectural Principle
 
-35. Final Architectural Principle
+ OpenDEX should ultimately consist of a small number of clearly defined components with:
 
-OpenDEX should ultimately consist of a small number of clearly defined components with:
+ - narrow responsibilities
+- explicit inputs and outputs
+- minimal authority
+- controlled state mutation
+- predictable transitions
+- clear trust boundaries
+- independently testable domain logic
 
-narrow responsibilities
-explicit inputs and outputs
-minimal authority
-controlled state mutation
-predictable transitions
-clear trust boundaries
-independently testable domain logic
+ The architecture must be designed so that security is not something added after development.
 
-The architecture must be designed so that security is not something added after development.
+ > **Security should emerge from the structure of the system itself.**
 
-Security should emerge from the structure of the system itself.
+ This document replaces the existing `audit/Architecture_Development_Master_Plan.md` as the active architectural development plan.
 
-This should replace the existing audit/Architecture_Development_Master_Plan.md rather than sit beside it. The old v2.0 can be retained in Git history, but v3.0 becomes the document we work from going forward.
+ The old v2.0 may be retained in Git history, but v3.0 becomes the document we work from going forward.
 
+ There must be **one authoritative migration plan**, contained in Section 25. No duplicated or appended migration-plan material should be retained outside that section.
 
-Ah 😂 yes — the plan of action itself should be documented, but we don't need another heavyweight architectural document.
+ ### One important thing before you save it
 
-I'd add a short section to audit/Architecture_Redesign.md called "Implementation / Migration Plan". That way the redesign document contains both the target architecture and the controlled sequence for getting there.
+ I made the **document-cleanup fixes**, but I deliberately did **not** pretend that every architectural statement has been verified against the actual Rust codebase. For example, claims such as:
 
-I'd make the sequence explicit:
+ - “OpenDEX has already achieved substantial functional P2P migration”
+- `debit_available` being unused
+- `transfer_locked` being unused
+- the exact current responsibilities of `message_handler.rs`
+- the current persistence behaviour
 
-Freeze the current implementation
+ are **codebase-specific claims** that should be checked against the repository.
 
-Establish cargo check / cargo test baseline.
-Record current behaviour that must be preserved.
-Do not modify the old architecture yet.
+ So this is the **clean/fixed architecture document**, not yet a code-verified audit of whether the architecture accurately describes the current implementation.
 
-Map the domain
-
-Orders
-Order matching
-Trades
-Trade states
-Balances
-Locked funds
-Settlement
-Persistence
-
-Define state ownership
-
-Decide exactly which component owns each mutable state.
-Define the only permitted mutation paths.
-Eliminate broad &mut access wherever possible.
-
-Define the new module boundaries
-
-Domain logic independent of libp2p.
-Network layer handles transport.
-Message layer handles decoding/validation/routing.
-Domain services perform operations.
-Persistence has a defined boundary.
-
-Redesign balances + settlement
-
-This deserves special attention because the current implementation has coupling between orders, locks, trades and settlement.
-Define the invariants first.
-Then implement the new model.
-
-Implement the domain layer
-
-Build and test it without networking.
-Make state transitions explicit.
-Add focused unit tests.
-
-Build the message boundary
-
-Raw network message
-Decode
-Validate
-Authorise
-Convert to domain operation
-Execute
-Produce result/event
-
-Put P2P on top
-
-libp2p should transport messages rather than contain exchange logic.
-Reconnect Gossipsub, Identify, Kademlia and synchronisation to the new boundaries.
-
-Migrate persistence
-
-Make loading/saving explicit.
-Ensure persistence cannot accidentally become another state-mutation mechanism.
-
-Integration testing
-
-Single-node domain tests
-Two-node P2P
-Three-node P2P
-Order propagation
-Matching
-Trade propagation
-State synchronisation
-Duplicate/replay handling
-Settlement
-Balance invariants
-
-Remove the old architecture
-
-Only after the replacement has demonstrated functional parity.
-Remove .save legacy implementations and obsolete APIs.
-Re-run the full regression suite.
-
-Architecture/security review
-
-Review the final dependency direction.
-Review authority boundaries.
-Review every state mutation.
-Review network trust boundaries.
-Then move toward the formal security audit.
-One important addition
-
-I'd explicitly put this rule into the migration plan:
-
-Do not migrate code simply because it already exists. Reimplement behaviour where the existing implementation conflicts with the target architecture.
-
-That's particularly important for the settlement/balance problems we're looking at. We don't want to spend the redesign carrying old assumptions into new modules.
-
-So yes: document the plan, but keep it inside Architecture_Redesign.md. That gives us one document describing what we're building and how we're going to get there, while the Master Plan remains the higher-level set of principles we must obey.
+ The next sensible step is **Phase 1**: inspect the actual Rust code and establish the baseline before changing anything.
