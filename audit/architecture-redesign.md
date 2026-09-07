@@ -1677,3 +1677,58 @@ UNTRUSTED NETWORK INPUT
  So this is the **clean/fixed architecture document**, not yet a code-verified audit of whether the architecture accurately describes the current implementation.
 
  The next sensible step is **Phase 1**: inspect the actual Rust code and establish the baseline before changing anything.
+## Architecture Verification Status
+
+The architecture described in this document is a target architecture.
+The following inventory records which architectural boundaries have been
+verified against the current repository implementation.
+
+| Architecture claim | Verification status |
+|---|---|
+| Separate protocol crate | Verified |
+| Separate P2P/network layer | Verified |
+| Dedicated message handler | Verified |
+| Dedicated command handler | Verified |
+| Dedicated OrderBook | Verified |
+| Dedicated TradeBook | Verified |
+| Dedicated balances | Verified |
+| Dedicated settlement | Verified |
+| Dedicated synchronization | Verified |
+| Matching owned by OrderBook | Verified |
+| Persistence exists | Verified |
+| Centralized persistence abstraction | Not present |
+| Fully separated authorization layer | Partially verified |
+| Synchronization authority model | Not yet established |
+| Complete remote semantic validation | Not yet established |
+| Target v3.0 architecture fully implemented | Not verified |
+
+Boundary	Current implementation	Verified
+|---|---|
+Network authentication	libp2p PeerId	✅
+Claimed sender binding	msg.sender == PeerId	✅
+Order authorization	Owner check	✅
+Cancellation authorization	Owner check	✅
+Trade authorization	Participant check	✅
+Trade-state authorization	Participant check	✅
+Snapshot semantic validation	validate_state_snapshot()	✅
+Snapshot authority	No check identified	⚠️
+Snapshot mutation	apply_snapshot()	Need to inspect
+Verification is based on the repository state at the Phase 1 architecture
+baseline. "Verified" means the corresponding boundary or responsibility
+was identified in the current Rust implementation; it does not mean that
+the implementation has been judged architecturally optimal or security
+complete.
+|---|---|
+current checkpoint.
+
+The target architecture must not be treated as an implementation claim.
+Remaining gaps are to be resolved through the architecture verification
+and migration process.
+Mutation surface has been mapped.
+Order, trade, balance, and snapshot mutation paths have been identified.
+Authentication/authorization checks have been located.
+Idempotency/tombstone mechanisms have been identified.
+Snapshot application is transactional.
+Existing tests cover a substantial portion of these invariants.
+Distributed ordering/convergence remains under verification.
+Failure consistency across order → trade → balance → persistence remains under verification.

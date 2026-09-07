@@ -137,3 +137,104 @@ fn lock_for_order_reserves_correct_asset() {
         }
     );
 }
+#[test]
+fn buy_order_reservation_tracks_order_id() {
+    let path = std::env::temp_dir().join("opendex-test-buy-reservation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Buy,
+        price: 100 * protocol::message::PRICE_SCALE,
+        amount: 2 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::XMR, 250 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(200 * protocol::message::AMOUNT_SCALE)
+    );
+}
+
+#[test]
+fn cancelling_buy_order_releases_remaining_reservation() {
+    let path = std::env::temp_dir().join("opendex-test-buy-cancel-reservation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Buy,
+        price: 100 * protocol::message::PRICE_SCALE,
+        amount: 2 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::XMR, 250 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+    book.unlock_for_order(&order).unwrap();
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 250 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.order_reservation(&order.id), None);
+}
+#[test]
+fn duplicate_order_reservation_does_not_double_lock() {
+    let path = std::env::temp_dir().join("opendex-test-duplicate-reservation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Buy,
+        price: 100 * protocol::message::PRICE_SCALE,
+        amount: 2 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::XMR, 500 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    assert!(book.lock_for_order(&order).is_err());
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 300 * protocol::message::AMOUNT_SCALE,
+            locked: 200 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(200 * protocol::message::AMOUNT_SCALE)
+    );
+}

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Balance {
@@ -17,6 +18,9 @@ pub struct BalanceBook {
 
     #[serde(default)]
     pub settled_trades: Vec<String>,
+
+    #[serde(default)]
+    pub order_reservations: HashMap<Uuid, u64>,
 
     #[serde(skip)]
     path: PathBuf,
@@ -37,8 +41,12 @@ impl BalanceBook {
         Self {
             balances: HashMap::new(),
             settled_trades: Vec::new(),
+            order_reservations: HashMap::new(),
             path,
         }
+    }
+    pub fn order_reservation(&self, order_id: &Uuid) -> Option<u64> {
+        self.order_reservations.get(order_id).copied()
     }
 
     pub fn load(path: PathBuf) -> Result<Self> {
@@ -101,33 +109,39 @@ impl BalanceBook {
         Ok(())
     }
     pub fn lock_for_order(&mut self, order: &Order) -> Result<()> {
-        match order.side {
-            Side::Buy => {
-                let required = quote_amount(order.price, order.amount)?;
-
-                self.lock(&order.trader, order.market.quote.clone(), required)?;
-            }
-
-            Side::Sell => {
-                self.lock(&order.trader, order.market.base.clone(), order.amount)?;
-            }
+        let required = match order.side {
+            Side::Buy => quote_amount(order.price, order.amount)?,
+            Side::Sell => order.amount,
+        };
+        if self.order_reservations.contains_key(&order.id) {
+            return Err(anyhow!("order {} already has a reservation", order.id));
         }
+
+        let asset = match order.side {
+            Side::Buy => order.market.quote.clone(),
+            Side::Sell => order.market.base.clone(),
+        };
+        self.lock(&order.trader, asset, required)?;
+
+        self.order_reservations.insert(order.id, required);
 
         Ok(())
     }
 
     pub fn unlock_for_order(&mut self, order: &Order) -> Result<()> {
-        match order.side {
-            Side::Buy => {
-                let amount = quote_amount(order.price, order.amount)?;
+        let amount = self
+            .order_reservations
+            .get(&order.id)
+            .copied()
+            .ok_or_else(|| anyhow!("no reservation found for order {}", order.id))?;
 
-                self.unlock(&order.trader, order.market.quote.clone(), amount)?;
-            }
+        let asset = match order.side {
+            Side::Buy => order.market.quote.clone(),
+            Side::Sell => order.market.base.clone(),
+        };
 
-            Side::Sell => {
-                self.unlock(&order.trader, order.market.base.clone(), order.amount)?;
-            }
-        }
+        self.unlock(&order.trader, asset, amount)?;
+        self.order_reservations.remove(&order.id);
 
         Ok(())
     }
