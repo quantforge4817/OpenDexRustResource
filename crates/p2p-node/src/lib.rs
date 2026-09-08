@@ -1,5 +1,6 @@
 pub mod balances;
 pub mod cli;
+pub mod exchange;
 pub mod message_handler;
 pub mod network;
 pub mod order_factory;

@@ -41,6 +41,8 @@ mod sync;
 
 mod persistence;
 
+mod exchange;
+
 use orderbook::OrderBook;
 
 use tokio::io::{self, AsyncBufReadExt};

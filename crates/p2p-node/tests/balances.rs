@@ -161,6 +161,11 @@ fn buy_order_reservation_tracks_order_id() {
     book.lock_for_order(&order).unwrap();
 
     assert_eq!(
+        book.order_reservation(&order.id),
+        Some(200 * protocol::message::AMOUNT_SCALE)
+    );
+
+    assert_eq!(
         book.balance("alice", &Asset::XMR),
         Balance {
             available: 50 * protocol::message::AMOUNT_SCALE,
