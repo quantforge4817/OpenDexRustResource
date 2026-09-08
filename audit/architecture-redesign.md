@@ -129,66 +129,73 @@ Event/publication
 ---
 
  ## 3\. Why the Architecture Is Being Redesigned
-
- The existing modularisation successfully removed much of the original networking monolith.
-
- However, further inspection has demonstrated that simply continuing a file-by-file complexity refactor is not necessarily the simplest or safest path.
-
- Important state transitions remain distributed across multiple components.
-
- Examples include:
-
-```
+ 
+  The existing modularisation successfully removed much of the original networking monolith.
+ 
+  However, further inspection has demonstrated that simply continuing a file-by-file complexity refactor is not necessarily the simplest or safest path.
+ 
+  Important state transitions remain distributed across multiple components.
+ 
+  Examples include:
+ 
 command_handler
-    ↓
+↓
 lock_for_order()
-    ↓
+↓
 order_book
-    ↓
+
+↓
 match_order()
-    ↓
+↓
+Exchange
+↓
 trade creation
-    ↓
+↓
+trade creation
+↓
 trade state
-    ↓
+↓
 settlement
-    ↓
+↓
 consume_locked()
-    ↓
+↓
 balances
-```
 
- and:
+The redesign therefore changes the objective from:
 
-```
-order cancellation
-    ↓
-remove_order()
-    ↓
-unlock_for_order()
-    ↓
-balances
-```
+> Refactor the existing architecture file by file
 
- This creates several architectural concerns:
+to:
 
- - financial state mutations are distributed
-- order and trade state have overlapping responsibilities
-- settlement is triggered from message-processing paths
-- multiple event paths can reach related state transitions
-- persistence boundaries are not sufficiently centralised
-- handlers have more authority than their names suggest
-- correctness depends on interactions between modules
-- security auditing becomes unnecessarily difficult
+> **Define a simpler state and authority model, then migrate the implementation toward it.**
 
- The redesign therefore changes the objective from:
-
- > Refactor the existing architecture file by file
-
- to:
-
- > **Define a simpler state and authority model, then migrate the implementation toward it.**
-
++### 3.1 Implementation Progress
++
++The redesign has now established several concrete boundaries:
++
++- order matching has been extracted behind the `Exchange` abstraction rather than remaining solely as an `OrderBook` concern
++- persistence helpers have been separated into `persistence.rs`
++- balance reservations are explicitly associated with order IDs
++- existing order, trade, settlement and security behaviour remains covered by tests
++
++These changes are incremental architectural progress rather than completion of the target architecture.
++
++The current verification checkpoint is:
++
++```
++cargo fmt --check → pass
++cargo test       → 96 passed, 0 failed
++```
++
++The test suite continues to cover authentication, authorisation, idempotency,
++distributed ordering/convergence, persistence, settlement and arithmetic
++failure cases.
++
++One non-fatal compiler warning remains for `BalanceBook::order_reservation`.
++Its current consumer is an integration test, so the production target reports
++the method as unused. This is not currently considered an architectural
++blocker.
++
 ---
 
  ## 4\. Architectural Direction
@@ -367,10 +374,10 @@ Kademlia
 
  Order-related responsibilities should include:
 
- - order validation
+- order validation
 - order ownership
 - order lifecycle
-- order matching
+- order matching, delegated to the exchange/matching boundary
 - remaining quantity
 - removal/cancellation
 - order-book state
