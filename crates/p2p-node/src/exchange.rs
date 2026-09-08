@@ -4,6 +4,11 @@ use protocol::message::{Order, Trade};
 use crate::orderbook::OrderBook;
 use crate::trades::TradeBook;
 
+pub struct SubmitOrder {
+    pub actor: String,
+    pub order: Order,
+}
+
 pub struct Exchange<'a> {
     pub order_book: &'a mut OrderBook,
     pub trade_book: &'a mut TradeBook,
@@ -17,7 +22,16 @@ impl<'a> Exchange<'a> {
         }
     }
 
-    pub fn submit_order(&mut self, order: Order) -> Result<Vec<Trade>> {
+    pub fn submit_order(&mut self, operation: SubmitOrder) -> Result<Vec<Trade>> {
+        if operation.actor != operation.order.trader {
+            anyhow::bail!(
+                "submit order actor is not the order owner: actor={}, trader={}",
+                operation.actor,
+                operation.order.trader
+            );
+        }
+
+        let order = operation.order;
         let trades = self.order_book.match_order(&order);
 
         self.order_book.add_order(order);

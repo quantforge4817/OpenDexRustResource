@@ -2063,3 +2063,53 @@ persist
 publish
 
 This boundary therefore represents the next stage of reducing authority and making the exchange domain independently understandable and auditable.
+
+### SubmitOrder Migration
+
+The Message Boundary → Domain Operation migration has begun.
+
+Order submission is represented by an explicit domain operation:
+
+SubmitOrder {
+    actor,
+    order
+}
+
+Both local command submission and remote OrderCreated handling
+construct the same domain operation rather than directly invoking
+OrderBook matching semantics.
+
+The message boundary remains responsible for:
+
+- decoding
+- sender authentication
+- message-specific authorisation checks
+
+The domain operation is responsible for enforcing actor/order ownership
+before mutating exchange state.
+
+converting the authenticated request into a domain operation
+The Exchange domain operation is responsible for:
+
+validating the submitter against the order owner
+order submission semantics
+matching
+trade creation
+order/trade state mutation
+The domain operation currently enforces the invariant:
+
+SubmitOrder.actor == SubmitOrder.order.trader
+
+This provides a second, domain-level authority boundary rather than
+relying exclusively on the network message handler to enforce order
+ownership.
+
+The migration does not yet imply that all financial or lifecycle
+authority has been removed from handlers. Balance locking,
+publication, persistence and other surrounding responsibilities remain
+outside SubmitOrder and will be migrated deliberately in subsequent
+architectural steps.
+
+The current implementation has been verified with the existing test
+suite, including security, order-book, trade and settlement tests.
+No protocol behaviour was intentionally changed by this migration.

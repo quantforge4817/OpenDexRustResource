@@ -107,6 +107,7 @@ pub fn handle_order_cancelled(cancelled: OrderCancelled, order_book: &mut OrderB
 
 pub fn handle_order_created(
     order: Order,
+    actor: &str,
     order_book: &mut OrderBook,
     trade_book: &mut TradeBook,
     swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
@@ -125,7 +126,10 @@ pub fn handle_order_created(
         println!("{:?}", order);
 
         let mut exchange = Exchange::new(order_book, trade_book);
-        let trades = exchange.submit_order(order.clone())?;
+        let trades = exchange.submit_order(crate::exchange::SubmitOrder {
+            actor: actor.to_string(),
+            order: order.clone(),
+        })?;
 
         if trades.is_empty() {
             order_book.print_orders();
@@ -353,6 +357,7 @@ pub fn handle_gossipsub_message(
 
             handle_order_created(
                 order,
+                &authenticated_sender,
                 ctx.order_book,
                 ctx.trade_book,
                 ctx.swarm,
