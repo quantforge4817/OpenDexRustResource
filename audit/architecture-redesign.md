@@ -1769,3 +1769,297 @@ Therefore:
 This confirms the existing architectural assessment that a centralized
 persistence abstraction is not currently present. The current implementation
 should not be described as having a unified persistence layer.
+
+|---|---|
+
+17. Message Boundary → Domain Operation
+The next architectural boundary is the separation between network message handling and exchange-domain operations.
+
+The current message_handler performs several distinct responsibilities:
+
+decode protocol messages
+authenticate the claimed sender
+authorise operations
+invoke exchange behaviour
+mutate order and trade state
+trigger settlement
+publish resulting messages
+coordinate persistence
+This is functional, but it gives the message handler more authority than its architectural role requires.
+
+The redesign will progressively change the message handler from a domain orchestrator into a network-to-domain adapter.
+
+The intended flow is:
+
+                    NETWORK
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Message Handler │
+              │                 │
+              │ decode          │
+              │ authenticate    │
+              │ basic validate  │
+              │ authorise       │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Domain Operation│
+              │                 │
+              │ explicit input  │
+              │ explicit actor  │
+              │ explicit intent │
+              └────────┬────────┘
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       Exchange     TradeBook    Settlement
+          │            │            │
+          └────────────┼────────────┘
+                       ▼
+                  Domain State
+
+The message handler should not interpret a valid network message as permission to perform arbitrary state mutation.
+
+Instead, it should establish the trusted facts required by the domain operation:
+
+raw message
+    ↓
+decode
+    ↓
+authenticate sender
+    ↓
+validate message
+    ↓
+authorise sender for operation
+    ↓
+construct domain operation
+    ↓
+execute domain operation
+
+17.1 Domain Operations
+A domain operation represents an explicit request to change exchange state.
+
+The operation should contain only the information required to perform the requested action.
+
+Examples include:
+
+SubmitOrder
+CancelOrder
+RecordTrade
+AdvanceTradeState
+ApplyStateSnapshot
+
+These names describe intent rather than transport.
+
+A domain operation must not require knowledge of:
+
+libp2p
+Gossipsub
+peer connections
+network events
+message encoding
+message propagation
+This keeps the core exchange behaviour testable without a running network.
+
+17.2 Remote Order Submission
+The first migration target will be remote order submission.
+
+The current conceptual path is:
+
+Gossipsub
+    ↓
+handle_gossipsub_message
+    ↓
+decode OrderCreated
+    ↓
+authenticate sender
+    ↓
+authorise order owner
+    ↓
+handle_order_created
+    ↓
+Exchange::submit_order
+    ↓
+OrderBook / TradeBook
+    ↓
+publish TradeCreated
+
+The target path is:
+
+Gossipsub
+    ↓
+message_handler
+    ↓
+decode + authenticate + authorise
+    ↓
+SubmitOrder
+    ↓
+Exchange
+    ↓
+domain state
+
+Publication of resulting protocol messages remains a transport/application concern and should not be embedded into the core exchange matching logic.
+
+This boundary will be introduced without changing matching semantics.
+
+17.3 Explicit Actor Context
+Where an operation depends on the identity of the requester, that identity must be explicit.
+
+For example:
+
+SubmitOrder {
+    actor
+    order
+}
+
+rather than relying on the domain operation to infer identity from network state.
+
+The message boundary establishes:
+
+authenticated peer
+        ↓
+authenticated actor
+
+The domain operation then performs any additional domain-level ownership or participation checks required by the operation.
+
+This preserves the distinction between:
+
+Authentication:
+    Who sent the message?
+
+Authorisation:
+    Is that actor permitted to perform this operation?
+
+Domain validation:
+    Is the requested operation valid?
+
+17.4 Authority Reduction
+The migration must reduce the authority held by message_handler.rs.
+
+In particular, the message handler should progressively stop directly coordinating:
+
+order matching
+trade lifecycle transitions
+settlement
+balance mutations
+Those responsibilities should be reached through explicit domain operations.
+
+The handler may continue to provide the necessary dependencies while the boundary is being migrated, but new domain behaviour should not be added directly to the handler.
+
+17.5 Publication Boundary
+Domain operations may produce results that require protocol publication.
+
+The preferred model is:
+
+Domain operation
+      ↓
+Domain result
+      ↓
+Application/network layer
+      ↓
+Protocol message
+      ↓
+Gossipsub
+
+rather than:
+
+Domain operation
+      ↓
+libp2p
+      ↓
+Gossipsub
+
+This keeps domain logic independent from network transport.
+
+For example, an order submission may produce:
+
+SubmitOrder
+    ↓
+Exchange
+    ↓
+TradeCreated result(s)
+
+The application layer can then convert those results into protocol messages and publish them.
+
+17.6 Incremental Migration Rule
+This boundary will be introduced incrementally.
+
+Each migration step must:
+
+preserve existing protocol behaviour;
+preserve existing security checks;
+preserve idempotency;
+preserve persistence semantics;
+maintain or improve test coverage;
+leave the architecture document consistent with the implementation.
+The migration should not introduce a large framework or generic command architecture unless the existing operations demonstrate a concrete need for one.
+
+The simplest useful domain boundary is preferred.
+
+17.7 Initial Migration Sequence
+The planned sequence is:
+
+1. Document Message Boundary → Domain Operation       ← current step
+2. Introduce remote SubmitOrder operation
+3. Move remote order processing behind Exchange
+4. Separate TradeCreated processing
+5. Separate TradeStateChanged processing
+6. Separate settlement triggering
+7. Separate state synchronisation
+8. Reduce HandlerContext authority
+9. Re-evaluate remaining message-handler responsibilities
+
+Each step should be independently testable and should result in a reviewable commit.
+
+17.8 Architectural Success Criteria
+The boundary will be considered successful when:
+
+network message parsing is clearly separated from domain intent;
+domain operations can be tested without libp2p;
+authentication occurs before domain execution;
+authorisation is explicit;
+message_handler.rs no longer owns core exchange behaviour;
+settlement and balance mutations are reached through explicit domain operations;
+protocol publication remains outside core domain logic;
+the architecture document accurately describes the implemented system.
+The goal is not to eliminate message_handler.rs.
+
+The goal is to ensure that its responsibility is narrow and auditable:
+
+receive
+  ↓
+decode
+  ↓
+authenticate
+  ↓
+authorise
+  ↓
+translate
+  ↓
+dispatch
+
+rather than:
+
+receive
+  ↓
+decode
+  ↓
+authenticate
+  ↓
+validate
+  ↓
+match
+  ↓
+create trade
+  ↓
+advance trade
+  ↓
+settle balances
+  ↓
+persist
+  ↓
+publish
+
+This boundary therefore represents the next stage of reducing authority and making the exchange domain independently understandable and auditable.
