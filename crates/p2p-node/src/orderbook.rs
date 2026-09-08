@@ -2,7 +2,6 @@ use anyhow::Result;
 use protocol::message::{Order, Side, Trade, TradeState};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -37,8 +36,7 @@ impl OrderBook {
             return Ok(Self::new(path));
         }
 
-        let data = fs::read_to_string(&path)?;
-        let mut order_book: OrderBook = serde_json::from_str(&data)?;
+        let mut order_book: OrderBook = crate::persistence::read(&path)?;
 
         order_book.path = path;
 
@@ -50,8 +48,7 @@ impl OrderBook {
     }
 
     pub fn save_orders(&self) -> Result<()> {
-        let data = serde_json::to_string_pretty(self)?;
-        fs::write(&self.path, data)?;
+        crate::persistence::write(&self.path, self)?;
 
         Ok(())
     }

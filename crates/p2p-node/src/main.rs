@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
+use p2p_node::{OpenDexBehaviour, OpenDexBehaviourEvent};
+
 use network::build_swarm;
 
 use crate::cli::{CliAction, parse_args, parse_command};
-
-use p2p_node::{OpenDexBehaviour, OpenDexBehaviourEvent};
 
 use trades::TradeBook;
 
@@ -34,8 +34,12 @@ mod order_factory;
 mod network;
 
 mod command_handler;
+
 mod message_handler;
+
 mod sync;
+
+mod persistence;
 
 use orderbook::OrderBook;
 
@@ -67,7 +71,7 @@ fn load_or_create_identity(port: &str) -> Result<identity::Keypair> {
     let path = identity_path(port);
 
     if path.exists() {
-        let bytes = fs::read(&path)?;
+        let bytes = persistence::read_bytes(&path)?;
 
         let key = identity::Keypair::from_protobuf_encoding(&bytes)?;
 
@@ -81,7 +85,7 @@ fn load_or_create_identity(port: &str) -> Result<identity::Keypair> {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&path, bytes)?;
+        persistence::write_bytes(&path, &bytes)?;
 
         Ok(key)
     }

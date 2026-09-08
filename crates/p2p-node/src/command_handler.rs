@@ -1,15 +1,15 @@
 use crate::OpenDexBehaviour;
 use crate::balances::BalanceBook;
 use crate::cli::Command;
+use crate::exchange::Exchange;
 use crate::network::publish_message;
 use crate::order_factory::create_order;
 use crate::orderbook::OrderBook;
+use crate::settlement::settle_local_trade;
+use crate::trade_state::advance_trade_to_state;
 use crate::trades::TradeBook;
 use anyhow::Result;
 use libp2p::{PeerId, Swarm, gossipsub};
-
-use crate::settlement::settle_local_trade;
-use crate::trade_state::advance_trade_to_state;
 use protocol::message::{
     AMOUNT_SCALE, Asset, MessageType, OpenDexMessage, OrderCancelled, TradeState, TradeStateChanged,
 };
@@ -122,9 +122,8 @@ pub fn handle_command(
                 }
             }
 
-            let trades = order_book.match_order(&order);
-
-            order_book.add_order(order.clone());
+            let mut exchange = Exchange::new(order_book, trade_book);
+            let trades = exchange.submit_order(order.clone())?;
 
             if trades.is_empty() {
                 order_book.save_orders()?;
@@ -132,23 +131,6 @@ pub fn handle_command(
                 for trade in trades {
                     println!("=== Trade Created ===");
                     println!("{:?}", trade);
-
-                    if !trade_book.add_trade(trade.clone()) {
-                        eprintln!("Trade was already present: {}", trade.id);
-                        continue;
-                    }
-
-                    if !order_book.apply_trade(&trade) {
-                        eprintln!("Trade {} could not be applied to the order book", trade.id);
-                        continue;
-                    }
-
-                    order_book
-                        .pending_trades
-                        .retain(|pending| pending.id != trade.id);
-
-                    order_book.save_orders()?;
-                    trade_book.save_trades()?;
 
                     let timestamp = chrono::Utc::now().timestamp() as u64;
 
@@ -163,15 +145,10 @@ pub fn handle_command(
                         Ok(_) => {
                             println!("Published TradeCreated: {}", trade.id);
                         }
-
                         Err(e) => {
                             eprintln!("Failed to publish TradeCreated {}: {:?}", trade.id, e);
                         }
                     }
-
-                    order_book.save_orders()?;
-                    trade_book.save_trades()?;
-                    balance_book.save()?;
                 }
             }
         }

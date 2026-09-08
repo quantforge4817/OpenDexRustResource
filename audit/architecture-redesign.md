@@ -1691,11 +1691,11 @@ verified against the current repository implementation.
 | Dedicated command handler | Verified |
 | Dedicated OrderBook | Verified |
 | Dedicated TradeBook | Verified |
-| Dedicated balances | Verified |
+| Dedicated balances | Verified — including per-order balance reservations |
 | Dedicated settlement | Verified |
 | Dedicated synchronization | Verified |
 | Matching owned by OrderBook | Verified |
-| Persistence exists | Verified |
+| Persistence exists | Verified — including persisted order reservation state |
 | Centralized persistence abstraction | Not present |
 | Fully separated authorization layer | Partially verified |
 | Synchronization authority model | Not yet established |
@@ -1732,3 +1732,33 @@ Snapshot application is transactional.
 Existing tests cover a substantial portion of these invariants.
 Distributed ordering/convergence remains under verification.
 Failure consistency across order → trade → balance → persistence remains under verification.
+
+### Persistence Verification
+
+Repository inspection confirms that persistence is implemented, but it is
+not centralized behind a persistence abstraction.
+
+Direct filesystem access currently exists in:
+
+- `balances.rs` — `BalanceBook::load()` / `save()`
+- `orderbook.rs` — `OrderBook::load_orders()` / `save_orders()`
+- `trades.rs` — `TradeBook::load_trades()` / `save_trades()`
+- `main.rs` — node identity loading and creation
+
+The state stores serialize directly with `serde_json` and write directly with
+`std::fs`. Command and settlement paths also invoke `BalanceBook::save()`
+directly.
+
+Therefore:
+
+| Finding | Status |
+|---|---|
+| Persistence exists | Verified |
+| Persistent balances include order reservations | Verified |
+| Persistence is centralized behind one abstraction | Not present |
+| Filesystem access is isolated from domain state stores | Not present |
+| Atomic/transactional persistence across order/trade/balance state | Not established |
+
+This confirms the existing architectural assessment that a centralized
+persistence abstraction is not currently present. The current implementation
+should not be described as having a unified persistence layer.

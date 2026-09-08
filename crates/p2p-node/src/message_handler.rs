@@ -1,6 +1,6 @@
+use crate::exchange::Exchange;
 use anyhow::Result;
 use libp2p::PeerId;
-
 use std::collections::HashMap;
 pub struct PendingTradeState {
     change: TradeStateChanged,
@@ -124,37 +124,18 @@ pub fn handle_order_created(
         println!("=== Remote Order Received ===");
         println!("{:?}", order);
 
-        let trades = order_book.match_order(&order);
-
-        order_book.add_order(order.clone());
+        let mut exchange = Exchange::new(order_book, trade_book);
+        let trades = exchange.submit_order(order.clone())?;
 
         if trades.is_empty() {
-            order_book.save_orders()?;
             order_book.print_orders();
         } else {
             for trade in trades {
                 println!("=== Trade Created From Remote Order ===");
                 println!("{:?}", trade);
 
-                if !trade_book.add_trade(trade.clone()) {
-                    println!("Trade already known: {}", trade.id);
-                    continue;
-                }
-
-                if !order_book.apply_trade(&trade) {
-                    eprintln!("Trade {} could not be applied after matching", trade.id);
-                    continue;
-                }
-
-                order_book
-                    .pending_trades
-                    .retain(|pending| pending.id != trade.id);
-
-                order_book.save_orders()?;
-                trade_book.save_trades()?;
-
                 let trade_message = OpenDexMessage {
-                    message_type: protocol::message::MessageType::TradeCreated,
+                    message_type: MessageType::TradeCreated,
                     sender: local_peer_id.to_string(),
                     payload: serde_json::to_string(&trade)?,
                     timestamp: chrono::Utc::now().timestamp() as u64,
@@ -163,8 +144,6 @@ pub fn handle_order_created(
                 publish_message(swarm, topic, &trade_message)?;
             }
 
-            order_book.save_orders()?;
-            trade_book.save_trades()?;
             order_book.print_orders();
         }
     }

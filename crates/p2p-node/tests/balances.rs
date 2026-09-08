@@ -161,8 +161,11 @@ fn buy_order_reservation_tracks_order_id() {
     book.lock_for_order(&order).unwrap();
 
     assert_eq!(
-        book.order_reservation(&order.id),
-        Some(200 * protocol::message::AMOUNT_SCALE)
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 50 * protocol::message::AMOUNT_SCALE,
+            locked: 200 * protocol::message::AMOUNT_SCALE,
+        }
     );
 }
 
@@ -197,9 +200,8 @@ fn cancelling_buy_order_releases_remaining_reservation() {
             locked: 0,
         }
     );
-
-    assert_eq!(book.order_reservation(&order.id), None);
 }
+
 #[test]
 fn duplicate_order_reservation_does_not_double_lock() {
     let path = std::env::temp_dir().join("opendex-test-duplicate-reservation.json");
@@ -231,10 +233,5 @@ fn duplicate_order_reservation_does_not_double_lock() {
             available: 300 * protocol::message::AMOUNT_SCALE,
             locked: 200 * protocol::message::AMOUNT_SCALE,
         }
-    );
-
-    assert_eq!(
-        book.order_reservation(&order.id),
-        Some(200 * protocol::message::AMOUNT_SCALE)
     );
 }

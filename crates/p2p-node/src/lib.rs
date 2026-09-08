@@ -4,6 +4,7 @@ pub mod message_handler;
 pub mod network;
 pub mod order_factory;
 pub mod orderbook;
+pub mod persistence;
 pub mod settlement;
 pub mod sync;
 pub mod trade_state;

@@ -1,8 +1,8 @@
+use crate::persistence;
 use anyhow::Result;
 use protocol::message::{Trade, TradeState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,8 +42,7 @@ impl TradeBook {
             return Ok(Self::new(path));
         }
 
-        let data = fs::read_to_string(&path)?;
-        let mut trade_book: TradeBook = serde_json::from_str(&data)?;
+        let mut trade_book: TradeBook = persistence::read(&path)?;
 
         trade_book.path = path;
 
@@ -59,8 +58,7 @@ impl TradeBook {
     }
 
     pub fn save_trades(&self) -> Result<()> {
-        let data = serde_json::to_string_pretty(self)?;
-        fs::write(&self.path, data)?;
+        persistence::write(&self.path, self)?;
 
         Ok(())
     }

@@ -1,8 +1,8 @@
+use crate::persistence;
 use anyhow::{Result, anyhow};
 use protocol::message::{Asset, Order, PRICE_SCALE, Side};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -53,9 +53,7 @@ impl BalanceBook {
         if !Path::new(&path).exists() {
             return Ok(Self::new(path));
         }
-
-        let data = fs::read_to_string(&path)?;
-        let mut book: BalanceBook = serde_json::from_str(&data)?;
+        let mut book: BalanceBook = persistence::read(&path)?;
 
         book.path = path;
 
@@ -63,8 +61,7 @@ impl BalanceBook {
     }
 
     pub fn save(&self) -> Result<()> {
-        let data = serde_json::to_string_pretty(self)?;
-        fs::write(&self.path, data)?;
+        persistence::write(&self.path, self)?;
 
         Ok(())
     }
