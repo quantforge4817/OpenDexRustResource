@@ -1,4 +1,4 @@
-use crate::exchange::Exchange;
+use crate::exchange::{Exchange, RecordTrade};
 use anyhow::Result;
 use libp2p::PeerId;
 use std::collections::HashMap;
@@ -157,6 +157,7 @@ pub fn handle_order_created(
 
 pub fn handle_trade_created(
     trade: Trade,
+    actor: &str,
     trade_book: &mut TradeBook,
     order_book: &mut OrderBook,
     pending_trade_states: &mut HashMap<Uuid, PendingTradeState>,
@@ -166,52 +167,60 @@ pub fn handle_trade_created(
     println!("=== Trade Created Received ===");
     println!("{:?}", trade);
 
-    if trade_book.add_trade(trade.clone()) {
-        trade_book.save_trades()?;
+    let recorded = {
+        let mut exchange = Exchange::new(order_book, trade_book);
 
-        if order_book.apply_trade(&trade) {
-            println!("Applied remote trade to order book: {}", trade.id);
+        exchange.record_trade(RecordTrade {
+            actor: actor.to_string(),
+            trade: trade.clone(),
+        })?
+    };
 
-            order_book
-                .pending_trades
-                .retain(|pending| pending.id != trade.id);
+    if !recorded {
+        println!("Remote trade already known: {}", trade.id);
+        return Ok(());
+    }
 
-            order_book.save_orders()?;
-        } else {
-            println!(
-                "Remote trade {} is pending because both orders are not available yet",
-                trade.id
+    trade_book.save_trades()?;
+
+    if order_book
+        .pending_trades
+        .iter()
+        .any(|pending| pending.id == trade.id)
+    {
+        println!(
+            "Remote trade {} is pending because both orders are not available yet",
+            trade.id
+        );
+    } else {
+        println!("Applied remote trade to order book: {}", trade.id);
+    }
+
+    order_book.save_orders()?;
+
+    if let Some(pending) = pending_trade_states.remove(&trade.id) {
+        if !is_trade_participant(&trade, &pending.sender) {
+            eprintln!(
+                "Ignoring unauthorized pending state change for trade {} from {}",
+                trade.id, pending.sender
             );
+        } else {
+            advance_trade_to_state(
+                trade_book,
+                trade.id,
+                pending.change.state.clone(),
+                pending.change.timestamp,
+            )?;
 
-            order_book.save_orders()?;
-        }
-
-        if let Some(pending) = pending_trade_states.remove(&trade.id) {
-            if !is_trade_participant(&trade, &pending.sender) {
-                eprintln!(
-                    "Ignoring unauthorized pending state change for trade {} from {}",
-                    trade.id, pending.sender
-                );
-            } else {
-                advance_trade_to_state(
-                    trade_book,
-                    trade.id,
-                    pending.change.state.clone(),
-                    pending.change.timestamp,
-                )?;
-
-                if pending.change.state == TradeState::Settled
-                    && let Some(updated_trade) = trade_book.get_trade(trade.id).cloned()
-                {
-                    settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
-                }
+            if pending.change.state == TradeState::Settled
+                && let Some(updated_trade) = trade_book.get_trade(trade.id).cloned()
+            {
+                settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
             }
         }
-
-        trade_book.save_trades()?;
-    } else {
-        println!("Remote trade already known: {}", trade.id);
     }
+
+    trade_book.save_trades()?;
 
     Ok(())
 }
@@ -450,6 +459,7 @@ pub fn handle_gossipsub_message(
 
             handle_trade_created(
                 trade,
+                &authenticated_sender,
                 ctx.trade_book,
                 ctx.order_book,
                 ctx.pending_trade_states,

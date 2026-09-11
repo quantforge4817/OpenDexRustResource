@@ -9,6 +9,11 @@ pub struct SubmitOrder {
     pub order: Order,
 }
 
+pub struct RecordTrade {
+    pub actor: String,
+    pub trade: Trade,
+}
+
 pub struct Exchange<'a> {
     pub order_book: &'a mut OrderBook,
     pub trade_book: &'a mut TradeBook,
@@ -51,5 +56,29 @@ impl<'a> Exchange<'a> {
         }
 
         Ok(trades)
+    }
+
+    pub fn record_trade(&mut self, operation: RecordTrade) -> Result<bool> {
+        let trade = operation.trade;
+
+        if operation.actor != trade.maker && operation.actor != trade.taker {
+            anyhow::bail!(
+                "record trade actor is not a participant: actor={}, trade={}",
+                operation.actor,
+                trade.id
+            );
+        }
+
+        if !self.trade_book.add_trade(trade.clone()) {
+            return Ok(false);
+        }
+
+        if self.order_book.apply_trade(&trade) {
+            self.order_book
+                .pending_trades
+                .retain(|pending| pending.id != trade.id);
+        }
+
+        Ok(true)
     }
 }

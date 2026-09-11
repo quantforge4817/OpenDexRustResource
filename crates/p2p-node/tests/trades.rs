@@ -353,6 +353,7 @@ fn trade_created_then_settled_updates_local_balances() {
 
     handle_trade_created(
         trade.clone(),
+        &trade.maker,
         &mut trade_book,
         &mut order_book,
         &mut pending_trade_states,
@@ -444,6 +445,7 @@ fn settled_state_before_trade_created_is_applied_when_trade_arrives() {
     // The trade arrives afterwards and should consume the pending state.
     handle_trade_created(
         trade.clone(),
+        &trade.maker,
         &mut trade_book,
         &mut order_book,
         &mut pending_trade_states,
@@ -524,6 +526,7 @@ fn unauthorized_pending_state_is_rejected_when_trade_arrives() {
     // because "attacker" is neither the buyer nor the seller.
     handle_trade_created(
         trade.clone(),
+        &trade.maker,
         &mut trade_book,
         &mut order_book,
         &mut pending_trade_states,
@@ -608,6 +611,7 @@ fn pending_trade_state_keeps_highest_happy_path_state() {
     // the public handler rather than accessing PendingTradeState internals.
     handle_trade_created(
         trade.clone(),
+        &trade.maker,
         &mut trade_book,
         &mut order_book,
         &mut pending_trade_states,
@@ -675,6 +679,7 @@ fn pending_trade_state_advances_through_happy_path() {
 
     handle_trade_created(
         trade.clone(),
+        &trade.maker,
         &mut trade_book,
         &mut order_book,
         &mut pending_trade_states,
