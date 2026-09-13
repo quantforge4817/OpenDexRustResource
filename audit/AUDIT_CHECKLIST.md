@@ -296,34 +296,28 @@ conservation tests.
 ### AUDIT-008 — Remote snapshot trades require independent validation
 
 - **Severity:** High (pending verification)
-- **Status:** OPEN
-- **File:** `crates/p2p-node/src/sync.rs`
-- **Location:** `apply_snapshot()`, lines 57-60
+- **Status:** OPEN — message-path boundary verified; snapshot path still requires verification
 
-**Observation:**
+...
 
-Trades received through a state snapshot are passed to
-`TradeBook::add_trade()` and subsequently to `OrderBook::apply_trade()`.
+**Verification performed:**
 
-Snapshot processing must not trust the snapshot producer merely because
-the data arrived through the synchronization mechanism.
+The normal `record_trade()` path now performs structural trade validation
+before calling `TradeBook::add_trade()`.
 
-**Security question:**
+Therefore a structurally invalid trade cannot enter `TradeBook` merely
+because its referenced orders are missing.
 
-Does `TradeBook::add_trade()` validate trade identity, participants,
-market, amount, price, state and timestamps before accepting the trade?
+Order-dependent validation remains deferred to `OrderBook::apply_trade()`
+when the referenced orders become available.
 
-**Impact if unvalidated:**
+**Remaining question:**
 
-A malicious peer could potentially inject fabricated or inconsistent
-trades through state synchronization.
+The snapshot path in `sync.rs` must still be traced independently to confirm
+that snapshot-supplied trades pass through the same structural validation
+boundary before persistence.
 
-**Required verification:**
-
-Review `TradeBook::add_trade()` and establish exactly what validation is
-performed before the trade becomes persistent state.
-
-**Status:** OPEN pending verification:
+**Status:** OPEN — narrowed pending snapshot-path verification
 
 ### AUDIT-009 — Snapshot trust boundary depends on order validation
 
@@ -433,3 +427,25 @@ The live books are replaced only after processing and persistence succeed.
 
 This reduces the risk of leaving the live in-memory state partially
 updated when snapshot processing fails.
+
+### CTRL-004 — Structural trade validation occurs before persistence
+
+- **Status:** PASS
+- **Files:**
+  - `crates/p2p-node/src/trades.rs`
+  - `crates/p2p-node/src/orderbook.rs`
+
+`record_trade()` performs structural trade validation before inserting the
+trade into `TradeBook`.
+
+This prevents structurally invalid trades from being persisted when their
+referenced orders do not yet exist.
+
+Order-dependent validation remains deferred until the referenced orders are
+available.
+
+Regression coverage:
+`record_trade_rejects_invalid_structure_before_persistence`
+
+Workspace verification:
+89 tests passed, 0 failed.

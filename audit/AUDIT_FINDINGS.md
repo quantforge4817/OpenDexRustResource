@@ -72,8 +72,8 @@ The audit remains open.
 
 The two principal unresolved security boundaries are:
 
-Complete semantic validation of remotely supplied TradeCreated messages.
-Authorization and semantic validation of remotely supplied StateSnapshot data.
+The trade actor authorization boundary has now been implemented and regression-tested.
+Complete semantic validation of remotely supplied TradeCreated messages remains open.
 
 The current architecture should therefore be treated as:
 
@@ -134,14 +134,39 @@ The audit must establish and enforce, where independently verifiable:
 trade amount is non-zero;
 maker corresponds to the resting order;
 taker corresponds to the incoming order;
-trade identity is consistent with deterministic matching rules;
+trade identity is valid according to the protocol's identifier semantics;
 trade cannot contradict referenced order state;
 remote TradeCreated messages cannot introduce contradictory order-book state;
 pending-trade processing uses the same semantic validation boundary;
 synchronization cannot bypass trade validation.
+
 Security significance
 
-Authenticated origin does not establish semantic validity.
+
+Remediation Update — Trade Actor Authorization
+Status: PARTIALLY REMEDIATED / VERIFIED
+
+The trade-creation handling path has been updated to validate the trade actor against the authenticated exchange/network identity before applying the trade.
+
+The exchange now receives the trade maker/actor explicitly when processing TradeCreated events, establishing an authorization boundary between the authenticated peer and the trade participant.
+
+Regression coverage verifies the relevant authorization behavior, including:
+
+authenticated trade participants are accepted;
+unauthorized trade-state changes are rejected;
+forged sender identities are rejected;
+pending trade-state authorization is revalidated when the corresponding trade arrives;
+trade creation and settlement continue to pass the complete workspace test suite.
+The complete workspace test suite currently passes with zero test failures.
+
+This remediation closes the previously identified trade-actor authorization gap, but does not by itself close AUDIT-009 / ARCH-004.
+
+The remaining audit requirements include:
+
+maker/taker consistency with resting and incoming orders;
+contradiction detection against current order state;
+equivalent validation across local, remote, pending, and synchronization paths;
+ensuring synchronization cannot bypass the trade semantic-validation boundary.
 
 A peer may be correctly authenticated while still supplying a trade whose contents are inconsistent with the local order state.
 
@@ -150,6 +175,7 @@ The critical security boundary is therefore:
 Authenticated remote peer
         ↓
 Authorization
+
         ↓
 COMPLETE TRADE SEMANTIC VALIDATION
         ↓
@@ -167,6 +193,49 @@ Ensure local, remote, pending, and synchronization paths use equivalent validati
 Ensure synchronization cannot bypass the validation boundary.
 
 Status: OPEN — critical audit blocker.
+
+Remediation Update — Trade Structural Validation Before Persistence
+Status: PARTIALLY REMEDIATED / VERIFIED
+
+The trade-creation path now performs structural trade validation before
+the Trade is inserted into TradeBook.
+
+This establishes the required persistence boundary:
+
+TradeCreated
+    ↓
+authenticated sender / participant validation
+    ↓
+validate_trade_structure()
+    ↓
+TradeBook::add_trade()
+    ↓
+OrderBook::apply_trade()
+
+Structural validation now rejects invalid trades before persistence,
+including invalid trade amounts and participant/structure inconsistencies
+covered by the structural validation helper.
+
+When referenced orders do not yet exist, the trade may still enter the
+pending-trade path after structural validation. Once the required orders
+exist, OrderBook::apply_trade() performs the existing order-dependent
+semantic validation.
+
+A regression test,
+record_trade_rejects_invalid_structure_before_persistence,
+verifies that a structurally invalid trade cannot be persisted merely
+because its referenced orders are missing.
+
+This remediation closes the previously identified gap where a malformed
+TradeCreated message could enter TradeBook before its contents had been
+structurally validated.
+
+The parent finding AUDIT-009 / ARCH-004 remains OPEN because complete
+order-dependent semantic validation and equivalent validation across
+snapshot/synchronization paths still require verification.
+
+Audit disposition: Trade structural-validation sub-control — CLOSED /
+VERIFIED.
 
 AUDIT-008 / BUG-SEC-002 — State Synchronization Authority and Snapshot Validation
 
