@@ -1,7 +1,7 @@
-use p2p_node::exchange::{Exchange, SubmitOrder};
+use p2p_node::exchange::{Exchange, RecordTrade, SubmitOrder};
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
-use protocol::message::{Asset, Market, Order, Side};
+use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
 use uuid::Uuid;
 
 fn market() -> Market {
@@ -68,4 +68,41 @@ fn submit_order_rejects_actor_who_is_not_order_owner() {
 
     assert!(result.is_err());
     assert!(order_book.orders.is_empty());
+}
+#[test]
+fn record_trade_rejects_invalid_structure_before_persistence() {
+    let (mut order_book, mut trade_book) = books();
+
+    let trade = Trade {
+        id: Uuid::new_v4(),
+        buy_order: Uuid::new_v4(),
+        sell_order: Uuid::new_v4(),
+        maker: "seller".to_string(),
+        taker: "buyer".to_string(),
+        buyer: "buyer".to_string(),
+        seller: "seller".to_string(),
+        market: market(),
+        price: 100,
+        amount: 0,
+        state: TradeState::Created,
+        created_at: 1,
+        updated_at: 1,
+    };
+
+    let mut exchange = Exchange::new(&mut order_book, &mut trade_book);
+
+    let result = exchange.record_trade(RecordTrade {
+        actor: "seller".to_string(),
+        trade,
+    });
+
+    assert!(result.is_err());
+    assert!(
+        trade_book.trades.is_empty(),
+        "invalid trade must not be persisted"
+    );
+    assert!(
+        order_book.pending_trades.is_empty(),
+        "invalid trade must not become pending"
+    );
 }

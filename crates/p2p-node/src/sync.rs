@@ -51,6 +51,8 @@ pub fn validate_state_snapshot(
     let mut trade_ids = std::collections::HashSet::new();
 
     for trade in &state.trades {
+        order_book.validate_trade_structure(trade)?;
+
         if !trade_ids.insert(trade.id) {
             anyhow::bail!("StateResponse contains duplicate trade {}", trade.id);
         }

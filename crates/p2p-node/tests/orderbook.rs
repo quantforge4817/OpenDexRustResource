@@ -2,6 +2,7 @@ use p2p_node::orderbook::*;
 use p2p_node::sync::apply_snapshot;
 use p2p_node::trades::TradeBook;
 use protocol::state::StateSnapshot;
+use sha2::{Digest, Sha256};
 
 use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
 use std::fs;
@@ -258,8 +259,12 @@ fn apply_trade_is_idempotent() {
     book.add_order(buy.clone());
     book.add_order(sell.clone());
 
+    let trade_input = format!("{}:{}:{}:{}", buy.id, sell.id, 100, 4);
+    let hash = Sha256::digest(trade_input.as_bytes());
+    let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
+
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id,
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -270,8 +275,8 @@ fn apply_trade_is_idempotent() {
         price: 100,
         amount: 4,
         state: TradeState::Created,
-        created_at: 0,
-        updated_at: 0,
+        created_at: 1,
+        updated_at: 1,
     };
 
     assert!(book.apply_trade(&trade));
@@ -1207,4 +1212,64 @@ fn materialized_snapshot_does_not_replay_historical_trades() {
 #[test]
 fn applying_same_materialized_snapshot_twice_is_idempotent() {
     // applying the same snapshot twice must produce identical state
+}
+#[test]
+fn rejects_snapshot_trade_with_invalid_maker() {
+    let order_path =
+        std::env::temp_dir().join(format!("opendex-test-snapshot-maker-{}.json", Uuid::new_v4()));
+    let trade_path =
+        std::env::temp_dir().join(format!("opendex-test-snapshot-maker-trades-{}.json", Uuid::new_v4()));
+
+    let mut order_book = OrderBook::new(order_path);
+    let mut trade_book = TradeBook::new(trade_path);
+
+    let buy = order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Buy,
+        100,
+        10,
+    );
+
+    let sell = order(
+        "00000000-0000-0000-0000-000000000002",
+        Side::Sell,
+        100,
+        10,
+    );
+
+    order_book.add_order(buy.clone());
+    order_book.add_order(sell.clone());
+
+    let original_orders = order_book.orders.clone();
+    let original_trades = trade_book.trades.clone();
+
+    let invalid_trade = Trade {
+        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        buy_order: buy.id,
+        sell_order: sell.id,
+        maker: "not-a-participant".to_string(),
+        taker: buy.trader.clone(),
+        buyer: buy.trader.clone(),
+        seller: sell.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 10,
+        state: TradeState::Created,
+        created_at: 1,
+        updated_at: 1,
+    };
+
+    let snapshot = StateSnapshot {
+        orders: vec![buy, sell],
+        trades: vec![invalid_trade],
+        removed_orders: Vec::new(),
+        applied_trades: Vec::new(),
+    };
+
+    let result = apply_snapshot(snapshot, &mut order_book, &mut trade_book);
+
+    assert!(result.is_err());
+
+    assert_orders_unchanged(&original_orders, &order_book.orders);
+    assert_eq!(original_trades.len(), trade_book.trades.len());
 }

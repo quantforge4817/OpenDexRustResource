@@ -45,6 +45,7 @@ impl BalanceBook {
             path,
         }
     }
+    #[allow(dead_code)]
     pub fn order_reservation(&self, order_id: &Uuid) -> Option<u64> {
         self.order_reservations.get(order_id).copied()
     }

@@ -205,6 +205,12 @@ impl OrderBook {
         if self.applied_trades.contains(&trade_id) {
             return false;
         }
+        // Reject malformed or forged trades before they can become pending
+        // or mutate the order book.
+        if let Err(error) = self.validate_trade_structure(trade) {
+            eprintln!("Rejecting invalid trade {}: {}", trade.id, error);
+            return false;
+        }
 
         // A trade may arrive before one or both orders.
         // Keep it pending until the required orders arrive.
@@ -396,5 +402,41 @@ impl OrderBook {
         }
 
         trades
+    }
+    pub fn validate_trade_structure(&self, trade: &Trade) -> Result<()> {
+        if trade.amount == 0 {
+            anyhow::bail!("trade amount must be greater than zero");
+        }
+
+        if trade.price == 0 {
+            anyhow::bail!("trade price must be greater than zero");
+        }
+
+        if trade.buy_order == trade.sell_order {
+            anyhow::bail!("trade cannot reference the same order twice");
+        }
+
+        if trade.buyer.is_empty() || trade.seller.is_empty() {
+            anyhow::bail!("trade buyer/seller must not be empty");
+        }
+
+        if trade.maker.is_empty() || trade.taker.is_empty() {
+            anyhow::bail!("trade maker/taker must not be empty");
+        }
+
+        if trade.maker != trade.seller && trade.maker != trade.buyer {
+            anyhow::bail!("trade maker must be a participant");
+        }
+
+        if trade.taker != trade.seller && trade.taker != trade.buyer {
+            anyhow::bail!("trade taker must be a participant");
+        }
+
+        if trade.market.base == trade.market.quote {}
+        if trade.market.base == trade.market.quote {
+            anyhow::bail!("trade has invalid market");
+        }
+
+        Ok(())
     }
 }
