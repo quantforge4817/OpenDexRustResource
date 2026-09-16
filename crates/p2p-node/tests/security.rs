@@ -14,6 +14,7 @@ use protocol::message::{
 };
 use protocol::state::StateSnapshot;
 
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -48,10 +49,19 @@ fn test_order(trader: &str) -> Order {
 }
 
 fn test_trade(buyer: &str, seller: &str) -> Trade {
+    let buy_order = Uuid::new_v4();
+    let sell_order = Uuid::new_v4();
+    let price = 100 * PRICE_SCALE;
+    let amount = AMOUNT_SCALE;
+
+    let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, price, amount);
+    let hash = Sha256::digest(trade_input.as_bytes());
+    let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
+
     Trade {
-        id: Uuid::new_v4(),
-        buy_order: Uuid::new_v4(),
-        sell_order: Uuid::new_v4(),
+        id,
+        buy_order,
+        sell_order,
         maker: seller.to_string(),
         taker: buyer.to_string(),
         buyer: buyer.to_string(),
@@ -60,8 +70,8 @@ fn test_trade(buyer: &str, seller: &str) -> Trade {
             base: Asset::BTC,
             quote: Asset::XMR,
         },
-        price: 100 * PRICE_SCALE,
-        amount: AMOUNT_SCALE,
+        price,
+        amount,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,

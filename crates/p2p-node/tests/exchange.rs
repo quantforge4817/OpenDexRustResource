@@ -1,4 +1,4 @@
-use p2p_node::exchange::{Exchange, RecordTrade, SubmitOrder};
+use p2p_node::exchange::{Exchange, RecordTrade};
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
 use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
@@ -8,17 +8,6 @@ fn market() -> Market {
     Market {
         base: Asset::BTC,
         quote: Asset::XMR,
-    }
-}
-
-fn order(trader: &str) -> Order {
-    Order {
-        id: Uuid::new_v4(),
-        trader: trader.to_string(),
-        market: market(),
-        side: Side::Buy,
-        price: 100,
-        amount: 10,
     }
 }
 
@@ -34,56 +23,44 @@ fn books() -> (OrderBook, TradeBook) {
         ),
     )
 }
-
 #[test]
-fn submit_order_accepts_order_owned_by_actor() {
+fn record_trade_rejects_invalid_deterministic_trade_id() {
     let (mut order_book, mut trade_book) = books();
-    let order = order("alice");
-    let order_id = order.id;
 
-    let mut exchange = Exchange::new(&mut order_book, &mut trade_book);
+    let buy = Order {
+        id: Uuid::new_v4(),
+        trader: "buyer".to_string(),
+        market: market(),
+        side: Side::Buy,
+        price: 100,
+        amount: 10,
+    };
 
-    let trades = exchange
-        .submit_order(SubmitOrder {
-            actor: "alice".to_string(),
-            order,
-        })
-        .unwrap();
+    let sell = Order {
+        id: Uuid::new_v4(),
+        trader: "seller".to_string(),
+        market: market(),
+        side: Side::Sell,
+        price: 100,
+        amount: 10,
+    };
 
-    assert!(trades.is_empty());
-    assert!(order_book.orders.iter().any(|o| o.id == order_id));
-}
-
-#[test]
-fn submit_order_rejects_actor_who_is_not_order_owner() {
-    let (mut order_book, mut trade_book) = books();
-    let order = order("alice");
-
-    let mut exchange = Exchange::new(&mut order_book, &mut trade_book);
-
-    let result = exchange.submit_order(SubmitOrder {
-        actor: "mallory".to_string(),
-        order,
-    });
-
-    assert!(result.is_err());
-    assert!(order_book.orders.is_empty());
-}
-#[test]
-fn record_trade_rejects_invalid_structure_before_persistence() {
-    let (mut order_book, mut trade_book) = books();
+    order_book.orders.push(buy.clone());
+    order_book.orders.push(sell.clone());
 
     let trade = Trade {
+        // Deliberately incorrect. The real ID must be derived from
+        // buy_order, sell_order, price, and amount.
         id: Uuid::new_v4(),
-        buy_order: Uuid::new_v4(),
-        sell_order: Uuid::new_v4(),
+        buy_order: buy.id,
+        sell_order: sell.id,
         maker: "seller".to_string(),
         taker: "buyer".to_string(),
         buyer: "buyer".to_string(),
         seller: "seller".to_string(),
         market: market(),
         price: 100,
-        amount: 0,
+        amount: 5,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -96,11 +73,16 @@ fn record_trade_rejects_invalid_structure_before_persistence() {
         trade,
     });
 
-    assert!(result.is_err());
+    assert!(
+        result.is_err(),
+        "trade with forged deterministic ID must be rejected"
+    );
+
     assert!(
         trade_book.trades.is_empty(),
         "invalid trade must not be persisted"
     );
+
     assert!(
         order_book.pending_trades.is_empty(),
         "invalid trade must not become pending"

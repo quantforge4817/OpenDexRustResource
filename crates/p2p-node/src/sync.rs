@@ -52,6 +52,7 @@ pub fn validate_state_snapshot(
 
     for trade in &state.trades {
         order_book.validate_trade_structure(trade)?;
+        order_book.validate_trade_identity(trade)?;
 
         if !trade_ids.insert(trade.id) {
             anyhow::bail!("StateResponse contains duplicate trade {}", trade.id);

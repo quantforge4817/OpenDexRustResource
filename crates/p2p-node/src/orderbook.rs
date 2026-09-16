@@ -5,6 +5,13 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+fn deterministic_trade_id(buy_order: Uuid, sell_order: Uuid, price: u64, amount: u64) -> Uuid {
+    let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, price, amount);
+    let hash = Sha256::digest(trade_input.as_bytes());
+
+    Uuid::from_slice(&hash[..16]).expect("SHA-256 always has at least 16 bytes")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderBook {
     pub orders: Vec<Order>,
@@ -109,12 +116,34 @@ impl OrderBook {
             return;
         }
 
-        self.upsert_order(order);
+        if let Some(existing) = self.orders.iter_mut().find(|o| o.id == order.id) {
+            if existing.trader != order.trader
+                || existing.market != order.market
+                || existing.side != order.side
+                || existing.price != order.price
+            {
+                println!("Ignoring conflicting snapshot terms for order {}", order.id);
+                return;
+            }
 
-        // Snapshot orders may satisfy a trade that arrived before
-        // the corresponding order.
-        //
-        // upsert_order() already re-checks pending trades.
+            if order.amount > existing.amount {
+                println!(
+                    "Ignoring snapshot increase for order {}: {} -> {}",
+                    order.id, existing.amount, order.amount
+                );
+                return;
+            }
+
+            println!(
+                "Updating snapshot order {} amount: {} -> {}",
+                order.id, existing.amount, order.amount
+            );
+
+            existing.amount = order.amount;
+            return;
+        }
+
+        self.upsert_order(order);
     }
 
     pub fn remove_order(&mut self, id: Uuid) -> bool {
@@ -347,11 +376,7 @@ impl OrderBook {
             let amount = remaining_amount.min(existing_remaining);
             let trade_price = existing.price;
 
-            let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, trade_price, amount);
-
-            let hash = Sha256::digest(trade_input.as_bytes());
-
-            let trade_id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
+            let trade_id = deterministic_trade_id(buy_order, sell_order, trade_price, amount);
 
             let now = chrono::Utc::now().timestamp() as u64;
 
@@ -432,9 +457,23 @@ impl OrderBook {
             anyhow::bail!("trade taker must be a participant");
         }
 
-        if trade.market.base == trade.market.quote {}
         if trade.market.base == trade.market.quote {
             anyhow::bail!("trade has invalid market");
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_trade_identity(&self, trade: &Trade) -> Result<()> {
+        let expected_id =
+            deterministic_trade_id(trade.buy_order, trade.sell_order, trade.price, trade.amount);
+
+        if trade.id != expected_id {
+            anyhow::bail!(
+                "trade {} has invalid deterministic ID; expected {}",
+                trade.id,
+                expected_id
+            );
         }
 
         Ok(())

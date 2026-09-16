@@ -43,6 +43,7 @@ impl<'a> Exchange<'a> {
 
         for trade in &trades {
             self.order_book.validate_trade_structure(trade)?;
+            self.order_book.validate_trade_identity(&trade)?;
 
             if !self.trade_book.add_trade(trade.clone()) {
                 continue;
@@ -74,6 +75,7 @@ impl<'a> Exchange<'a> {
         // Structural validation does not require the referenced orders to exist.
         // This must happen before the trade enters TradeBook.
         self.order_book.validate_trade_structure(&trade)?;
+        self.order_book.validate_trade_identity(&trade)?;
 
         if !self.trade_book.add_trade(trade.clone()) {
             return Ok(false);

@@ -1215,27 +1215,21 @@ fn applying_same_materialized_snapshot_twice_is_idempotent() {
 }
 #[test]
 fn rejects_snapshot_trade_with_invalid_maker() {
-    let order_path =
-        std::env::temp_dir().join(format!("opendex-test-snapshot-maker-{}.json", Uuid::new_v4()));
-    let trade_path =
-        std::env::temp_dir().join(format!("opendex-test-snapshot-maker-trades-{}.json", Uuid::new_v4()));
+    let order_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-maker-{}.json",
+        Uuid::new_v4()
+    ));
+    let trade_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-maker-trades-{}.json",
+        Uuid::new_v4()
+    ));
 
     let mut order_book = OrderBook::new(order_path);
     let mut trade_book = TradeBook::new(trade_path);
 
-    let buy = order(
-        "00000000-0000-0000-0000-000000000001",
-        Side::Buy,
-        100,
-        10,
-    );
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
 
-    let sell = order(
-        "00000000-0000-0000-0000-000000000002",
-        Side::Sell,
-        100,
-        10,
-    );
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     order_book.add_order(buy.clone());
     order_book.add_order(sell.clone());
@@ -1272,4 +1266,103 @@ fn rejects_snapshot_trade_with_invalid_maker() {
 
     assert_orders_unchanged(&original_orders, &order_book.orders);
     assert_eq!(original_trades.len(), trade_book.trades.len());
+}
+#[test]
+fn snapshot_can_reduce_existing_order_amount() {
+    let order_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-reduce-{}.json",
+        Uuid::new_v4()
+    ));
+    let trade_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-reduce-trades-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut order_book = OrderBook::new(order_path);
+    let mut trade_book = TradeBook::new(trade_path);
+
+    let local_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 100);
+
+    order_book.add_order(local_order.clone());
+
+    let newer_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 40);
+
+    let snapshot = StateSnapshot {
+        orders: vec![newer_order],
+        trades: Vec::new(),
+        removed_orders: Vec::new(),
+        applied_trades: Vec::new(),
+    };
+
+    apply_snapshot(snapshot, &mut order_book, &mut trade_book).unwrap();
+
+    let resulting_order = order_book
+        .orders
+        .iter()
+        .find(|o| o.id == local_order.id)
+        .unwrap();
+
+    assert_eq!(resulting_order.amount, 40);
+}
+#[test]
+fn conflicting_snapshot_order_terms_are_rejected() {
+    let order_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-conflict-{}.json",
+        Uuid::new_v4()
+    ));
+    let trade_path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-conflict-trades-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut order_book = OrderBook::new(order_path);
+    let mut trade_book = TradeBook::new(trade_path);
+
+    let local_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 40);
+
+    order_book.add_order(local_order.clone());
+
+    let mut conflicting = local_order.clone();
+    conflicting.trader = "attacker".to_string();
+    conflicting.price = 1;
+
+    let snapshot = StateSnapshot {
+        orders: vec![conflicting],
+        trades: Vec::new(),
+        removed_orders: Vec::new(),
+        applied_trades: Vec::new(),
+    };
+
+    apply_snapshot(snapshot, &mut order_book, &mut trade_book).unwrap();
+
+    let resulting_order = order_book
+        .orders
+        .iter()
+        .find(|o| o.id == local_order.id)
+        .unwrap();
+
+    assert_eq!(resulting_order.trader, local_order.trader);
+    assert_eq!(resulting_order.price, local_order.price);
+    assert_eq!(resulting_order.amount, local_order.amount);
+}
+#[test]
+fn snapshot_does_not_resurrect_removed_order() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-snapshot-removed-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let original = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
+
+    book.add_order(original.clone());
+    book.remove_order(original.id);
+
+    let snapshot_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 50);
+
+    book.update_order_from_snapshot(snapshot_order);
+
+    assert!(book.orders.is_empty());
+    assert!(book.removed_orders.contains(&original.id));
 }

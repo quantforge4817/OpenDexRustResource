@@ -6,6 +6,7 @@ use p2p_node::trades::*;
 use protocol::message::{
     AMOUNT_SCALE, Asset, Market, Order, PRICE_SCALE, Side, Trade, TradeState, TradeStateChanged,
 };
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -275,8 +276,12 @@ fn sell_order(id: Uuid, trader: &str) -> Order {
 }
 
 fn trade(buy: &Order, sell: &Order) -> Trade {
+    let trade_input = format!("{}:{}:{}:{}", buy.id, sell.id, buy.price, buy.amount);
+    let hash = Sha256::digest(trade_input.as_bytes());
+    let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
+
     Trade {
-        id: Uuid::new_v4(),
+        id,
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
