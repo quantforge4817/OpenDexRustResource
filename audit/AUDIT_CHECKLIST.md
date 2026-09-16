@@ -293,31 +293,21 @@ conservation tests.
 
 **Status:** OPEN
 
-### AUDIT-008 — Remote snapshot trades require independent validation
+### AUDIT-008 — Snapshot / Synchronization Validation
+Status: CLOSED / VERIFIED ✅
 
-- **Severity:** High (pending verification)
-- **Status:** OPEN — message-path boundary verified; snapshot path still requires verification
+ Remote StateResponse messages are validated before snapshot application.
+ validate_state_snapshot() validates snapshot trade structure before persistence.
+ Snapshot trades are checked for duplicate IDs, invalid amounts/prices, participants, markets, timestamps, and order references.
+ Buyer/seller identity, order side, market, and applicable limit-price consistency are validated.
+ Invalid maker/taker relationships are rejected through validate_trade_structure().
+ Invalid snapshots cannot partially mutate live state.
+ Materialized snapshots do not replay historical trades.
+ Repeated application of the same materialized snapshot is idempotent.
+ Remote synchronization does not bypass the snapshot validation boundary.
+Evidence: message_handler.rs routes StateResponse through validate_state_snapshot() before handle_state_response(). Workspace regression tests pass, including snapshot atomicity, invalid maker rejection, materialized snapshot handling, and idempotent snapshot application.
 
-...
-
-**Verification performed:**
-
-The normal `record_trade()` path now performs structural trade validation
-before calling `TradeBook::add_trade()`.
-
-Therefore a structurally invalid trade cannot enter `TradeBook` merely
-because its referenced orders are missing.
-
-Order-dependent validation remains deferred to `OrderBook::apply_trade()`
-when the referenced orders become available.
-
-**Remaining question:**
-
-The snapshot path in `sync.rs` must still be traced independently to confirm
-that snapshot-supplied trades pass through the same structural validation
-boundary before persistence.
-
-**Status:** OPEN — narrowed pending snapshot-path verification
+Disposition: AUDIT-008 — CLOSED / VERIFIED.
 
 ### AUDIT-009 — Snapshot trust boundary depends on order validation
 
