@@ -1275,6 +1275,8 @@ State-transition authority
 Settlement authority
 A successfully decoded TradeCreated message must not be considered trustworthy merely because its fields have valid serialization types.
 
+-----------------------------------------------------------------------------------
+
 SEC-013 — Remote StateSnapshot Synchronization Authority
 Status: 🔴 Open — Investigation
 Priority: Critical
@@ -1293,367 +1295,61 @@ OrderBook / TradeBook mutation
 ↓
 persistence
 
-The receiving node authenticates the network sender, but authentication of the sending peer does not by itself establish that the peer is authorized to provide authoritative state.
+The receiving node authenticates the network sender, but authenticated peer identity does not by itself establish that the peer is authorized to provide authoritative state.
 
-The current security boundary therefore remains:
+The security boundary therefore remains:
 
 Authenticated PeerId
         ≠
-Authorized synchronization authority
+Synchronization authority
 
-apply_snapshot() can affect authoritative local state, including:
+apply_snapshot() can influence authoritative local state, including:
 
 active orders;
+
 removed-order identifiers;
+
 trades;
-applied-trade tracking;
-pending-related state through order updates;
+
+applied-trade identifiers;
+
+order quantities and related state;
+
 persistent local state.
-This makes state synchronization a distinct authorization boundary rather than merely a message-decoding concern.
+
+This makes StateSnapshot handling a distinct authorization and state-integrity boundary.
 
 Security Risk
-A malicious or insufficiently trusted authenticated peer may be able to submit a structurally valid snapshot that causes local state to be changed without first establishing that the peer has authority over the affected state.
+A malicious or insufficiently trusted authenticated peer may be able to submit a structurally valid snapshot that causes local state to change without establishing authority over the affected state.
 
 Potential consequences include:
 
-unauthorized order removal;
-introduction of unauthorized orders;
-introduction or modification of trade state;
-resurrection or replacement of state;
+unauthorized order introduction or removal;
+
+modification or replacement of local trade state;
+
+stale-state application;
+
+conflicting-state application;
+
+order or trade resurrection;
+
 manipulation of removed-order tracking;
-inconsistent local state between peers;
-persistence of attacker-influenced state;
-replay of stale or conflicting snapshots.
-No claim should currently be made that all of these effects are exploitable. The immediate finding is that the synchronization authority model is not yet explicitly established.
+
+replay of previously valid snapshots;
+
+persistence of attacker-influenced state.
+
+These consequences are not all established as exploitable vulnerabilities at this stage. The confirmed finding is that the synchronization authority model is not yet explicitly defined or enforced.
 
 Required Security Contract
-Before apply_snapshot() is permitted to perform protected state mutation, the receiving node should be able to establish:
+Before apply_snapshot() performs protected state mutation, the receiving node should establish:
 
 UNTRUSTED NETWORK INPUT
         ↓
 Authenticated sender
         ↓
 Synchronization authorization
-        ↓
-Snapshot semantic validation
-        ↓
-State reconciliation
-        ↓
-Validated domain mutation
-        ↓
-Crash-consistent persistence
-
-The protocol must explicitly define whether a StateSnapshot is:
-
-authoritative;
-advisory;
-scoped to a particular peer or role;
-authoritative only for particular objects;
-or merely a recovery/synchronization proposal.
-Required Investigation
-Determine:
-
-whether any remote peer is authorized to provide canonical exchange state;
-whether synchronization authority is global, scoped, or object-specific;
-which snapshot fields are authoritative;
-whether individual orders require the same authorization and semantic validation as OrderCreated;
-whether individual trades require the same validation as TradeCreated;
-whether remote snapshots may remove arbitrary local orders;
-whether remote snapshots may introduce arbitrary orders or trades;
-how stale snapshots are identified and rejected;
-how conflicting snapshots are resolved;
-whether removed orders can ever be resurrected;
-whether trades can be resurrected or replaced;
-how replayed snapshots behave;
-whether snapshot application bypasses normal object-level authorization rules;
-how snapshot persistence remains crash-consistent;
-whether snapshot application should reconcile state rather than directly replace or mutate local state.
-Important Distinction
-The following must remain separate:
-
-Protocol validity
-        ≠
-Domain validity
-        ≠
-Authenticated identity
-        ≠
-Synchronization authorization
-        ≠
-Authoritative state
-
-A correctly authenticated peer is not automatically a trusted source of canonical local state.
-
-Current Assessment
-This is an architectural/security finding requiring investigation.
-
-No implementation change should be made solely to close this finding until the intended synchronization trust model has been established.
-
-The objective is to define the authoritative synchronization invariant first and then implement the smallest control that enforces that invariant.
-
-Related Findings
-SEC-001 — Remote message trust boundary
-SEC-005 — State synchronization authority
-SEC-010 — Application sender identity is unauthenticated
-SEC-012 — Remote OrderCreated / existing order mutation
-AUD-001 — Settlement trust boundary (separate audit finding; do not merge with this finding)
-Next Step
-Define the authoritative StateResponse / StateSnapshot trust model before modifying apply_snapshot().
-
-Once the invariant is agreed, convert it into adversarial regression tests covering unauthorized snapshots, conflicting snapshots, stale snapshots, arbitrary removals, resurrection attempts, and persistence effects.
-Current Security Review Queue
-The updated priority is:
-1. 🔴 Remote OrderCreated authorization and order identity integrity
-2. 🔴 Complete TradeCreated semantic invariant definition
-3. 🔴 Trade-state transition authority
-4. 🔴 Settlement authorization
-5. 🔴 State synchronization authority
-6. 🔴 Per-order balance reservation model
-7. 🟠 Deterministic trade identity and replay resistance
-8. 🟠 Trade timestamp semantics
-9. 🟠 Network message resource limits
-10. 🟠 Persistence integrity
-11. 🟠 Adversarial multi-node testing
-
-Security Status
-The security posture continues to improve, but protocol security hardening remains incomplete.
-The current implementation provides meaningful protections for:
-• authenticated application/network identity binding;
-• order cancellation authorization;
-• trade participant authorization;
-• pending trade-state authorization;
-• remote trade semantic validation;
-• trade idempotency;
-• partial-fill accounting;
-• checked arithmetic;
-• locked-balance validation;
-• validation-before-mutation;
-• out-of-order trade handling;
-• removed-order protection;
-• persistence and restart behaviour;
-• multi-node networking behaviour.
-The newly reviewed TradeCreated path now has substantial semantic validation, but additional protocol invariants remain to be established.
-A new security concern has also been identified around the ability of upsert_order() to replace an existing active order when an incoming order uses the same UUID.
-No claim of complete protocol security should be made at this stage.
-
-Current Security Principle
-The following principle remains central to the OpenDEX security model:
-Do not treat a valid message as an authorised message.
-The receiving node must distinguish:
-Protocol validity
-≠
-Domain validity
-≠
-Authenticated identity
-≠
-Authorization
-≠
-State-transition authority
-≠
-Settlement authority
-For every remotely supplied state-changing object, the implementation should be able to answer:
-Who is allowed to create or modify this object, which fields are authoritative, and how does the receiving node independently verify those claims before mutating local state?
-The next security phase should therefore focus first on remote order creation/update authority, completion of the authoritative Trade invariant set, and then trade-state and settlement authority.
-
-Security Log Update
-Date: 2026-08-31
-Branch: peer-dial
-Commit: 2c846ac — Harden pending trade state handling
-Checkpoint: checkpoint-pending-trade-state
-Security Issue: Unauthorized pending trade-state injection
-Severity: High
-Status: Fixed and verified
-Description
-A trade-state message may arrive before the corresponding trade has been received. In this situation, the state change must be stored temporarily.
-Because the trade does not yet exist locally, authorization against the trade participants cannot be performed at the time the pending state is received.
-The pending state therefore needs to retain the authenticated sender so authorization can be performed when the associated trade arrives.
-Risk
-Without sender authentication being retained and checked later, an unauthorized peer could potentially submit a trade-state change before TradeCreated and have that state applied when the trade subsequently becomes available.
-This could allow an attacker to attempt to manipulate the lifecycle state of a trade they do not participate in.
-Mitigation
-PendingTradeState now retains:
-• The pending TradeStateChanged message.
-• The authenticated sender associated with that message.
-When the corresponding trade arrives:
-1. The pending state is retrieved.
-2. The stored sender is checked against the trade participants.
-3. Unauthorized pending state changes are rejected.
-4. Only an authorized state change is passed to the trade-state transition logic.
-5. Settlement is only triggered after an authorized transition to Settled.
-Additional State-Integrity Protection
-Pending happy-path states are explicitly ranked.
-Only the linear happy-path states participate in rank comparison. Exceptional states including:
-• Disputed
-• Cancelled
-• Expired
-are not treated as numerically ordered states.
-This prevents an invalid state progression from being inferred solely from a state rank.
-Security Tests
-Verified:
-• unauthorized_pending_state_is_rejected_when_trade_arrives
-• rejects_trade_state_change_from_unauthorized_peer
-• handler_rejects_unauthorized_trade_state_change
-• accepts_trade_state_change_from_buyer
-• accepts_trade_state_change_from_seller
-Verification
-Full workspace test suite passed with no failures.
-Result:
-Pending trade-state processing now retains authentication context and verifies authorization before applying delayed state changes.
-
-
-OpenDEX — Security Log
-SL-2026-08-31-001 — Network Sender Authentication Boundary
-Date: 31 August 2026
-Severity: Security-relevant
-Status: Implemented / Requires continued audit
-Component: crates/p2p-node/src/message_handler.rs
-Finding
-Incoming Gossipsub messages now establish an explicit authentication boundary between the network transport identity and the sender identity claimed inside the OpenDEX message.
-The handler compares:
-OpenDEX message.sender
-↕
-authenticated libp2p PeerId
-Messages with a mismatching claimed sender are rejected before message-specific processing occurs.
-Security Impact
-This prevents a peer from simply claiming another PeerId in the OpenDEX message envelope.
-The check provides an important foundation for later ownership and authorisation checks.
-Additional Authorisation Controls Observed
-The current handler also performs:
-• Order ownership validation for OrderCreated.
-• Order ownership validation for OrderCancelled.
-• Trade-participant validation for TradeStateChanged.
-• Pending trade-state sender validation when the associated trade arrives.
-• Protocol-level validation through Trade::transition().
-Remaining Security Finding
-State synchronisation requires further security review.
-StateResponse currently passes a received StateSnapshot into:
-handle_state_response()
-↓
-apply_snapshot()
-↓
-OrderBook / TradeBook mutation
-apply_snapshot() currently accepts remote orders, trades, removed-order identifiers, and applied-trade identifiers and mutates local state accordingly.
-This means the state-sync boundary currently has significant authority over local domain state.
-The architecture plan specifically identifies this boundary as requiring:
-UNTRUSTED NETWORK INPUT
-↓
-Decode
-↓
-Validate
-↓
-Authorise
-↓
-Domain State
-The current implementation does not yet provide a sufficiently explicit validation/authorisation layer for snapshots.
-Risk
-A malicious authenticated peer may potentially provide state data that is syntactically valid but semantically inappropriate for the local node.
-This is currently classified as a security finding requiring investigation, not yet as a confirmed exploitable vulnerability.
-Required Follow-up
-Audit StateSnapshot handling before further architectural expansion.
-Questions to answer:
-• Should every snapshot field be trusted?
-• Can a remote peer remove arbitrary local orders?
-• Can a remote peer introduce arbitrary trades?
-• Should snapshots be authoritative or merely advisory?
-• Should individual orders/trades be validated before insertion?
-• Should snapshot state be reconciled rather than directly applied?
-• Should state synchronisation have a separate authorisation policy?
-• Can an authenticated peer be trusted to provide canonical exchange state?
-No fix should be made until the intended state-sync trust model is established.
-
-AUD-001 — Settlement trust boundary
-Severity: HIGH / potentially CRITICAL
-Status: Open
-Summary: Settlement consumes Trade fields without independently enforcing
-the order-validation boundary.
-Action: Verify and harden the network-to-settlement path.
-
-AUD-001 — Harden settlement validation boundary
-AUD-002 — Make settlement persistence transactional
-AUD-003 — Make snapshot persistence crash-consistent
-AUD-005 — Validate financial floating-point inputs
-AUD-006 — Harden trade-state ranking API
-
-Implemented AUD-002 settlement transaction handling.
-Added temporary BalanceBook mutation and commit-after-save.
-Tests added/updated and passing.
-
-AUDIT_FINDINGS
-│
-├── SECURITY_LOG  → security significance
-│
-├── BUG_LOG       → work to be done
-│
-└── DEV_LOG       → what was actually changed
-
-Security Log — Finding 1
-Untrusted StateResponse Can Become Authoritative Local State
-An authenticated network peer can submit a structurally valid StateResponse, and the receiving node will apply it through apply_snapshot(). Authentication establishes peer identity, but the current source path does not establish authorization to provide authoritative state.
-
-The security significance is that a network identity is currently sufficient to reach a state-mutating synchronization boundary that permits authoritative remote removals. The impact depends on the intended trust model for peer synchronization and therefore requires the protocol invariant to be established before selecting a remediation.
-
-Status: Open — finding phase. No code changed.
-
-OpenDEX — Security Log Update
-Security Review Checkpoint
-Date: 2 September 2026
-Classification: Security architecture / state synchronization trust boundary
-Status: 🟡 Investigation checkpoint — no new code changes
-
-The current security review has reached the state-synchronization boundary following the implementation and regression verification of authenticated peer identity, order authorization, trade-state authorization, pending trade-state authorization, and core TradeCreated semantic validation.
-
-The immediate remaining security focus is the remote:
-
-StateResponse
-↓
-StateSnapshot
-↓
-apply_snapshot()
-↓
-OrderBook / TradeBook mutation
-↓
-persistence
-
-Current Finding — State Synchronization Authority
-An authenticated network peer can currently submit a structurally valid StateResponse, which reaches apply_snapshot() and can influence authoritative local domain state.
-
-Network authentication establishes:
-
-authenticated PeerId
-
-but does not by itself establish:
-
-authority to provide canonical local state
-
-The receiving node therefore needs to distinguish:
-
-Authenticated sender
-≠
-Authorized state authority
-
-Security Questions Now Prioritized
-The state-synchronization protocol must explicitly establish:
-
-whether StateSnapshot is authoritative or advisory;
-which peers, if any, are authorized to provide authoritative state;
-whether authorization is global, scoped, or object-specific;
-which snapshot fields are authoritative;
-whether individual orders and trades require independent semantic validation;
-how stale snapshots are detected and rejected;
-how conflicting snapshots are resolved;
-whether removed orders can ever be resurrected;
-whether trades can be resurrected or replaced;
-whether remote snapshots can introduce arbitrary removals;
-how replayed snapshots behave;
-whether snapshot application bypasses normal object authorization rules;
-how persistence remains crash-consistent during snapshot application.
-Required Security Invariant
-Before apply_snapshot() mutates protected domain state, the receiving node must be able to establish:
-
-UNTRUSTED NETWORK INPUT
-        ↓
-Authenticated sender
-        ↓
-Snapshot authorization
         ↓
 Snapshot semantic validation
         ↓
@@ -1665,54 +1361,933 @@ Crash-consistent persistence
 
 A successfully authenticated StateResponse must not automatically be treated as an authoritative description of local exchange state.
 
+Required Protocol Decisions
+The security review must establish:
+
+Whether StateSnapshot is authoritative, advisory, or recovery-oriented.
+
+Which peers, if any, are authorized to provide authoritative state.
+
+Whether synchronization authority is global, scoped, or object-specific.
+
+Which snapshot fields are authoritative.
+
+Whether individual orders require independent ownership and semantic validation.
+
+Whether individual trades require the same validation as remote TradeCreated.
+
+How stale snapshots are detected and rejected.
+
+How conflicting snapshots are resolved.
+
+Whether removed orders can ever be resurrected.
+
+Whether trades can be resurrected or replaced.
+
+Whether a snapshot can remove arbitrary local state.
+
+How replayed snapshots are handled.
+
+Whether snapshot application bypasses normal object-level authorization.
+
+How snapshot persistence remains crash-consistent.
+
+Required Security Invariants
+The final protocol should be able to answer, for every remotely supplied snapshot object:
+
+Who is authorized to provide this state?
+What authority does that peer possess?
+Which fields may the peer change?
+How is freshness established?
+How are conflicts resolved?
+How is resurrection prevented?
+How is the resulting mutation persisted safely?
+
+These questions must be answered at the protocol/security-design level before apply_snapshot() is treated as a trusted synchronization mechanism.
+
+Required Verification
+Once the synchronization contract is defined, regression coverage should include at minimum:
+
+unauthorized snapshot rejection;
+
+authenticated-but-unauthorized peer rejection;
+
+stale snapshot rejection;
+
+conflicting snapshot handling;
+
+arbitrary order-removal attempts;
+
+order-resurrection attempts;
+
+trade-resurrection attempts;
+
+unauthorized order introduction;
+
+unauthorized trade introduction;
+
+replayed snapshot handling;
+
+state-integrity preservation after rejection;
+
+persistence integrity after accepted snapshot application;
+
+crash/restart behaviour during snapshot application;
+
+adversarial multi-node synchronization tests.
+
 Current Assessment
-No new implementation changes are recorded in this checkpoint.
+Status: 🔴 Open — Investigation
 
-The finding remains open because the intended synchronization trust model has not yet been formally established.
+No implementation change should be made solely to close SEC-013 until the intended synchronization trust model has been established.
 
-The review should therefore define the state-synchronization authority model before implementing a narrow authorization fix. This is intended to prevent an implementation-level control from being introduced without a corresponding protocol invariant.
+The objective is to define the authoritative synchronization invariant first and then implement the smallest control that enforces that invariant.
 
-Security Posture
-The following previously implemented controls remain verified:
+Related Findings
+SEC-001 — Remote message trust boundary
 
-authenticated application/network identity binding;
-remote order-cancellation authorization;
-trade participant authorization;
-pending trade-state authorization;
-core remote TradeCreated semantic validation;
-validation before mutation;
-trade idempotency;
-settlement idempotency;
-checked financial arithmetic;
-locked-balance validation;
-removed-order protection;
-persistence/restart regression coverage;
-multi-node networking tests.
-Security hardening remains incomplete and the system should not yet be represented as having complete protocol security.
+SEC-009 — Remote TradeCreated semantic validation
 
-Next Security Milestone
-The next dedicated review should establish the authoritative security contract for:
+SEC-010 — Application sender identity
 
-StateResponse
-↓
-StateSnapshot
-↓
-apply_snapshot()
+SEC-012 — Remote OrderCreated / existing order mutation
 
-and then convert those invariants into executable adversarial regression tests.
+AUD-002 — Settlement persistence transaction handling
 
-Current principle remains:
+AUD-003 — Snapshot persistence crash consistency
+
+Security Principle
+The synchronization boundary must preserve the distinction:
 
 Protocol validity
-≠
+        ≠
 Domain validity
-≠
+        ≠
 Authenticated identity
-≠
-Authorization
-≠
-State-transition authority
-≠
-Settlement authority
-≠
+        ≠
+Synchronization authorization
+        ≠
+Authoritative state
+
+An authenticated peer is not automatically a trusted source of canonical local state.
+
+Next Step
+Define the authoritative StateResponse / StateSnapshot trust model.
+
+After the invariant is agreed, convert it into adversarial regression tests and then implement the minimum enforcement required by the protocol.
+SEC-013 — State Synchronization Authority Model
+Finding: SEC-013 — Remote StateSnapshot Synchronization Authority
+Status: 🔴 Open — Investigation
+Priority: Critical
+Category: Authorization / State Integrity / Synchronization
+
+1. Purpose
+This document defines the security model that must govern remote StateResponse / StateSnapshot processing before apply_snapshot() is treated as an authoritative state-mutation boundary.
+
+The objective is to establish what a remote peer is permitted to assert, what the receiving node must independently verify, and which state changes may be performed as a result.
+
+No implementation change is implied by this document.
+
+2. Core Security Principle
+An authenticated network identity does not automatically constitute authority over local state.
+
+The receiving node must distinguish:
+
+Authenticated Peer
+        ≠
+Synchronization Authority
+        ≠
+Authoritative State
+
+Therefore:
+
+valid StateResponse
+        ≠
+trusted StateSnapshot
+        ≠
+authorized state mutation
+
+3. Proposed Synchronization Model
+OpenDEX should initially treat a remote StateSnapshot as a synchronization proposal, rather than automatically treating it as canonical authoritative state.
+
+The receiving node remains responsible for determining whether individual portions of the snapshot are acceptable under local protocol rules.
+
+The intended boundary is:
+
+Remote StateResponse
+        ↓
+Authenticated sender
+        ↓
+Synchronization policy
+        ↓
+Snapshot validation
+        ↓
+Object-level validation
+        ↓
+Conflict / freshness evaluation
+        ↓
+State reconciliation
+        ↓
+Crash-consistent persistence
+        ↓
+Commit
+
+A peer therefore does not receive unrestricted authority to replace local state merely by successfully publishing a signed GossipSub message.
+
+4. Synchronization Authority
+4.1 Network authentication
+The receiving node must establish the authenticated libp2p identity of the peer that transmitted the snapshot.
+
+The authenticated PeerId is the source identity for security decisions.
+
+Application-level fields supplied inside the snapshot must not independently establish authority.
+
+4.2 Authorization scope
+The protocol must not assume that an authenticated peer has unrestricted authority over all exchange state.
+
+Synchronization authority must have an explicitly defined scope.
+
+At minimum, the protocol must distinguish:
+
+identity
+authority
+scope
+
+For example:
+
+Peer A
+  ↓
+authenticated identity
+
+Peer A
+  ↓
+permitted synchronization scope
+
+Peer A
+  ↓
+specific state assertions permitted within that scope
+
+The exact scope remains an architectural decision.
+
+5. Snapshot Authority
+A remote snapshot must not be permitted to arbitrarily assert:
+
+ownership of another participant's order;
+
+creation of arbitrary orders;
+
+removal of arbitrary orders;
+
+replacement of active orders;
+
+creation of arbitrary trades;
+
+replacement of existing trades;
+
+resurrection of removed orders;
+
+resurrection of consumed trades;
+
+arbitrary applied-trade history;
+
+arbitrary removed-order history.
+
+Each of these operations must be justified by an explicit protocol rule.
+
+6. Object-Level Validation
+A snapshot is a container of state and must not bypass the security rules applied to individual network objects.
+
+Orders
+Remote orders must be evaluated against the same fundamental invariants required for remote OrderCreated processing.
+
+The receiver must establish, where applicable:
+
+order identity
+order owner
+market
+side
+price
+quantity
+lifecycle state
+immutability rules
+
+An order appearing inside a snapshot must not become trusted solely because it was embedded inside StateSnapshot.
+
+Trades
+Remote trades must satisfy the authoritative trade invariants already established for TradeCreated.
+
+Snapshot synchronization must not provide a bypass around:
+
+Trade validation
+        ↓
+participant consistency
+        ↓
+market consistency
+        ↓
+price constraints
+        ↓
+quantity constraints
+        ↓
+trade identity rules
+        ↓
+state rules
+
+7. Removed-State Authority
+A snapshot containing removed-order identifiers must not automatically authorize local deletion.
+
+The receiver must establish that the remote state assertion is permitted under the synchronization model.
+
+The invariant is:
+
+Remote removed-order assertion
+        ↓
+authorization + validation
+        ↓
+permitted reconciliation
+
+not:
+
+Remote removed-order assertion
+        ↓
+delete local order
+
+8. Resurrection Protection
+State synchronization must preserve the existing protection against resurrection.
+
+An object that has been permanently removed or consumed must not become active merely because an older or conflicting snapshot contains that object.
+
+The required invariant is:
+
+removed / consumed
+        ↓
+cannot be resurrected by ordinary synchronization
+
+Any legitimate recovery or reconstruction mechanism must be explicitly defined as a separate protocol rule.
+
+9. Freshness and Replay
+A valid historical snapshot remains valid data, but validity does not imply freshness.
+
+The protocol must therefore eventually provide a mechanism for distinguishing:
+
+new snapshot
+
+from:
+
+old valid snapshot replayed later
+
+Possible mechanisms include versioning, epochs, monotonic sequence numbers, or another deterministic protocol mechanism.
+
+The exact mechanism is not selected by this document.
+
+Until freshness semantics are established, replayed snapshots remain a security-review concern.
+
+10. Conflicting Snapshots
+The protocol must define deterministic behaviour when two valid snapshots disagree.
+
+Examples include:
+
+Peer A → Order X quantity = 5
+Peer B → Order X quantity = 2
+
+or:
+
+local → Trade T = Settled
+remote → Trade T = Created
+
+The receiving node must not resolve such conflicts through incidental message-arrival order.
+
+A deterministic conflict/reconciliation rule is required.
+
+11. Atomic State Application
+Snapshot application must preserve state integrity if validation or persistence fails.
+
+The preferred security boundary is:
+
+receive
+  ↓
+validate
+  ↓
+construct candidate state
+  ↓
+persist safely
+  ↓
+commit
+
+rather than mutating authoritative state incrementally and discovering an error afterward.
+
+Snapshot application must not leave the local node in a partially updated state.
+
+12. Idempotency
+Applying the same accepted snapshot repeatedly should produce the same resulting state.
+
+Therefore:
+
+Snapshot S
+Snapshot S
+Snapshot S
+
+must not progressively corrupt, duplicate, or otherwise alter protected state beyond the result of the first valid application.
+
+Idempotency does not replace freshness validation.
+
+A stale snapshot may be idempotent and still be unauthorized or unsafe to apply.
+
+13. Security Invariants
+The following invariants should become executable requirements.
+
+INV-013-01 — Authenticated identity
+The sender used for security decisions must come from the authenticated network identity.
+
+INV-013-02 — Explicit synchronization authority
+Authenticated identity alone must not confer unrestricted synchronization authority.
+
+INV-013-03 — Scoped authority
+Any synchronization authority must have an explicitly defined scope.
+
+INV-013-04 — Validation before mutation
+No protected local state may be mutated before snapshot validation succeeds.
+
+INV-013-05 — Object-level security
+Snapshot-contained orders and trades must not bypass their respective semantic and authorization rules.
+
+INV-013-06 — No unauthorized deletion
+A remote snapshot must not arbitrarily remove protected local state.
+
+INV-013-07 — No unauthorized resurrection
+A remote snapshot must not resurrect protected removed or consumed state.
+
+INV-013-08 — Freshness
+The protocol must eventually distinguish current state from replayed historical state.
+
+INV-013-09 — Deterministic conflict resolution
+Conflicting valid state must have deterministic reconciliation semantics.
+
+INV-013-10 — Atomic persistence
+Failed snapshot persistence must not leave partially committed protected state.
+
+INV-013-11 — Idempotent application
+Repeated delivery of an accepted snapshot must not create additional unintended state changes.
+
+14. Required Adversarial Tests
+Once the implementation contract is finalized, the following tests should be required.
+
+rejects_snapshot_from_unauthorized_peer
+
+rejects_snapshot_with_unauthorized_order
+
+rejects_snapshot_with_unauthorized_trade
+
+rejects_snapshot_attempting_arbitrary_order_removal
+
+rejects_snapshot_attempting_order_resurrection
+
+rejects_snapshot_attempting_trade_resurrection
+
+rejects_stale_snapshot
+
+handles_conflicting_snapshots_deterministically
+
+rejects_internally_inconsistent_snapshot
+
+does_not_mutate_state_when_snapshot_validation_fails
+
+does_not_partially_commit_when_snapshot_persistence_fails
+
+reapplying_identical_snapshot_is_idempotent
+
+rejects_or_handles_replayed_snapshot_according_to_protocol_rules
+
+These tests should be implemented against the actual multi-node/network path where practical, rather than relying exclusively on isolated unit tests.
+
+15. Relationship to Existing Findings
+SEC-012 — Remote OrderCreated / Existing Order Mutation
+SEC-012 establishes that order identity and mutation authority require explicit review.
+
+SEC-013 must not provide a synchronization path that bypasses those protections.
+
+SEC-009 — Remote TradeCreated Semantic Validation
+Snapshot-provided trades must not bypass the semantic validation established for remote TradeCreated.
+
+SEC-006 — Distributed Replay
+Snapshot freshness and replay semantics are directly related to the broader replay-resistance review.
+
+SEC-013 defines the synchronization-specific requirement; SEC-006 remains responsible for the broader distributed replay model.
+
+AUD-003 — Snapshot Persistence Crash Consistency
+Snapshot authorization and semantic validation determine whether state may be accepted.
+
+Persistence integrity determines whether accepted state can be committed safely.
+
+These remain related but separate concerns.
+
+16. Current Decision
+For the purposes of the security review:
+
+A remote StateSnapshot is not currently considered authoritative merely because it originated from an authenticated peer.
+
+The receiver must establish synchronization authority, validate the snapshot, reconcile it against local state, and persist the resulting state safely before committing the mutation.
+
+The exact mechanism by which synchronization authority, freshness, and conflict resolution are established remains subject to protocol design review.
+
+17. Implementation Rule
+No code change should be made solely to close SEC-013 until the authority, scope, freshness, and conflict model has been accepted as the intended OpenDEX protocol behaviour.
+
+Once those decisions are finalized, the implementation should enforce the resulting invariants and the security regression suite should provide executable evidence for each one.
+
+18. Security Boundary
+The final intended boundary is:
+
+UNTRUSTED NETWORK INPUT
+        ↓
+Authenticated Peer
+        ↓
+Synchronization Authority
+        ↓
+Snapshot Validation
+        ↓
+Object-Level Authorization
+        ↓
+Freshness / Conflict Rules
+        ↓
+State Reconciliation
+        ↓
+Crash-Consistent Persistence
+        ↓
+AUTHORITATIVE LOCAL STATE
+
+This boundary is the basis for the next SEC-013 implementation and adversarial-testing phase.
+
+
+----------------------------------------------------------------------------------------------------------------
+
+OpenDEX — SEC-013 Synchronization Model Decision Record
+Finding: SEC-013 — Remote StateSnapshot Synchronization Authority
+Decision: Reconciliation-based synchronization
+Status: 🟡 Design decision — implementation pending
+Priority: Critical
+Category: Authorization / State Integrity / Synchronization
+
+1. Decision
+OpenDEX will treat a remote StateSnapshot as a synchronization proposal, not as automatically authoritative local state.
+
+An authenticated peer may provide synchronization data, but the receiving node remains responsible for validating and reconciling that data before protected local state is changed.
+
+The receiving node must not treat:
+
+authenticated peer
+        =
+canonical state authority
+
+Instead:
+
+authenticated peer
+        ↓
+permitted synchronization source
+        ↓
+snapshot proposal
+        ↓
+validation
+        ↓
+reconciliation
+        ↓
+accepted local state
+
+2. Why This Model
+The current OpenDEX architecture is distributed and already supports:
+
+duplicate message delivery;
+
+out-of-order delivery;
+
+pending state;
+
+idempotent trade application;
+
+idempotent settlement;
+
+local order ownership;
+
+semantic trade validation;
+
+removed-order protection;
+
+multi-node synchronization.
+
+Automatically treating one authenticated peer's snapshot as canonical would introduce a broad authority boundary that is not currently defined by the protocol.
+
+Reconciliation-based synchronization preserves the distinction between:
+
+Who sent this?
+        ↓
+What are they proposing?
+        ↓
+Is the proposal valid?
+        ↓
+Does it conflict with protected local state?
+        ↓
+What state may safely be accepted?
+
+3. Authentication
+The authenticated libp2p PeerId remains the source of network identity.
+
+Application-level identity fields must not independently establish synchronization authority.
+
+The security model is therefore:
+
+GossipSub message
+        ↓
+authenticated PeerId
+        ↓
+synchronization policy
+
+not:
+
+StateSnapshot.sender
+        ↓
+automatic authority
+
+4. Scope of a Snapshot
+A StateSnapshot is considered a proposal concerning state known by the sending peer.
+
+It does not automatically grant the sender authority to:
+
+delete arbitrary local orders;
+
+modify another trader's order;
+
+introduce arbitrary trades;
+
+replace existing trade state;
+
+resurrect removed state;
+
+rewrite local history;
+
+declare arbitrary state authoritative.
+
+Each contained object remains subject to the receiving node's validation and state-integrity rules.
+
+5. Order Reconciliation
+Orders supplied by a snapshot must be reconciled against local state.
+
+The receiver must not blindly perform:
+
+remote order
+        ↓
+upsert_order()
+        ↓
+authoritative local state
+
+Instead, the reconciliation process must determine whether the remote order:
+
+is new;
+
+already exists and is identical;
+
+represents a permitted state update;
+
+conflicts with local state;
+
+attempts to modify immutable identity fields;
+
+attempts to resurrect a removed order.
+
+An existing active order must not be silently replaced merely because a remote snapshot contains the same UUID.
+
+This requirement is directly related to SEC-012.
+
+6. Trade Reconciliation
+Trades supplied by a snapshot must pass the authoritative trade-validation rules.
+
+Snapshot synchronization must not create a validation bypass around the existing remote TradeCreated security boundary.
+
+The receiver must validate, as applicable:
+
+referenced orders;
+
+buyer and seller;
+
+market;
+
+side;
+
+price;
+
+quantity;
+
+remaining quantities;
+
+trade identity;
+
+trade state;
+
+maker/taker semantics;
+
+timestamp invariants.
+
+A snapshot containing an invalid trade must not mutate the order book or trade book.
+
+7. Removed Orders
+A remote snapshot's removed_orders collection is treated as a state assertion, not an unconditional deletion command.
+
+The receiver must establish that the removal is consistent with locally known state and the protocol's reconciliation rules.
+
+The following must not occur merely because a remote snapshot contains an identifier:
+
+remote removed_orders
+        ↓
+delete arbitrary local order
+
+This is a security boundary.
+
+8. Resurrection Protection
+Reconciliation must preserve permanent removal/consumption protections.
+
+A snapshot must not resurrect an order that the local node has permanently recorded as removed unless the protocol explicitly defines a separate recovery mechanism.
+
+Likewise, consumed or finalized trades must not be resurrected through an ordinary synchronization snapshot.
+
+Required invariant:
+
+protected historical state
+        ↓
+ordinary snapshot
+        ↓
+cannot be resurrected
+
+9. Freshness
+Reconciliation-based synchronization requires an explicit freshness mechanism.
+
+The protocol must eventually distinguish:
+
+current proposal
+
+from:
+
+historical valid proposal replayed later
+
+The implementation may use a version, epoch, monotonic sequence, or another deterministic mechanism.
+
+Until the freshness mechanism is implemented, replay handling remains an open part of SEC-013 and SEC-006.
+
+10. Conflict Resolution
+Conflicting snapshots must be handled deterministically.
+
+The result must not depend solely on message arrival order.
+
+For example:
+
+Local:
+Order X remaining = 5
+
+Remote:
+Order X remaining = 2
+
+must have an explicitly defined reconciliation result.
+
+Likewise:
+
+Local:
+Trade T = Settled
+
+Remote:
+Trade T = Created
+
+must not allow the older state to overwrite protected local state.
+
+The conflict policy must distinguish between:
+
+legitimate newer state;
+
+stale state;
+
+invalid state;
+
+conflicting state;
+
+permanently finalized state.
+
+11. Persistence
+Accepted reconciliation results must be committed safely.
+
+The required boundary is:
+
+receive
+  ↓
+validate
+  ↓
+reconcile
+  ↓
+construct candidate state
+  ↓
+persist safely
+  ↓
+commit
+
+Snapshot processing must not leave partially applied state if persistence fails.
+
+This remains related to AUD-003.
+
+12. Idempotency
+Applying the same accepted snapshot multiple times must not progressively alter state.
+
+For an accepted snapshot S:
+
+apply(S)
+apply(S)
+apply(S)
+
+must converge on the same state as a single successful application.
+
+Idempotency does not substitute for freshness.
+
+A stale snapshot can be idempotent while still being unsafe to accept.
+
+13. Security Properties
+The selected reconciliation model establishes the following properties.
+
+Property 1 — Authentication
+The receiver knows which authenticated network peer supplied the proposal.
+
+Property 2 — No implicit authority
+Authentication alone does not grant unrestricted authority over local state.
+
+Property 3 — Validation before mutation
+No protected state is mutated before the snapshot passes the applicable validation rules.
+
+Property 4 — Object-level protection
+Orders and trades cannot bypass their respective authorization and semantic-validation boundaries by being embedded in a snapshot.
+
+Property 5 — No arbitrary deletion
+A remote peer cannot use synchronization as an unrestricted deletion mechanism.
+
+Property 6 — No ordinary resurrection
+A remote snapshot cannot resurrect protected removed or consumed state.
+
+Property 7 — Deterministic reconciliation
+Conflicts are resolved according to explicit protocol rules rather than message-arrival order.
+
+Property 8 — Freshness
+The protocol can distinguish current state from replayed historical state.
+
+Property 9 — Atomic persistence
+Accepted state is committed without leaving partially applied protected state.
+
+Property 10 — Idempotent convergence
+Repeated delivery of the same accepted snapshot converges to the same result.
+
+14. Adversarial Test Plan
+The decision should be converted into executable tests before the implementation is considered hardened.
+
+Authentication and authority
+rejects_snapshot_from_unauthorized_peer
+accepts_snapshot_from_permitted_sync_source
+
+Orders
+rejects_snapshot_modifying_foreign_order
+rejects_snapshot_replacing_existing_order
+rejects_snapshot_removing_arbitrary_order
+rejects_snapshot_resurrecting_removed_order
+accepts_valid_new_order_under_reconciliation_rules
+
+Trades
+rejects_snapshot_with_invalid_trade
+rejects_snapshot_with_conflicting_trade
+rejects_snapshot_resurrecting_consumed_trade
+accepts_valid_trade_under_reconciliation_rules
+
+Freshness and replay
+rejects_stale_snapshot
+rejects_replayed_snapshot_when_protocol_requires_rejection
+repeated_accepted_snapshot_is_idempotent
+
+Conflicts
+conflicting_snapshots_have_deterministic_result
+older_state_cannot_replace_protected_newer_state
+
+State integrity
+invalid_snapshot_does_not_mutate_state
+failed_snapshot_persistence_does_not_partially_commit
+
+Multi-node
+The critical cases should eventually be exercised through the real libp2p network path rather than only direct calls to apply_snapshot().
+
+15. Relationship to Existing Findings
+SEC-009 — Remote TradeCreated Semantic Validation
+
+Snapshot trades must not bypass established trade validation.
+
+SEC-012 — Remote OrderCreated / Existing Order Mutation
+
+Snapshot synchronization must not provide a backdoor around order identity and ownership rules.
+
+SEC-013 — Remote StateSnapshot Synchronization Authority
+
+This decision record defines the intended synchronization model for SEC-013.
+
+SEC-006 — Distributed Replay
+
+Freshness and replay of snapshots remain part of the broader distributed replay model.
+
+AUD-003 — Snapshot Persistence Crash Consistency
+
+Persistence safety remains a separate audit concern.
+
+16. Implementation Boundary
+Once the remaining protocol details are finalized, the intended implementation boundary is:
+
+StateResponse
+      ↓
+authenticated PeerId
+      ↓
+snapshot structural validation
+      ↓
+freshness validation
+      ↓
+order validation
+      ↓
+trade validation
+      ↓
+removal validation
+      ↓
+reconciliation
+      ↓
+candidate state
+      ↓
+crash-safe persistence
+      ↓
+commit
+
+apply_snapshot() must not function as an unrestricted:
+
+remote state
+      ↓
+replace local state
+
+operation.
+
+17. Decision Status
+Decision: Reconciliation-based synchronization.
+
+Implementation: Not yet applied.
+
+SEC-013: Remains open until the reconciliation rules, freshness mechanism, conflict semantics, and required regression tests are implemented and verified.
+
+This decision record therefore defines the intended security direction without prematurely claiming that the implementation already enforces it.
+
+18. Final Security Principle
+The synchronization protocol must preserve:
+
+Protocol validity
+        ≠
+Domain validity
+        ≠
+Authenticated identity
+        ≠
 Synchronization authority
+        ≠
+Freshness
+        ≠
+Authoritative local state
+
+A remote snapshot is a proposal for reconciliation, not an automatic command to replace local state.

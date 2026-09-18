@@ -3,8 +3,10 @@ use p2p_node::sync::apply_snapshot;
 use p2p_node::trades::TradeBook;
 use protocol::state::StateSnapshot;
 use sha2::{Digest, Sha256};
+use protocol::message::{
+    AMOUNT_SCALE, Asset, Market, Order, PRICE_SCALE, Side, Trade, TradeState,
+};
 
-use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
 use std::fs;
 use uuid::Uuid;
 
@@ -18,7 +20,7 @@ fn market() -> Market {
 fn order(id: &str, side: Side, price: u64, amount: u64) -> Order {
     Order {
         id: Uuid::parse_str(id).unwrap(),
-        trader: "test-trader".to_string(),
+        trader: format!("trader-{}", id),
         market: market(),
         side,
         price,
@@ -720,8 +722,8 @@ fn removed_order_is_not_resurrected_by_stale_state() {
         buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
         sell_order: order_id,
         maker: order_a.trader.clone(),
-        taker: "test-trader".to_string(),
-        buyer: "test-trader".to_string(),
+        taker: "trader-00000000-0000-0000-0000-000000000003".to_string(),
+        buyer: "trader-00000000-0000-0000-0000-000000000003".to_string(),
         seller: order_a.trader.clone(),
         market: market(),
         price: 100,
@@ -1365,4 +1367,37 @@ fn snapshot_does_not_resurrect_removed_order() {
 
     assert!(book.orders.is_empty());
     assert!(book.removed_orders.contains(&original.id));
+}
+
+#[test]
+fn matching_rejects_self_trade() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-self-trade-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = OrderBook::new(path);
+
+    let sell = order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Sell,
+        100 * PRICE_SCALE,
+        AMOUNT_SCALE,
+    );
+
+    let mut buy = order(
+        "00000000-0000-0000-0000-000000000002",
+        Side::Buy,
+        100 * PRICE_SCALE,
+        AMOUNT_SCALE,
+    );
+    buy.trader = sell.trader.clone();
+    book.add_order(sell);
+
+    let trades = book.match_order(&buy);
+
+    assert!(
+        trades.is_empty(),
+        "a trader must not match against their own resting order"
+    );
 }

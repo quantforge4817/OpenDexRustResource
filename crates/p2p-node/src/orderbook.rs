@@ -158,11 +158,6 @@ impl OrderBook {
         before != self.orders.len()
     }
 
-    pub fn mark_trade_applied(&mut self, trade_id: &str) {
-        if !self.applied_trades.iter().any(|id| id == trade_id) {
-            self.applied_trades.push(trade_id.to_string());
-        }
-    }
     pub fn validate_trade(&self, trade: &Trade) -> Result<()> {
         if trade.amount == 0 {
             anyhow::bail!("trade amount must be greater than zero");
@@ -331,6 +326,7 @@ impl OrderBook {
                         && existing.market.base == incoming.market.base
                         && existing.market.quote == incoming.market.quote
                         && existing.side != incoming.side
+                        && existing.trader != incoming.trader
                         && match incoming.side {
                             Side::Buy => existing.price <= incoming.price,
                             Side::Sell => existing.price >= incoming.price,

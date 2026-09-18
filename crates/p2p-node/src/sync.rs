@@ -46,6 +46,17 @@ pub fn validate_state_snapshot(
             );
         }
     }
+    // A remote snapshot must not delete an order that is still
+    // locally active. Order removal must come from an authenticated
+    // local protocol event or a validated trade.
+    for order_id in &state.removed_orders {
+        if order_book.orders.iter().any(|order| order.id == *order_id) {
+            anyhow::bail!(
+                "StateResponse attempts to remove locally active order {}",
+                order_id
+            );
+        }
+    }
 
     // A remote snapshot must not contain duplicate trade IDs.
     let mut trade_ids = std::collections::HashSet::new();
@@ -239,48 +250,63 @@ pub fn apply_snapshot(
 
     println!("=== State Sync Received ===");
 
-    // Apply the snapshot to temporary copies first.
+    // Remote snapshots are reconciliation data, not an authority over
+    // already-known local state.
     //
-    // This makes snapshot processing transactional from the caller's
-    // perspective: if anything fails, the live books are untouched.
+    // In particular, a snapshot must never:
+    //   - delete a locally known active order;
+    //   - reduce a locally known order amount;
+    //   - mark a locally known trade as applied.
+    //
+    // Those state transitions must come from authenticated protocol events
+    // and validated trades.
+
     let mut next_order_book = order_book.clone();
     let mut next_trade_book = trade_book.clone();
 
-    for order_id in state.removed_orders {
-        if !next_order_book.removed_orders.contains(&order_id) {
-            next_order_book.removed_orders.push(order_id);
-        }
-
-        next_order_book.orders.retain(|order| order.id != order_id);
-    }
-
+    // Reconcile orders from the materialized snapshot.
+    //
+    // Existing orders are updated through update_order_from_snapshot(),
+    // which permits a legitimate reduction in remaining amount while
+    // rejecting an increase. Orders already known to be removed cannot
+    // be resurrected.
     for order in state.orders {
         if next_order_book.removed_orders.contains(&order.id) {
             continue;
         }
 
-        next_order_book.update_order_from_snapshot(order);
+        if next_order_book
+            .orders
+            .iter()
+            .any(|existing| existing.id == order.id)
+        {
+            next_order_book.update_order_from_snapshot(order);
+        } else {
+            next_order_book.upsert_order(order);
+        }
     }
 
-    // Snapshot orders are already materialized at their current quantities.
-    // Snapshot trades are historical records only and must not be replayed
+
+    // Historical trades may be learned from a snapshot, but adding them
+    // must never replay them against the order book.
     for trade in state.trades {
         next_trade_book.add_trade(trade);
     }
 
-    for trade_id in state.applied_trades {
-        next_order_book.mark_trade_applied(&trade_id);
+    // DO NOT import remote removed_orders into the local removal set.
+    //
+    // A remote peer cannot prove through a bare snapshot that one of our
+    // locally active orders has been consumed/cancelled.
+    //
+    // DO NOT import remote applied_trades either.
+    //
+    // A trade becomes applied only when our local validated trade
+    // processing actually applies it.
 
-        next_order_book
-            .pending_trades
-            .retain(|trade| trade.id.to_string() != trade_id);
-    }
-
-    // Persist the fully merged state before committing it to the live books.
+    // Persist the merged informational state before committing it.
     next_order_book.save_orders()?;
     next_trade_book.save_trades()?;
 
-    // Commit only after all processing and persistence succeeded.
     *order_book = next_order_book;
     *trade_book = next_trade_book;
 
