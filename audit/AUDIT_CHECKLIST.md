@@ -1,1014 +1,437 @@
-Yes. Based on the **current code changes you committed** and the test results you supplied, I’d update the checklist so it no longer carries the already-remediated AUDIT-009/AUDIT-008 material as open findings.
+OpenDEX Audit Checklist
 
- One important correction: the current findings and checklist are internally inconsistent around **AUDIT-008/AUDIT-009**. The latest implementation adds deterministic trade-ID validation and snapshot trade-identity validation, and your 29 orderbook + 17 security + other tests passed. I would record those as **verified/remediated**, while keeping the genuinely unresolved items open.
+Audit type: Source-level security, correctness, accounting, and distributed-state review
+Project: OpenDEX
+Status: In progress
+Last updated: 2026-09-19
 
- Here is a cleaned-up version you can replace `audit/AUDIT_CHECKLIST.md` with:
 
- # OpenDEX Audit Checklist
+1. Current Audit Scope
 
- ## 1\. Current Audit Scope
-
- The current source-level audit covers:
-
- - `crates/protocol/src/message.rs`
-- `crates/protocol/src/state.rs`
-- `crates/p2p-node/src/order_factory.rs`
-- `crates/p2p-node/src/orderbook.rs`
-- `crates/p2p-node/src/trades.rs`
-- `crates/p2p-node/src/balances.rs`
-- `crates/p2p-node/src/settlement.rs`
-- `crates/p2p-node/src/trade_state.rs`
-- `crates/p2p-node/src/sync.rs`
-- `crates/p2p-node/src/exchange.rs`
-
- The review covers:
-
- - Order creation and representation
-- Order validation and ownership
-- Order cancellation
-- Order matching and deterministic trade creation
-- Trade identity and semantic validation
-- Trade application and idempotency
-- Trade-state transitions
-- Balance accounting and settlement
-- State snapshot creation and application
-- Authentication and authorization boundaries
-- Replay and stale-event resistance
-- Integer overflow/underflow
-- Distributed consistency
-- Persistence consistency
-- Resource-exhaustion considerations
-
- ### Out of scope
-
- - Physical/network infrastructure
-- Host security
-- Key custody and operational security
-- Production deployment configuration
-- External services
-- Cryptographic key management outside the reviewed code
-- Live penetration testing
-- Production infrastructure configuration
-
- An independent external auditor is expected to perform infrastructure, deployment, operational-security, and independent verification checks.
-
----
-
- # 2\. Audit Status
-
- - [ ] Audit complete
-- [ ] All findings reviewed
-- [ ] Critical findings resolved
-- [ ] High findings resolved
-- [ ] Medium findings resolved
-- [ ] Low findings resolved
-- [ ] External audit completed
-- [ ] Final security sign-off
-
- **Current overall status: NOT READY FOR FINAL SECURITY SIGN-OFF**
-
- The implementation has passed the current automated regression suite, but several architectural and economic questions remain open.
-
----
-
- # 3\. Audit Areas
-
- ## 3.1 Protocol
-
- - [x] Message integrity
-- [x] Serialization/deserialization
-- [x] Price/amount validation
-- [x] Timestamp validation
-- [x] Authenticated sender binding
-
- ## 3.2 Orders
-
- - [x] Order creation
-- [x] Order ownership validation
-- [x] Order cancellation authorization
-- [x] Duplicate order handling
-- [x] Quantity accounting
-- [x] Removed-order resurrection protection
-- [ ] Complete snapshot order-authority model
-
- ## 3.3 Matching
-
- - [x] Price matching
-- [x] Deterministic price priority
-- [x] Deterministic UUID tie-breaking
-- [x] Partial fills
-- [x] Trade identity
-- [x] Trade duplication/replay handling
-- [ ] Self-trading policy
-- [x] Overflow/underflow checks
-
- ## 3.4 Balances & Settlement
-
- - [x] Available/locked accounting
-- [x] Buyer settlement
-- [x] Seller settlement
-- [x] Settlement idempotency
-- [x] Checked arithmetic
-- [x] Partial-fill settlement accounting
-- [ ] Asset-conservation proof across all rounding cases
-- [ ] Settlement lifecycle authorization
-- [ ] Fixed-point rounding policy
-- [ ] Per-order reservation architecture
-
- ## 3.5 Trade State
-
- - [x] Valid transitions
-- [x] Invalid transitions rejected
-- [x] Exceptional states
-- [x] State replay/idempotency
-- [x] Skipped-state handling
-- [x] Stale-state protection
-- [x] Unauthorized trade-state changes rejected
-
- ## 3.6 State Synchronization
-
- - [x] Snapshot structural validation
-- [x] Duplicate trade detection
-- [x] Duplicate order handling
-- [x] Removed-order protection
-- [x] Applied-trade handling
-- [x] Transaction-like snapshot application
-- [x] Snapshot persistence consistency
-- [x] Trade identity validation
-- [x] Trade/order semantic validation
-- [ ] Snapshot authority model
-- [ ] Snapshot freshness/version semantics
-- [ ] Complete order replacement authorization
-
----
-
- # 4\. Resolved / Verified Findings
-
- ## AUDIT-001 — Message Sender Authentication
-
- **Severity:** High\
- **Status:** CLOSED / VERIFIED
-
- ### Finding
-
- `OpenDexMessage.sender` is application-level identity and must not be trusted merely because it is contained in a received message.
-
- ### Remediation
-
- Incoming messages now bind the claimed application sender to the authenticated libp2p peer.
-
- Protections include:
-
- - claimed sender must match the authenticated peer identity;
-- forged sender identities are rejected;
-- order creation requires sender/order-owner consistency;
-- cancellation requires owner authorization;
-- trade-state changes require trade participation;
-- pending trade-state messages retain authenticated sender identity;
-- sender identity is revalidated when the corresponding trade arrives.
-
- ### Verification
-
- Security regression coverage includes:
-
- - forged sender rejection;
-- impersonated trader rejection;
-- forged cancellation rejection;
-- unauthorized trade-state rejection;
-- authenticated sender acceptance.
-
- **Disposition:** CLOSED / VERIFIED
-
----
-
- ## AUDIT-008 — Remote Snapshot Trade Validation
-
- **Severity:** High\
- **Status:** CLOSED / VERIFIED
-
- ### Finding
-
- Remote state snapshots must not be allowed to introduce structurally or semantically invalid trades into the local state.
-
- ### Remediation
-
- `validate_state_snapshot()` now validates snapshot trades before they are accepted.
-
- Validation includes:
-
- - trade structure;
-- deterministic trade identity;
-- duplicate trade IDs;
-- participant relationships;
-- referenced orders;
-- order side;
-- market consistency;
-- price constraints;
-- trade quantity;
-- maker/taker integrity.
-
- Snapshot application remains transaction-like and invalid snapshots do not partially mutate live state.
-
- ### Verification
-
- Regression coverage includes:
-
- - invalid snapshot rejection;
-- invalid maker rejection;
-- conflicting snapshot order terms;
-- snapshot atomicity;
-- materialized snapshot handling;
-- repeated snapshot idempotency;
-- trade-before-order handling;
-- removed-order resurrection protection.
-
- **Disposition:** CLOSED / VERIFIED
-
----
-
- ## AUDIT-009 / ARCH-004 — Trade Identity, Trade/Order Integrity and Deterministic Matching
-
- **Severity:** Critical\
- **Status:** CLOSED / VERIFIED
-
- ### Finding
-
- Distributed trade creation required stronger guarantees that independently received trades represent the same deterministic economic event and correspond to their referenced orders.
-
- ### Remediation
-
- Trade IDs are deterministically derived from:
-
- - buy order UUID;
-- sell order UUID;
-- trade price;
-- trade amount.
-
- SHA-256 is used as the derivation function.
-
- Incoming trades are checked against the expected deterministic ID before persistence/application.
-
- Trade validation additionally verifies:
-
- - maker/taker structure;
-- buyer/seller identity;
-- referenced order identity;
-- order side;
-- market;
-- price limits;
-- remaining quantities.
-
- Matching is deterministic:
-
- - buy orders select the lowest eligible sell price;
-- sell orders select the highest eligible buy price;
-- equal-price orders use deterministic UUID ordering.
-
- ### Verification
-
- The implementation is covered by regression tests for:
-
- - invalid deterministic trade IDs;
-- deterministic matching;
-- different arrival orders converging to the same result;
-- duplicate trade application;
-- partial fills;
-- multiple fills against one order;
-- invalid trade/order relationships;
-- invalid trade quantities;
-- invalid trade prices;
-- out-of-order trade delivery;
-- trade-before-order delivery.
-
- Current supplied verification:
-
- - Orderbook tests: 29 passed
-- Exchange tests: 1 passed
-- Security tests: 17 passed
-- Trade-state tests: 14 passed
-- Settlement tests: 6 passed
-- Balance tests: 8 passed
-- CLI tests: 11 passed
-- Network tests: 1 passed
-- Total supplied current suite: 87 individual integration/unit tests plus doctest targets with no failures
-
- **Disposition:** CLOSED / VERIFIED
-
----
-
- ## SEC-002 — Remote Order Cancellation Authority
-
- **Severity:** Critical\
- **Status:** CLOSED / VERIFIED
-
- ### Finding
-
- Remote cancellation must be authorized against the authenticated sender and the owner of the referenced order.
-
- ### Remediation
-
- Cancellation now requires:
-
- - authenticated sender identity;
-- matching `OrderCancelled.trader`;
-- existing referenced order;
-- sender matching the order owner.
-
- Unauthorized cancellation is rejected before order mutation.
-
- ### Verification
-
- Covered by:
-
- - `rejects_order_cancellation_by_non_owner`
-- `handler_rejects_cancellation_by_non_owner`
-- `handler_rejects_forged_cancellation_trader_without_mutating_state`
-
- **Disposition:** CLOSED / VERIFIED
-
----
-
- # 5\. Positive Security Controls
-
- ## CTRL-001 — Trade-State Transition Validation
-
- **Status:** PASS
-
- `Trade::transition()` requires `TradeState::can_transition_to()` to approve state changes.
-
- Duplicate state events are idempotent.
-
- Skipped-state handling follows protocol transition rules.
-
----
-
- ## CTRL-002 — Trade/Order Consistency Validation
-
- **Status:** PASS
-
- Trade validation verifies:
-
- - referenced buy order;
-- referenced sell order;
-- correct Buy/Sell sides;
-- buyer matches buy-order trader;
-- seller matches sell-order trader;
-- market consistency;
-- price limits;
-- remaining quantities;
-- deterministic trade identity.
-
----
-
- ## CTRL-003 — Snapshot Transaction-Like Application
-
- **Status:** PASS
-
- Snapshot processing occurs against cloned state.
-
- Live state is replaced only after validation, processing, and persistence succeed.
-
- Invalid snapshots therefore do not partially mutate the live books.
-
----
-
- ## CTRL-004 — Structural Trade Validation Before Persistence
-
- **Status:** PASS
-
- Trade recording validates structural correctness before inserting the trade into `TradeBook`.
-
- This prevents malformed trades from entering persistent trade state merely because their referenced orders are not yet available.
-
- Order-dependent validation is subsequently performed when the referenced orders become available.
-
----
-
- ## CTRL-005 — Settlement Trade-Level Idempotency
-
- **Status:** PASS
-
- Settled trade IDs are recorded.
-
- Duplicate settlement attempts are ignored.
-
- This prevents the same trade from consuming funds more than once within the persisted settlement state.
-
----
-
- ## CTRL-006 — Settlement Arithmetic Validation
-
- **Status:** PASS
-
- Settlement checks:
-
- - quote multiplication overflow;
-- buyer locked quote balance;
-- seller locked base balance;
-- buyer available-base overflow;
-- seller available-quote overflow.
-
- Balance mutations occur only after validation succeeds.
-
----
-
- ## CTRL-007 — Distributed Pending-Trade Handling
-
- **Status:** PASS
-
- Trades received before their referenced orders are retained and applied when the required orders arrive.
-
- Duplicate application is idempotent.
-
----
-
- ## CTRL-008 — Pending Trade-State Authorization
-
- **Status:** PASS
-
- Pending trade-state messages:
-
- - retain authenticated sender identity;
-- reject unauthorized participants;
-- avoid unsafe state regression;
-- retain valid later happy-path states;
-- revalidate authorization when the trade arrives.
-
----
-
- ## CTRL-009 — Removed-Order Resurrection Protection
-
- **Status:** PASS
-
- Orders explicitly recorded as removed cannot simply be resurrected by stale synchronization data.
-
----
-
- ## CTRL-010 — Stale Trade-State Protection
-
- **Status:** PASS
-
- Stale synchronization cannot move an existing trade backward through its lifecycle.
-
----
-
- # 6\. Active Findings
-
- ## AUDIT-002 — Order UUID Replacement / Snapshot Order Semantics
-
- **Severity:** High\
- **Status:** OPEN
-
- ### Issue
-
- Orders sharing an existing UUID require careful handling when incoming data contains different immutable attributes.
-
- The current implementation now rejects conflicting immutable order terms rather than blindly replacing the existing order.
-
- However, the broader audit question remains:
-
- > What authority does a remote snapshot have to modify an existing order?
-
- ### Required verification
-
- Establish and document:
-
- - which order fields are immutable;
-- whether remote `OrderCreated` messages can modify existing orders;
-- whether snapshots may reduce quantities;
-- whether snapshots may change trader/market/side/price;
-- who has authority to update an order;
-- whether an authenticated peer is sufficient authority;
-- how stale snapshots interact with newer local state.
-
- ### Current evidence
-
- Regression coverage now includes:
-
- - conflicting snapshot order terms;
-- stale order delivery;
-- removed-order resurrection;
-- snapshot quantity reduction.
-
- **Disposition:** OPEN pending explicit protocol authority decision.
-
----
-
- ## AUDIT-003 — Self-Trading Policy
-
- **Severity:** Medium\
- **Status:** OPEN
-
- ### Issue
-
- The matching engine must establish whether a trader is permitted to trade against their own orders.
-
- ### Required decision
-
- If self-trading is prohibited:
-
- - reject matching orders belonging to the same trader;
-- add a regression test;
-- verify distributed matching applies the same rule.
-
- If self-trading is intentional:
-
- - document the economic semantics;
-- document settlement behavior;
-- verify buyer/seller identity handling;
-- verify fees, accounting, and downstream state handling.
-
- **Disposition:** OPEN — protocol/economic policy decision required.
-
----
-
- ## AUDIT-004 — Settlement Lifecycle Authorization
-
- **Severity:** High\
- **Status:** OPEN
-
- ### Issue
-
- `settle_local_trade()` performs economic mutation, but the audit must establish whether settlement itself requires a settlement-authorized trade state.
-
- ### Required verification
-
- Trace every caller of `settle_local_trade()` and establish:
-
- - which state permits settlement;
-- whether all callers enforce that state;
-- whether remote trade-state messages can cause premature settlement;
-- whether settlement can be invoked independently of the state machine;
-- whether settlement authorization should be enforced directly at the settlement boundary.
-
- If every caller independently guarantees authorization, this may become a defense-in-depth finding.
-
- **Disposition:** OPEN.
-
----
-
- ## AUDIT-007 — Fixed-Point Settlement Rounding
-
- **Severity:** Medium\
- **Status:** OPEN
-
- ### Issue
-
- Quote settlement uses:
-
- `price * amount / PRICE_SCALE`
-
- Integer division truncates the remainder.
-
- ### Required verification
-
- Establish:
-
- - authoritative protocol rounding rule;
-- whether truncation creates economic imbalance;
-- minimum-value behavior;
-- maximum-value behavior;
-- boundary behavior;
-- repeated fractional-trade behavior;
-- whether rounding systematically favors either participant;
-- asset conservation under the defined rounding rule.
-
- ### Required tests
-
- Add boundary and conservation tests covering fractional results.
-
- **Disposition:** OPEN.
-
----
-
- ## AUDIT-010 — Snapshot Consistency / Version Semantics
-
- **Severity:** Medium\
- **Status:** OPEN
-
- ### Issue
-
- `StateSnapshot` does not currently provide an explicit state sequence/version or equivalent state commitment.
-
- ### Required verification
-
- Determine whether the existing synchronization protocol already provides sufficient freshness and consistency guarantees.
-
- If not, define explicit snapshot semantics, potentially including:
-
- - monotonic snapshot version;
-- generation number;
-- event sequence;
-- state commitment;
-- freshness rule;
-- stale snapshot rejection.
-
- The mechanism should prevent a peer from unknowingly accepting an internally inconsistent or stale state.
-
- **Disposition:** OPEN pending synchronization architecture review.
-
----
-
- # 7\. Architectural Findings
-
- ## ARCH-001 — Trade Application Has Multiple Mutation Paths
-
- **Priority:** High\
- **Status:** INVESTIGATING
-
- Trade application remains reachable through multiple paths, including:
-
-```
-Remote TradeCreated
-    ↓
-handle_trade_created()
-    ↓
-OrderBook::apply_trade()
-```
-
- and:
-
-```
-Remote OrderCreated
-    ↓
-matching
-    ↓
-OrderBook::apply_trade()
-```
-
- as well as synchronization and pending-trade processing.
-
- ### Required review
-
- Establish:
-
- - one clear owner for applying a trade;
-- ownership of `pending_trades`;
-- ownership of `applied_trades`;
-- when orders are removed;
-- when trades are persisted;
-- whether local and remote trade application share identical invariants;
-- whether synchronization can bypass those invariants;
-- whether all entry paths enforce trade identity and semantic validation.
-
- No refactor should be performed merely to reduce duplication.
-
- **Disposition:** INVESTIGATING.
-
----
-
- ## ARCH-002 — `sync.rs` Accesses OrderBook Internals
-
- **Priority:** Medium\
- **Status:** DEFERRED
-
- Determine whether direct access to OrderBook internals is required by synchronization or bypasses domain invariants.
-
- This review should be coordinated with:
-
- - AUDIT-002;
-- AUDIT-010;
-- ARCH-004.
-
- No refactor should be performed without a demonstrated correctness or security requirement.
-
----
-
- ## ARCH-003 — Command Handler Responsibility Boundaries
-
- **Priority:** Medium\
- **Status:** DEFERRED
-
- Review responsibility boundaries around:
-
- - order creation;
-- balance locking;
-- publication;
-- local matching;
-- settlement;
-- trade-state transitions.
-
- No split should be performed merely because the command handler is large.
-
----
-
- # 8\. Deferred Correctness / Architecture
-
- ## BUG-001 — Per-Order Balance Reservations
-
- **Priority:** High\
- **Status:** DEFERRED
-
- The current BalanceBook primarily tracks aggregate available and locked balances.
-
- A future reservation model should establish an explicit relationship between locked funds and the order responsible for the reservation.
-
- Required future work:
-
- - associate reservations with order IDs;
-- consume only the relevant reservation during settlement;
-- unlock only the relevant reservation during cancellation;
-- support multiple simultaneous orders;
-- preserve partial-fill correctness;
-- persist reservations across restart;
-- handle conflicting/out-of-order events;
-- ensure duplicate settlement cannot consume a reservation twice.
-
----
-
- # 9\. Resolved Historical Findings
-
- The following findings are considered resolved and should remain documented for audit history:
-
- | ID | Issue | Status |
-| --- | --- | --- |
-| BUG-SEC-001 / AUDIT-001 | Application-level sender impersonation | RESOLVED |
-| SEC-002 | Remote order cancellation authority | RESOLVED |
-| BUG-003 | Distributed TradeCreated application | RESOLVED |
-| BUG-004 | Trade state arriving before TradeCreated | RESOLVED |
-| BUG-005 | Local settlement applied to non-participants | RESOLVED |
-| BUG-006 | Duplicate settlement | RESOLVED |
-| BUG-007 | Partial-fill settlement accounting | RESOLVED |
-| BUG-008 | Quote amount overflow | RESOLVED |
-| BUG-009 | GossipSub timing-dependent test | RESOLVED |
-| BL-2026-08-31-001 | Pending trade-state handling | FIXED |
-| AUDIT-008 | Remote snapshot trade validation | CLOSED / VERIFIED |
-| AUDIT-009 / ARCH-004 | Trade identity/order integrity/deterministic matching | CLOSED / VERIFIED |
-
----
-
- # 10\. Current Finding Summary
-
- | ID | Severity | Status |
-| --- | --- | --- |
-| AUDIT-002 | High | 🔴 OPEN |
-| AUDIT-004 | High | 🔴 OPEN |
-| AUDIT-003 | Medium | 🟠 OPEN |
-| AUDIT-007 | Medium | 🟠 OPEN |
-| AUDIT-010 | Medium | 🟠 OPEN |
-| ARCH-001 | High | 🟠 INVESTIGATING |
-| BUG-001 | High | 🟡 DEFERRED |
-| ARCH-002 | Medium | 🟡 DEFERRED |
-| ARCH-003 | Medium | 🟡 DEFERRED |
-
-**Previously critical trade semantic-validation finding:** CLOSED / VERIFIED
-
----
-
- # 11\. Current Audit Priorities
-
- The next review sequence should be:
-
- 1. **AUDIT-002 — Order UUID / snapshot order authority**
-2. **AUDIT-004 — Settlement lifecycle authorization**
-3. **AUDIT-010 — Snapshot consistency and freshness semantics**
-4. **AUDIT-003 — Self-trading policy**
-5. **AUDIT-007 — Fixed-point rounding and conservation**
-6. **ARCH-001 — Trade application ownership**
-7. **BUG-001 — Per-order balance reservations**
-8. **ARCH-002 / ARCH-003 — Deferred architecture reviews**
-
- The priority is to resolve protocol invariants before undertaking broad architectural refactoring.
-
----
-
- # 12\. Verification Record
-
- The current implementation has been verified with:
-
-```
-cargo fmt --check
-cargo test -p p2p-node
-git diff --check
-```
-
- The supplied `cargo test -p p2p-node` run completed successfully with:
-
- - Balance tests: 8 passed
-- CLI tests: 11 passed
-- Exchange tests: 1 passed
-- Network tests: 1 passed
-- Orderbook tests: 29 passed
-- Security tests: 17 passed
-- Settlement tests: 6 passed
-- Trade-state tests: 14 passed
-- Unit-test targets: passed
-- Doc-test target: passed
-- Failures: 0
-
- The repository was subsequently committed in two commits:
-
-```
-1997c06 Harden distributed trade and snapshot validation
-0172e2b Update audit findings for verified remediations
-```
-
- Working tree status at the checkpoint:
-
-```
-nothing to commit, working tree clean
-```
-
----
-
- # 13\. Audit Readiness
-
- **Current status: NOT READY FOR FINAL SECURITY SIGN-OFF**
-
-Current Findings Summary
-Current status: NOT READY FOR FINAL SECURITY SIGN-OFF
-
-The current source review has verified several previously open findings and
-reduced the remaining substantive audit scope to three findings.
-
-AUDIT-001 — Message sender authentication
-Severity: High
-
-Status: CLOSED / VERIFIED ✅
-
-Files:
-
-crates/p2p-node/src/message_handler.rs
+The current source-level audit covers:
 
 crates/protocol/src/message.rs
 
-Verification:
+crates/protocol/src/state.rs
 
-Incoming OpenDexMessage messages are checked against the authenticated
-P2P peer identity using is_authenticated_sender().
-
-OrderCreated messages additionally verify that the order trader matches
-the authenticated sender using is_order_owner().
-
-Unauthorized messages/orders are rejected before protocol processing.
-
-Disposition: The previously identified sender-impersonation path is
-mitigated at the message-handler authentication boundary.
-
-AUDIT-002 — Order UUID reuse permits unvalidated order replacement
-Severity: High
-
-Status: CLOSED / VERIFIED ✅
-
-Files:
+crates/p2p-node/src/order_factory.rs
 
 crates/p2p-node/src/orderbook.rs
+
+crates/p2p-node/src/trades.rs
+
+crates/p2p-node/src/balances.rs
+
+crates/p2p-node/src/settlement.rs
+
+crates/p2p-node/src/trade_state.rs
+
+crates/p2p-node/src/sync.rs
 
 crates/p2p-node/src/exchange.rs
 
 crates/p2p-node/src/message_handler.rs
 
-Verification:
-
-Remote OrderCreated messages do not directly perform an unrestricted
-upsert_order() operation.
-
-handle_order_created() checks whether the order UUID is already known and
-does not replace an existing order.
-
-New remote orders pass through Exchange::submit_order(), which verifies:
-
-actor == order.trader
-
-Snapshot synchronization uses the separate
-update_order_from_snapshot() path.
-
-That path:
-
-rejects conflicting trader, market, side, or price fields;
-
-rejects snapshot quantity increases;
-
-ignores orders already marked as removed;
-
-only permits the snapshot quantity to remain the same or decrease.
-
-Disposition: The original unrestricted remote UUID-replacement concern
-is not supported by the current production call paths.
-
-AUDIT-003 — Matching engine permits self-trading
-Severity: Medium
-
-Status: OPEN
-
-File: crates/p2p-node/src/orderbook.rs
-
-Location: match_order()
-
-Current assessment:
-
-The matching path has not yet been conclusively verified to reject
-orders belonging to the same trader.
-
-Required verification:
-
-Inspect the complete match_order() candidate predicate and determine whether
-it explicitly rejects:
-
-existing.trader == incoming.trader
-
-If no such check exists, add the protocol-required self-trade prevention
-rule and regression coverage.
-
-Status: OPEN pending direct inspection of match_order().
-
-AUDIT-004 — Settlement does not independently require terminal trade state
-Severity: Low / Defense-in-depth
-
-Status: CLOSED / VERIFIED ✅
-
-Files:
-
-crates/p2p-node/src/settlement.rs
-
 crates/p2p-node/src/command_handler.rs
 
-crates/p2p-node/src/message_handler.rs
+The review covers:
 
-crates/p2p-node/src/trade_state.rs
+Order creation and representation
 
-Verification:
+Order validation and ownership
 
-All identified production settlement callers first advance the trade using
-advance_trade_to_state().
+Order cancellation
 
-Settlement is invoked only after the requested/accepted state is
-TradeState::Settled.
+Order matching and deterministic trade creation
 
-The local command path performs:
+Self-trade prevention
+
+Trade identity and semantic validation
+
+Trade application and idempotency
+
+Trade-state transitions
+
+Balance accounting and settlement
+
+State snapshot creation and application
+
+Authentication and authorization boundaries
+
+Replay and stale-event resistance
+
+Integer overflow/underflow
+
+Distributed consistency
+
+Persistence consistency
+
+Resource-exhaustion considerations
+
+
+Out of scope
+
+Physical/network infrastructure
+
+Host security
+
+Key custody and operational security
+
+Production deployment configuration
+
+External services
+
+Cryptographic key management outside the reviewed code
+
+Live penetration testing
+
+Production infrastructure configuration
+
+An independent external auditor is expected to perform infrastructure, deployment, operational-security, and independent verification checks.
+
+
+2. Audit Status
+
+Audit complete for the currently reviewed source-level controls
+
+Previously identified critical findings remediated where documented below
+
+High authentication/authorization findings reviewed
+
+Deterministic trade identity reviewed
+
+Snapshot validation reviewed
+
+Self-trade prevention verified
+
+Fixed-point settlement rounding/conservation review remains open
+
+Snapshot freshness/version semantics remain open
+
+External audit pending
+
+Final security sign-off pending
+
+Current overall status: NOT READY FOR FINAL SECURITY SIGN-OFF
+
+The current implementation has closed and verified the previously identified authentication, order-authority, deterministic trade, snapshot-validation, settlement-lifecycle, and self-trading findings.
+
+Two substantive audit questions remain:
+
+AUDIT-007 — Fixed-point settlement rounding and economic conservation
+
+AUDIT-010 — Snapshot consistency, freshness, and version semantics
+
+Architectural and deferred findings remain documented separately.
+
+
+3. Audit Areas
+
+3.1 Protocol
+
+Message integrity
+
+Serialization/deserialization
+
+Price/amount validation
+
+Timestamp validation
+
+Authenticated sender binding
+
+
+3.2 Orders
+
+Order creation
+
+Order ownership validation
+
+Order cancellation authorization
+
+Duplicate order handling
+
+Quantity accounting
+
+Removed-order resurrection protection
+
+Conflicting snapshot order terms rejected
+
+Snapshot quantity increases rejected
+
+Snapshot order identity protected
+
+
+3.3 Matching
+
+Price matching
+
+Deterministic price priority
+
+Deterministic UUID tie-breaking
+
+Partial fills
+
+Trade identity
+
+Trade duplication/replay handling
+
+Self-trade prevention
+
+Overflow/underflow checks
+
+
+3.4 Balances & Settlement
+
+Available/locked accounting
+
+Buyer settlement
+
+Seller settlement
+
+Settlement idempotency
+
+Checked arithmetic
+
+Partial-fill settlement accounting
+
+Asset-conservation proof across all rounding cases
+
+Settlement lifecycle enforced through production callers
+
+Fixed-point rounding policy
+
+Per-order reservation architecture
+
+
+3.5 Trade State
+
+Valid transitions
+
+Invalid transitions rejected
+
+Exceptional states
+
+State replay/idempotency
+
+Skipped-state handling
+
+Stale-state protection
+
+Unauthorized trade-state changes rejected
+
+
+3.6 State Synchronization
+
+Snapshot structural validation
+
+Duplicate trade detection
+
+Duplicate order handling
+
+Removed-order protection
+
+Applied-trade handling
+
+Transaction-like snapshot application
+
+Snapshot persistence consistency
+
+Trade identity validation
+
+Trade/order semantic validation
+
+Snapshot authority model
+
+Snapshot freshness/version semantics
+
+Complete order replacement authorization through current snapshot path
+
+
+4. Resolved / Verified Findings
+
+AUDIT-001 — Message Sender Authentication
+Severity: High
+Status: CLOSED / VERIFIED
+
+Finding
+
+Application-level sender identity must not be trusted merely because it is contained in a received message.
+
+Remediation
+
+Incoming messages bind the claimed application sender to the authenticated libp2p peer.
+
+Protections include:
+
+claimed sender must match the authenticated peer identity;
+
+forged sender identities are rejected;
+
+order creation requires sender/order-owner consistency;
+
+cancellation requires owner authorization;
+
+trade-state changes require trade participation;
+
+pending trade-state messages retain authenticated sender identity;
+
+sender identity is revalidated when the corresponding trade arrives.
+
+Verification
+
+Security regression coverage includes:
+
+forged sender rejection;
+
+impersonated trader rejection;
+
+forged cancellation rejection;
+
+unauthorized trade-state rejection;
+
+authenticated sender acceptance.
+
+Disposition: CLOSED / VERIFIED
+
+
+AUDIT-002 — Order UUID Replacement / Snapshot Order Semantics
+Severity: High
+Status: CLOSED / VERIFIED
+
+Finding
+
+Remote order synchronization must not permit unrestricted replacement of an existing order using the same UUID.
+
+Remediation
+
+The current remote order path does not perform unrestricted order replacement.
+
+Snapshot updates use update_order_from_snapshot() and protect immutable order identity fields:
+
+trader;
+
+market;
+
+side;
+
+price.
+
+Snapshot quantity increases are rejected.
+
+Orders already marked as removed cannot be resurrected.
+
+Conflicting snapshot terms are rejected.
+
+Verification
+
+Regression coverage includes:
+
+conflicting snapshot order terms;
+
+stale order delivery;
+
+removed-order resurrection;
+
+snapshot quantity reduction.
+
+Disposition: CLOSED / VERIFIED
+
+
+AUDIT-003 — Self-Trading
+Severity: Medium
+Status: CLOSED / VERIFIED
+
+Finding
+
+The matching engine must prevent a trader's order from matching against another order belonging to the same trader if self-trading is prohibited by protocol policy.
+
+Verified implementation
+
+OrderBook::match_order() explicitly excludes candidates belonging to the same trader:
+
+existing.trader != incoming.trader
+
+The condition is applied as part of the matching candidate predicate before price selection and trade creation.
+
+Therefore an order from trader A cannot match a resting order from trader A.
+
+Regression coverage
+
+A dedicated test exists:
+
+matching_rejects_self_trade
+
+The test:
+
+creates a resting sell order;
+
+creates a buy order;
+
+assigns the same trader identity to both;
+
+attempts matching;
+
+verifies that no self-trade is generated.
+
+Disposition
+
+CLOSED / VERIFIED
+
+The previously open self-trading concern is resolved in the current matching implementation.
+
+
+AUDIT-004 — Settlement Lifecycle Authorization
+Severity: High / Defense-in-depth
+Status: CLOSED / VERIFIED
+
+Finding
+
+Settlement performs economic mutation and must not be reachable through an unchecked path that permits settlement before the required trade lifecycle state.
+
+Verification
+
+All identified production settlement callers first advance the trade using the protocol state machine.
+
+The production flow is:
 
 advance_trade_to_state(...)
         ↓
 retrieve updated trade
         ↓
-if state == Settled
+verify TradeState::Settled
         ↓
 settle_local_trade(...)
 
-The remote TradeStateChanged path performs the same ordering after
-verifying that the sender is a participant in the trade.
+The remote trade-state path additionally verifies that the sender is a participant before advancing the trade.
 
-Pending trade-state changes follow the same transition-before-settlement
-pattern.
+Pending trade-state handling follows the same transition-before-settlement model.
 
-advance_trade_to_state() enforces the protocol's permitted trade-state
-transitions.
+Disposition
 
-Disposition: No confirmed settlement-before-terminal-state vulnerability
-was identified in the current production call paths.
+No confirmed settlement-before-terminal-state vulnerability was identified in the current production call paths.
 
-Defense-in-depth recommendation: settle_local_trade() may additionally
-verify trade.state == TradeState::Settled internally so future callers
-cannot accidentally bypass the lifecycle requirement.
+CLOSED / VERIFIED
 
-AUDIT-007 — Fixed-point settlement truncates quote amount
-Severity: Medium
+Defense-in-depth recommendation
 
-Status: OPEN
+settle_local_trade() may additionally verify:
 
-File: crates/p2p-node/src/settlement.rs
+trade.state == TradeState::Settled
 
-Observation:
+internally, preventing future callers from accidentally bypassing the lifecycle requirement.
 
-Quote settlement is calculated using integer division:
-
-price * amount / PRICE_SCALE
-
-Any remainder is truncated.
-
-Potential impact:
-
-Repeated trades with fractional fixed-point results may produce rounding
-differences between the protocol's mathematical trade value and the actual
-settled amount.
-
-Required verification:
-
-Define the protocol's exact rounding rule.
-
-Determine whether truncation is intentional.
-
-Prove asset conservation under the defined rule.
-
-Test boundary and fractional-price/amount cases.
-
-Determine whether repeated rounding can produce a meaningful economic
-imbalance.
-
-Status: OPEN pending economic/conservation review.
 
 AUDIT-008 — Snapshot / Synchronization Validation
-Severity: N/A
+Severity: High
+Status: CLOSED / VERIFIED
 
-Status: CLOSED / VERIFIED ✅
+Finding
 
-File: crates/p2p-node/src/sync.rs
+Remote snapshots must not introduce structurally or semantically invalid trades or orders into local state.
 
-Verification:
+Remediation
 
-Remote StateResponse messages are validated before snapshot application.
-
-Validation covers:
+Snapshot validation covers:
 
 duplicate orders;
 
@@ -1020,7 +443,9 @@ invalid markets;
 
 duplicate trades;
 
-invalid trade amounts/prices;
+invalid trade amounts;
+
+invalid trade prices;
 
 invalid participants;
 
@@ -1038,126 +463,672 @@ applicable limit-price consistency;
 
 duplicate applied-trade references.
 
-Snapshot processing occurs against cloned order/trade books and is persisted
-before committing the merged state to the live books.
+Snapshot processing occurs against cloned state before committing the resulting state to live books.
 
 Materialized snapshot trades are not replayed as historical economic events.
 
 Repeated application of the same materialized snapshot is idempotent.
 
-Disposition: CLOSED / VERIFIED.
+Disposition: CLOSED / VERIFIED
 
-AUDIT-009 — Snapshot trust boundary depends on order validation
-Severity: High
 
-Status: CLOSED / VERIFIED ✅
+AUDIT-009 / ARCH-004 — Trade Identity, Trade/Order Integrity and Deterministic Matching
+Severity: Critical
+Status: CLOSED / VERIFIED
 
-Files:
+Finding
 
-crates/p2p-node/src/sync.rs
+Distributed trade creation required deterministic trade identity and strong validation that received trades correspond to the referenced orders and economic event.
 
-crates/p2p-node/src/orderbook.rs
+Remediation
 
-Verification:
+Trade IDs are deterministically derived from:
 
-Snapshot orders are processed through
-update_order_from_snapshot() rather than unrestricted upsert_order().
+buy order UUID;
 
-Existing order identity fields are protected:
+sell order UUID;
 
-trader;
+trade price;
+
+trade amount.
+
+SHA-256 is used for derivation.
+
+Incoming trades are checked against the expected deterministic identity.
+
+Trade validation verifies:
+
+maker/taker structure;
+
+buyer/seller identity;
+
+referenced orders;
+
+order side;
 
 market;
 
-side;
+price constraints;
 
-price.
+remaining quantities.
 
-Snapshot quantity increases are rejected.
+Matching is deterministic:
 
-Removed orders cannot be resurrected.
+buy orders select the lowest eligible sell price;
 
-Snapshot processing is performed transactionally against temporary state
-before the live books are committed.
+sell orders select the highest eligible buy price;
 
-Disposition: The AUDIT-002 order-replacement concern does not propagate
-through the snapshot synchronization path.
+equal-price orders use deterministic UUID ordering;
 
-AUDIT-010 — State snapshots lack explicit consistency/version marker
+self-trading candidates are explicitly excluded.
+
+Verification
+
+Regression coverage includes:
+
+invalid deterministic trade IDs;
+
+deterministic matching;
+
+different arrival orders;
+
+duplicate trade application;
+
+partial fills;
+
+multiple fills;
+
+invalid trade/order relationships;
+
+invalid quantities;
+
+invalid prices;
+
+out-of-order trade delivery;
+
+trade-before-order delivery;
+
+self-trade rejection.
+
+Disposition: CLOSED / VERIFIED
+
+
+5. Positive Security Controls
+
+CTRL-001 — Trade-State Transition Validation
+Status: PASS
+
+Trade::transition() requires TradeState::can_transition_to() to approve state changes.
+
+Duplicate state events are idempotent.
+
+
+CTRL-002 — Trade/Order Consistency Validation
+Status: PASS
+
+Trade validation verifies:
+
+referenced buy order;
+
+referenced sell order;
+
+correct Buy/Sell sides;
+
+buyer matches buy-order trader;
+
+seller matches sell-order trader;
+
+market consistency;
+
+price limits;
+
+remaining quantities;
+
+deterministic trade identity.
+
+
+CTRL-003 — Snapshot Transaction-Like Application
+Status: PASS
+
+Snapshot processing occurs against cloned state.
+
+Live state is replaced only after validation, processing, and persistence succeed.
+
+
+CTRL-004 — Structural Trade Validation Before Persistence
+Status: PASS
+
+Trade recording validates structural correctness before inserting a trade into persistent trade state.
+
+Malformed trades are rejected before they can become persistent economic state.
+
+
+CTRL-005 — Settlement Trade-Level Idempotency
+Status: PASS
+
+Settled trade IDs are recorded.
+
+Duplicate settlement attempts are ignored.
+
+
+CTRL-006 — Settlement Arithmetic Validation
+Status: PASS
+
+Settlement checks:
+
+quote multiplication overflow;
+
+buyer locked quote balance;
+
+seller locked base balance;
+
+buyer available-base overflow;
+
+seller available-quote overflow.
+
+
+CTRL-007 — Distributed Pending-Trade Handling
+Status: PASS
+
+Trades received before their referenced orders are retained and applied when the required orders arrive.
+
+Duplicate application is idempotent.
+
+
+CTRL-008 — Pending Trade-State Authorization
+Status: PASS
+
+Pending trade-state messages:
+
+retain authenticated sender identity;
+
+reject unauthorized participants;
+
+avoid unsafe state regression;
+
+retain valid later states;
+
+revalidate authorization when the trade arrives.
+
+
+CTRL-009 — Removed-Order Resurrection Protection
+Status: PASS
+
+Orders explicitly recorded as removed cannot simply be resurrected by stale synchronization data.
+
+
+CTRL-010 — Stale Trade-State Protection
+Status: PASS
+
+Stale synchronization cannot move an existing trade backward through its lifecycle.
+
+
+CTRL-011 — Self-Trade Prevention
+Status: PASS
+
+The matching candidate predicate explicitly requires:
+
+existing.trader != incoming.trader
+
+A dedicated regression test verifies that same-trader buy/sell orders do not generate a trade.
+
+
+6. Active Findings
+
+AUDIT-007 — Fixed-Point Settlement Rounding
 Severity: Medium
-
 Status: OPEN
 
-File: crates/protocol/src/state.rs
+Issue
 
-Observation:
+Quote settlement uses:
 
-StateSnapshot contains orders, trades, removed orders, and applied trades,
-but does not currently contain an explicit snapshot sequence number,
-monotonic state version, or equivalent state commitment.
+price * amount / PRICE_SCALE
 
-Potential impact:
+Integer division truncates any remainder.
 
-Without explicit version semantics, peers may have difficulty determining
-whether a snapshot is stale or represents a coherent point-in-time state.
+Required verification
 
-Depending on synchronization behavior, stale snapshots could potentially be
-merged with newer local state.
+Establish:
 
-Required verification/design review:
+authoritative protocol rounding rule;
 
-Determine the intended synchronization consistency model and establish whether
-the protocol needs:
+whether truncation is intentional;
 
-a monotonic snapshot/state version;
+whether asset conservation holds;
 
-stale-snapshot rejection;
+minimum-value behavior;
 
-explicit snapshot ancestry;
+maximum-value behavior;
 
-or another consistency mechanism.
+boundary behavior;
 
-Status: OPEN pending protocol consistency review.
+repeated fractional-trade behavior;
 
-Current Findings Table
-ID	Severity	Component	Status
-AUDIT-001	High	Message authentication	CLOSED / VERIFIED
-AUDIT-002	High	Order UUID handling	CLOSED / VERIFIED
-AUDIT-003	Medium	Matching / self-trading	OPEN
-AUDIT-004	Low / Defense-in-depth	Settlement state enforcement	CLOSED / VERIFIED
-AUDIT-007	Medium	Fixed-point settlement	OPEN
-AUDIT-008	—	Snapshot validation	CLOSED / VERIFIED
-AUDIT-009	High	Snapshot order trust	CLOSED / VERIFIED
-AUDIT-010	Medium	Snapshot consistency/versioning	OPEN
+whether rounding systematically favors one participant;
 
-Current Audit Position
+whether dust/remainder accumulation is possible.
+
+Required tests
+
+Add tests covering:
+
+exact division;
+
+non-exact division;
+
+minimum valid price/amount;
+
+maximum safe values;
+
+repeated fractional trades;
+
+conservation before and after settlement;
+
+buyer/seller accounting under rounding.
+
+Disposition: OPEN pending economic/conservation review.
+
+
+AUDIT-010 — Snapshot Consistency / Version Semantics
+Severity: Medium
+Status: OPEN
+
+Issue
+
+StateSnapshot does not currently provide an explicit state sequence/version or equivalent state commitment.
+
+Potential impact
+
+Without explicit version semantics, peers may have difficulty determining whether a snapshot is:
+
+stale;
+
+newer than local state;
+
+derived from a coherent point in time;
+
+based on a known state ancestry.
+
+The current validation protects against malformed and conflicting content, but content validation does not by itself establish freshness or global ordering.
+
+Required design review
+
+Determine whether the synchronization protocol requires:
+
+monotonic snapshot version;
+
+generation number;
+
+event sequence;
+
+state commitment;
+
+snapshot ancestry;
+
+freshness rule;
+
+stale snapshot rejection.
+
+If the existing synchronization architecture already guarantees these properties through another mechanism, that mechanism should be explicitly documented and tested.
+
+Disposition: OPEN pending synchronization consistency review.
+
+
+7. Architectural / Deferred Findings
+
+ARCH-001 — Trade Application Has Multiple Mutation Paths
+Priority: High
+Status: INVESTIGATING
+
+Trade application remains reachable through multiple paths, including:
+
+Remote TradeCreated
+    ↓
+handle_trade_created()
+    ↓
+OrderBook::apply_trade()
+
+and:
+
+Remote OrderCreated
+    ↓
+matching
+    ↓
+OrderBook::apply_trade()
+
+as well as synchronization and pending-trade processing.
+
+Required review
+
+Establish:
+
+one clear owner for applying a trade;
+
+ownership of pending_trades;
+
+ownership of applied_trades;
+
+when orders are removed;
+
+when trades are persisted;
+
+whether local and remote trade application share identical invariants;
+
+whether synchronization can bypass those invariants;
+
+whether all entry paths enforce deterministic trade identity and semantic validation.
+
+No refactor should be performed merely to reduce duplication.
+
+Disposition: INVESTIGATING
+
+
+BUG-001 — Per-Order Balance Reservations
+Priority: High
+Status: DEFERRED
+
+The current BalanceBook primarily tracks aggregate available and locked balances.
+
+Future reservation architecture should establish an explicit relationship between locked funds and the order responsible for the reservation.
+
+Required future work:
+
+associate reservations with order IDs;
+
+consume only the relevant reservation during settlement;
+
+unlock only the relevant reservation during cancellation;
+
+support multiple simultaneous orders;
+
+preserve partial-fill correctness;
+
+persist reservations across restart;
+
+handle conflicting/out-of-order events;
+
+ensure duplicate settlement cannot consume a reservation twice.
+
+Disposition: DEFERRED
+
+
+ARCH-002 — sync.rs Accesses OrderBook Internals
+Priority: Medium
+Status: DEFERRED
+
+Determine whether direct access to OrderBook internals is required by synchronization or bypasses domain invariants.
+
+This review should be coordinated with:
+
+AUDIT-010;
+
+ARCH-001.
+
+No refactor should be performed without a demonstrated correctness or security requirement.
+
+Disposition: DEFERRED
+
+
+ARCH-003 — Command Handler Responsibility Boundaries
+Priority: Medium
+Status: DEFERRED
+
+Review responsibility boundaries around:
+
+order creation;
+
+balance locking;
+
+publication;
+
+local matching;
+
+settlement;
+
+trade-state transitions.
+
+No split should be performed merely because the command handler is large.
+
+Disposition: DEFERRED
+
+
+8. Resolved Historical Findings
+
+ID      Issue   Status
+
+BUG-SEC-001 / AUDIT-001
+Application-level sender impersonation
+RESOLVED
+
+SEC-002
+Remote order cancellation authority
+RESOLVED
+
+BUG-003
+Distributed TradeCreated application
+RESOLVED
+
+BUG-004
+Trade state arriving before TradeCreated
+RESOLVED
+
+BUG-005
+Local settlement applied to non-participants
+RESOLVED
+
+BUG-006
+Duplicate settlement
+RESOLVED
+
+BUG-007
+Partial-fill settlement accounting
+RESOLVED
+
+BUG-008
+Quote amount overflow
+RESOLVED
+
+BUG-009
+GossipSub timing-dependent test
+RESOLVED
+
+BL-2026-08-31-001
+Pending trade-state handling
+FIXED
+
+AUDIT-002
+Order UUID replacement
+CLOSED / VERIFIED
+
+AUDIT-003
+Self-trading
+CLOSED / VERIFIED
+
+AUDIT-004
+Settlement lifecycle authorization
+CLOSED / VERIFIED
+
+AUDIT-008
+Remote snapshot validation
+CLOSED / VERIFIED
+
+AUDIT-009 / ARCH-004
+Trade identity/order integrity/deterministic matching
+CLOSED / VERIFIED
+
+
+9. Current Finding Summary
+
+ID      Severity        Status
+
+AUDIT-001       High      CLOSED / VERIFIED
+
+AUDIT-002       High      CLOSED / VERIFIED
+
+AUDIT-003       Medium    CLOSED / VERIFIED
+
+AUDIT-004       High      CLOSED / VERIFIED
+
+AUDIT-007       Medium    OPEN
+
+AUDIT-008       High      CLOSED / VERIFIED
+
+AUDIT-009 / ARCH-004    Critical    CLOSED / VERIFIED
+
+AUDIT-010       Medium    OPEN
+
+ARCH-001        High      INVESTIGATING
+
+BUG-001         High      DEFERRED
+
+ARCH-002        Medium    DEFERRED
+
+ARCH-003        Medium    DEFERRED
+
+Previously identified security findings AUDIT-001, AUDIT-002, AUDIT-003, AUDIT-004, AUDIT-008, AUDIT-009, and SEC-002 are closed or verified as documented above.
+
+
+10. Current Audit Priorities
+
+The next review sequence should be:
+
+1. AUDIT-007 — Fixed-point settlement rounding and asset conservation
+
+2. AUDIT-010 — Snapshot freshness/version semantics
+
+3. ARCH-001 — Trade application ownership and invariant enforcement
+
+4. BUG-001 — Per-order balance reservations
+
+5. ARCH-002 / ARCH-003 — Deferred architecture reviews
+
+6. Independent adversarial multi-node testing
+
+7. Persistence/crash-recovery testing beyond current automated coverage
+
+8. Resource-exhaustion review
+
+9. External infrastructure and deployment audit
+
+The priority is to resolve remaining protocol and economic invariants before undertaking broad architectural refactoring.
+
+
+11. Verification Record
+
+The current implementation has been verified with:
+
+cargo test --workspace
+
+The supplied workspace run completed successfully with:
+
+BUILD: PASS
+
+FAILURES: 0
+
+Workspace test results:
+
+Common: 1 passed
+
+Protocol: 3 passed
+
+Balances: 8 passed
+
+CLI: 11 passed
+
+Exchange: 1 passed
+
+Network: 1 passed
+
+Orderbook: 30 passed
+
+Security: 17 passed
+
+Settlement: 6 passed
+
+Trade lifecycle: 14 passed
+
+Doc-tests: all passed
+
+Total individual tests reported: 91 passed, 0 failed.
+
+No test failures were reported.
+
+No compiler warnings were reported in the supplied workspace test output.
+
+Additional direct source inspection verified self-trade prevention in OrderBook::match_order().
+
+The matching predicate explicitly rejects candidates where:
+
+existing.trader == incoming.trader
+
+A dedicated regression test is present:
+
+matching_rejects_self_trade
+
+
+12. Audit Readiness
+
 Current status: NOT READY FOR FINAL SECURITY SIGN-OFF
 
-Verified / closed
-AUDIT-001 — Message sender authentication
+The previously identified authentication, order-authority, deterministic trade, snapshot-validation, settlement-lifecycle, and self-trading findings have been remediated and verified.
 
-AUDIT-002 — Order UUID replacement
+The remaining substantive audit questions are:
 
-AUDIT-004 — Settlement lifecycle enforcement through production callers
+AUDIT-007 — Fixed-point settlement rounding and economic conservation
 
-AUDIT-008 — Snapshot validation
+AUDIT-010 — Snapshot consistency, freshness, and version semantics
 
-AUDIT-009 — Snapshot order trust boundary
+Architectural/deferred findings remain under separate investigation.
 
-Remaining substantive findings
-AUDIT-003 — Self-trading
+The next audit checkpoint should focus on AUDIT-007, followed by AUDIT-010.
 
-AUDIT-007 — Fixed-point rounding/conservation
+Broad architectural refactoring should not precede these invariant decisions unless a demonstrated security or correctness requirement makes the refactor necessary.
 
-AUDIT-010 — Snapshot consistency/versioning
 
-Defense-in-depth recommendations
-Add an explicit TradeState::Settled check inside settle_local_trade().
+13. Audit Documentation Authority
 
-Continue maintaining regression tests around authentication, snapshot
-atomicity, order immutability, trade transitions, and settlement
-idempotency.
+The audit documentation has the following roles:
 
-Next audit action: Complete direct inspection of match_order() for
-self-trade prevention and update AUDIT-003 based on the actual matching
-predicate.
+audit/AUDIT_CHECKLIST.md
+
+Authoritative checklist of audit controls, verification areas, active findings, resolved findings, and current audit priorities.
+
+audit/AUDIT_FINDINGS.md
+
+Authoritative detailed finding record containing finding descriptions, remediation details, verification evidence, dispositions, architectural issues, and external-audit handoff requirements.
+
+audit/SECURITY_LOG.md
+
+Concise security posture and historical security record.
+
+The SECURITY_LOG.md document should not duplicate the full historical audit record.
+
+When finding status changes, AUDIT_FINDINGS.md and AUDIT_CHECKLIST.md must be updated together.
+
+SECURITY_LOG.md should then be updated only as necessary to reflect the current security posture.
+
+This prevents stale duplicated findings from remaining in historical documentation.
+
+
+14. Current Conclusion
+
+OpenDEX has closed and verified the previously identified authentication, authorization, deterministic trade identity, trade/order integrity, snapshot validation, settlement lifecycle, and self-trading findings.
+
+The current source-level audit is no longer centered on those resolved security boundaries.
+
+The remaining substantive protocol questions are:
+
+AUDIT-007 — fixed-point settlement rounding and economic conservation;
+
+AUDIT-010 — snapshot freshness, consistency, and version semantics.
+
+ARCH-001 remains under investigation as an architectural ownership question.
+
+BUG-001, ARCH-002, and ARCH-003 remain deferred.
+
+Current conclusion:
+
+OpenDEX remains in audit progress and is not yet ready for final security sign-off.
+
+The next substantive audit work should focus on AUDIT-007, followed by AUDIT-010, before broad architectural refactoring.
