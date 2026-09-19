@@ -60,7 +60,6 @@ pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &Pee
 pub fn is_order_owner(order: &Order, sender: &str) -> bool {
     order.trader == sender
 }
-
 pub use crate::sync::validate_state_snapshot;
 
 pub fn handle_state_request(
@@ -110,6 +109,7 @@ pub fn handle_order_created(
     actor: &str,
     order_book: &mut OrderBook,
     trade_book: &mut TradeBook,
+    balance_book: &mut BalanceBook,
     swarm: &mut libp2p::Swarm<crate::OpenDexBehaviour>,
     topic: &libp2p::gossipsub::IdentTopic,
     local_peer_id: &PeerId,
@@ -125,7 +125,7 @@ pub fn handle_order_created(
         println!("=== Remote Order Received ===");
         println!("{:?}", order);
 
-        let mut exchange = Exchange::new(order_book, trade_book);
+        let mut exchange = Exchange::new(order_book, trade_book, balance_book);
         let trades = exchange.submit_order(crate::exchange::SubmitOrder {
             actor: actor.to_string(),
             order: order.clone(),
@@ -168,7 +168,7 @@ pub fn handle_trade_created(
     println!("{:?}", trade);
 
     let recorded = {
-        let mut exchange = Exchange::new(order_book, trade_book);
+        let mut exchange = Exchange::new(order_book, trade_book, balance_book);
 
         exchange.record_trade(RecordTrade {
             actor: actor.to_string(),
@@ -369,6 +369,7 @@ pub fn handle_gossipsub_message(
                 &authenticated_sender,
                 ctx.order_book,
                 ctx.trade_book,
+                ctx.balance_book,
                 ctx.swarm,
                 ctx.topic,
                 ctx.local_peer_id,

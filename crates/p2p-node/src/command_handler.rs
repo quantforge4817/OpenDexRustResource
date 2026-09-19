@@ -122,7 +122,7 @@ pub fn handle_command(
                 }
             }
 
-            let mut exchange = Exchange::new(order_book, trade_book);
+            let mut exchange = Exchange::new(order_book, trade_book, balance_book);
             let trades = exchange.submit_order(crate::exchange::SubmitOrder {
                 actor: local_peer_id.to_string(),
                 order: order.clone(),

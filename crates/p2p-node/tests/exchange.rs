@@ -1,4 +1,5 @@
 use p2p_node::exchange::{Exchange, RecordTrade};
+use p2p_node::balances::BalanceBook;
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
 use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
@@ -11,21 +12,25 @@ fn market() -> Market {
     }
 }
 
-fn books() -> (OrderBook, TradeBook) {
+fn books() -> (OrderBook, TradeBook, BalanceBook) {
     let suffix = Uuid::new_v4();
 
     (
-        OrderBook::new(
+     OrderBook::new(
             std::env::temp_dir().join(format!("opendex-test-exchange-orders-{suffix}.json")),
         ),
         TradeBook::new(
             std::env::temp_dir().join(format!("opendex-test-exchange-trades-{suffix}.json")),
         ),
+        BalanceBook::new(
+            std::env::temp_dir().join(format!("opendex-test-exchange-balances-{suffix}.json")),
+        ),
     )
 }
+
 #[test]
 fn record_trade_rejects_invalid_deterministic_trade_id() {
-    let (mut order_book, mut trade_book) = books();
+    let (mut order_book, mut trade_book, mut balance_book) = books();
 
     let buy = Order {
         id: Uuid::new_v4(),
@@ -66,7 +71,7 @@ fn record_trade_rejects_invalid_deterministic_trade_id() {
         updated_at: 1,
     };
 
-    let mut exchange = Exchange::new(&mut order_book, &mut trade_book);
+    let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
     let result = exchange.record_trade(RecordTrade {
         actor: "seller".to_string(),

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use protocol::message::{Order, Trade};
 
+use crate::balances::BalanceBook;
 use crate::orderbook::OrderBook;
 use crate::trades::TradeBook;
 
@@ -17,13 +18,19 @@ pub struct RecordTrade {
 pub struct Exchange<'a> {
     pub order_book: &'a mut OrderBook,
     pub trade_book: &'a mut TradeBook,
+    pub balance_book: &'a mut BalanceBook,
 }
 
 impl<'a> Exchange<'a> {
-    pub fn new(order_book: &'a mut OrderBook, trade_book: &'a mut TradeBook) -> Self {
+    pub fn new(
+        order_book: &'a mut OrderBook,
+        trade_book: &'a mut TradeBook,
+        balance_book: &'a mut BalanceBook,
+    ) -> Self {
         Self {
             order_book,
             trade_book,
+            balance_book,
         }
     }
 
@@ -43,14 +50,62 @@ impl<'a> Exchange<'a> {
 
         for trade in &trades {
             self.order_book.validate_trade_structure(trade)?;
-            self.order_book.validate_trade_identity(&trade)?;
+            self.order_book.validate_trade_identity(trade)?;
 
             if !self.trade_book.add_trade(trade.clone()) {
                 continue;
             }
 
+            let buy_order = self
+                .order_book
+                .orders
+                .iter()
+                .find(|order| order.id == trade.buy_order)
+                .cloned();
+
+            let sell_order = self
+                .order_book
+                .orders
+                .iter()
+                .find(|order| order.id == trade.sell_order)
+                .cloned();
+
             if !self.order_book.apply_trade(trade) {
                 anyhow::bail!("trade {} could not be applied after matching", trade.id);
+            }
+
+            if let Some(order) = buy_order {
+                let remaining_amount = order.amount.saturating_sub(trade.amount);
+
+                let remaining_order = Order {
+                    amount: remaining_amount,
+                    ..order.clone()
+                };
+
+                let remaining_required =
+                    self.balance_book.required_reservation(&remaining_order)?;
+
+                if self
+                    .balance_book
+                    .order_reservation(&order.id)
+                    .is_some()
+                {
+                    self.balance_book
+                        .reconcile_order_reservation(&order, remaining_required)?;
+                }
+            }
+
+            if let Some(order) = sell_order {
+                let remaining_amount = order.amount.saturating_sub(trade.amount);
+
+                if self
+                    .balance_book
+                    .order_reservation(&order.id)
+                    .is_some()
+                {
+                    self.balance_book
+                        .reconcile_order_reservation(&order, remaining_amount)?;
+                }
             }
 
             self.order_book
@@ -72,8 +127,6 @@ impl<'a> Exchange<'a> {
             );
         }
 
-        // Structural validation does not require the referenced orders to exist.
-        // This must happen before the trade enters TradeBook.
         self.order_book.validate_trade_structure(&trade)?;
         self.order_book.validate_trade_identity(&trade)?;
 
