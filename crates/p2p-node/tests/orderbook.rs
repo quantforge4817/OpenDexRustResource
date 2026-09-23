@@ -1,11 +1,9 @@
 use p2p_node::orderbook::*;
 use p2p_node::sync::apply_snapshot;
 use p2p_node::trades::TradeBook;
+use protocol::message::{AMOUNT_SCALE, Asset, Market, Order, PRICE_SCALE, Side, Trade, TradeState};
 use protocol::state::StateSnapshot;
 use sha2::{Digest, Sha256};
-use protocol::message::{
-    AMOUNT_SCALE, Asset, Market, Order, PRICE_SCALE, Side, Trade, TradeState,
-};
 
 use std::fs;
 use uuid::Uuid;
@@ -15,6 +13,16 @@ fn market() -> Market {
         base: Asset::BTC,
         quote: Asset::XMR,
     }
+}
+fn trade_id(buy_order: Uuid, sell_order: Uuid, price: u64, amount: u64) -> Uuid {
+    let trade_input = format!(
+        "{}:{}:{}:{}",
+        buy_order, sell_order, price, amount
+    );
+
+    let hash = Sha256::digest(trade_input.as_bytes());
+
+    Uuid::from_slice(&hash[..16]).unwrap()
 }
 
 fn order(id: &str, side: Side, price: u64, amount: u64) -> Order {
@@ -302,7 +310,7 @@ fn distributed_event_order_converges() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -327,9 +335,14 @@ fn distributed_event_order_converges() {
     node_a.add_order(buy.clone());
     assert_eq!(node_a.pending_trades.len(), 1);
 
-    node_a.add_order(sell.clone());
+     let pending = node_a.add_order(sell.clone());
 
-    // The pending trade should now have been applied.
+     assert_eq!(pending.len(), 1);
+
+     for trade in pending {
+    assert!(node_a.apply_trade(&trade));
+    }
+
     assert!(node_a.pending_trades.is_empty());
 
     // Node B receives the orders first, then the trade.
@@ -378,7 +391,7 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -406,9 +419,14 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
     assert_eq!(book.pending_trades.len(), 1);
     assert!(book.applied_trades.is_empty());
 
-    // Second order arrives. The pending trade must now apply.
-    book.add_order(sell.clone());
+    // Second order arrives. The pending trade is now applicable.
+    let pending = book.add_order(sell.clone());
 
+    assert_eq!(pending.len(), 1);
+
+    for trade in pending {
+    assert!(book.apply_trade(&trade));
+    }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
     assert_eq!(book.applied_trades[0], trade.id.to_string());
@@ -462,7 +480,7 @@ fn duplicate_out_of_order_delivery_converges() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -495,7 +513,13 @@ fn duplicate_out_of_order_delivery_converges() {
 
     node_a.add_order(sell.clone());
 
-    // The pending trade should now have been applied exactly once.
+     let pending = node_a.add_order(sell.clone());
+
+    assert_eq!(pending.len(), 1);
+
+    for trade in pending {
+    assert!(node_a.apply_trade(&trade));
+   }
     assert!(node_a.pending_trades.is_empty());
     assert_eq!(node_a.applied_trades.len(), 1);
     assert_eq!(node_a.applied_trades[0], trade.id.to_string());
@@ -534,7 +558,7 @@ fn orderbook_persistence_preserves_distributed_state() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -637,7 +661,7 @@ fn pending_trade_survives_restart() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -677,7 +701,13 @@ fn pending_trade_survives_restart() {
 
     recovered.add_order(sell.clone());
 
-    // The pending trade should now be applied.
+    let pending = recovered.add_order(sell.clone());
+
+    assert_eq!(pending.len(), 1);
+
+    for trade in pending {
+    assert!(recovered.apply_trade(&trade));
+    }
     assert!(recovered.pending_trades.is_empty());
     assert_eq!(recovered.applied_trades.len(), 1);
     assert_eq!(recovered.applied_trades[0], trade.id.to_string());
@@ -716,22 +746,27 @@ fn removed_order_is_not_resurrected_by_stale_state() {
     node_a.add_order(order_a.clone());
     node_b.add_order(order_a.clone());
 
-    // Node A receives a trade that completely fills the order.
-    let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
-        buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
-        sell_order: order_id,
-        maker: order_a.trader.clone(),
-        taker: "trader-00000000-0000-0000-0000-000000000003".to_string(),
-        buyer: "trader-00000000-0000-0000-0000-000000000003".to_string(),
-        seller: order_a.trader.clone(),
-        market: market(),
-        price: 100,
-        amount: 10,
-        state: TradeState::Created,
-        created_at: 0,
-        updated_at: 0,
-    };
+// Node A receives a trade that completely fills the order.
+let trade = Trade {
+    id: trade_id(
+        Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        order_id,
+        100,
+        10,
+    ),
+    buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+    sell_order: order_id,
+    maker: order_a.trader.clone(),
+    taker: "trader-00000000-0000-0000-0000-000000000003".to_string(),
+    buyer: "trader-00000000-0000-0000-0000-000000000003".to_string(),
+    seller: order_a.trader.clone(),
+    market: market(),
+    price: 100,
+    amount: 10,
+    state: TradeState::Created,
+    created_at: 0,
+    updated_at: 0,
+};
 
     // Add the buy order so the trade can be applied.
     node_a.add_order(order(
@@ -788,7 +823,7 @@ fn trade_waits_for_both_orders_then_applies_once() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -823,9 +858,14 @@ fn trade_waits_for_both_orders_then_applies_once() {
 
     assert_eq!(buy_remaining.amount, 10);
 
-    // SELL arrives. The pending trade should now apply automatically.
-    book.add_order(sell.clone());
+    // SELL arrives. The pending trade is now applicable.
+    let pending = book.add_order(sell.clone());
 
+    assert_eq!(pending.len(), 1);
+
+    for trade in pending {
+    assert!(book.apply_trade(&trade));
+    }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
     assert_eq!(book.applied_trades[0], trade.id.to_string());
@@ -948,7 +988,7 @@ fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
     book.add_order(sell.clone());
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -990,7 +1030,7 @@ fn rejects_trade_with_wrong_seller_identity() {
     book.add_order(sell.clone());
 
     let trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -1158,10 +1198,11 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
     let order_path = std::env::temp_dir().join("opendex-test-snapshot-atomic.json");
     let trade_path = std::env::temp_dir().join("opendex-test-snapshot-atomic-trades.json");
 
-    let mut order_book = OrderBook::new(order_path);
+       let mut order_book = OrderBook::new(order_path);
     let mut trade_book = TradeBook::new(trade_path);
 
-    let existing_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
+    let existing_order =
+        order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
     order_book.add_order(existing_order.clone());
 
@@ -1174,7 +1215,12 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
     // Snapshot application must reject it rather than inserting the
     // trade into TradeBook and leaving the books inconsistent.
     let invalid_trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+        id: trade_id(
+            Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+            existing_order.id,
+            100,
+            10,
+        ),
         buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
         sell_order: existing_order.id,
         maker: existing_order.trader.clone(),
@@ -1188,6 +1234,7 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
         created_at: 1,
         updated_at: 1,
     };
+
     let snapshot = StateSnapshot {
         orders: vec![existing_order],
         trades: vec![invalid_trade],
@@ -1240,7 +1287,7 @@ fn rejects_snapshot_trade_with_invalid_maker() {
     let original_trades = trade_book.trades.clone();
 
     let invalid_trade = Trade {
-        id: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        id: trade_id(buy.id, sell.id, 100, 4),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: "not-a-participant".to_string(),
@@ -1371,10 +1418,8 @@ fn snapshot_does_not_resurrect_removed_order() {
 
 #[test]
 fn matching_rejects_self_trade() {
-    let path = std::env::temp_dir().join(format!(
-        "opendex-test-self-trade-{}.json",
-        Uuid::new_v4()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("opendex-test-self-trade-{}.json", Uuid::new_v4()));
 
     let mut book = OrderBook::new(path);
 

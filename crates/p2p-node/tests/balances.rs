@@ -240,3 +240,277 @@ fn duplicate_order_reservation_does_not_double_lock() {
         }
     );
 }
+#[test]
+fn partial_buy_fill_releases_remaining_quote_reservation() {
+    let path = std::env::temp_dir().join("opendex-test-partial-buy-reconciliation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Buy,
+        price: 10 * protocol::message::PRICE_SCALE,
+        amount: 10 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::XMR, 100 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(100 * protocol::message::AMOUNT_SCALE)
+    );
+
+    // Fill 5 BTC. The remaining order requires 50 XMR.
+    let remaining_order = Order {
+        amount: 5 * protocol::message::AMOUNT_SCALE,
+        ..order.clone()
+    };
+
+    let remaining_required = book.required_reservation(&remaining_order).unwrap();
+
+    book.reconcile_order_reservation(&order, remaining_required)
+        .unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(50 * protocol::message::AMOUNT_SCALE)
+    );
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 50 * protocol::message::AMOUNT_SCALE,
+            locked: 50 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    // Fill the remaining 5 BTC.
+    book.reconcile_order_reservation(&order, 0).unwrap();
+
+    assert_eq!(book.order_reservation(&order.id), None);
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 100 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+}
+
+#[test]
+fn partial_sell_fill_releases_remaining_base_reservation() {
+    let path = std::env::temp_dir().join("opendex-test-partial-sell-reconciliation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Sell,
+        price: 10 * protocol::message::PRICE_SCALE,
+        amount: 10 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::BTC, 10 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(10 * protocol::message::AMOUNT_SCALE)
+    );
+
+    // Fill 5 BTC. 5 BTC remains reserved.
+    book.reconcile_order_reservation(&order, 5 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(5 * protocol::message::AMOUNT_SCALE)
+    );
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 5 * protocol::message::AMOUNT_SCALE,
+            locked: 5 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    // Fill the remaining 5 BTC.
+    book.reconcile_order_reservation(&order, 0).unwrap();
+
+    assert_eq!(book.order_reservation(&order.id), None);
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 10 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+}
+
+#[test]
+fn multiple_partial_fills_progressively_reduce_reservation() {
+    let path = std::env::temp_dir().join("opendex-test-multiple-reconciliation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Sell,
+        price: 10 * protocol::message::PRICE_SCALE,
+        amount: 10 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::BTC, 10 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    // 10 BTC → 7 BTC.
+    book.reconcile_order_reservation(&order, 7 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(7 * protocol::message::AMOUNT_SCALE)
+    );
+
+    // 7 BTC → 5 BTC.
+    book.reconcile_order_reservation(&order, 5 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(5 * protocol::message::AMOUNT_SCALE)
+    );
+
+    // 5 BTC → 0 BTC.
+    book.reconcile_order_reservation(&order, 0).unwrap();
+
+    assert_eq!(book.order_reservation(&order.id), None);
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 10 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+}
+
+#[test]
+fn full_fill_removes_reservation_entirely() {
+    let path = std::env::temp_dir().join("opendex-test-full-fill-reconciliation.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Buy,
+        price: 10 * protocol::message::PRICE_SCALE,
+        amount: 10 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::XMR, 100 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    book.reconcile_order_reservation(&order, 0).unwrap();
+
+    assert_eq!(book.order_reservation(&order.id), None);
+
+    assert_eq!(
+        book.balance("alice", &Asset::XMR),
+        Balance {
+            available: 100 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+}
+
+#[test]
+fn partial_fill_then_cancel_releases_only_remaining_reservation() {
+    let path = std::env::temp_dir().join("opendex-test-partial-fill-cancel.json");
+
+    let mut book = BalanceBook::new(path);
+
+    let order = Order {
+        id: uuid::Uuid::new_v4(),
+        trader: "alice".to_string(),
+        market: Market {
+            base: Asset::BTC,
+            quote: Asset::XMR,
+        },
+        side: Side::Sell,
+        price: 10 * protocol::message::PRICE_SCALE,
+        amount: 10 * protocol::message::AMOUNT_SCALE,
+    };
+
+    book.credit("alice", Asset::BTC, 10 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    book.lock_for_order(&order).unwrap();
+
+    // Trade 4 BTC.
+    book.reconcile_order_reservation(&order, 6 * protocol::message::AMOUNT_SCALE)
+        .unwrap();
+
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(6 * protocol::message::AMOUNT_SCALE)
+    );
+    assert_eq!(
+        book.order_reservation(&order.id),
+        Some(6 * protocol::message::AMOUNT_SCALE)
+    );
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 4 * protocol::message::AMOUNT_SCALE,
+            locked: 6 * protocol::message::AMOUNT_SCALE,
+        }
+    );
+
+    // Cancel the partially filled order. Only the remaining 6 BTC
+    // reservation should be released.
+    book.unlock_for_order(&order).unwrap();
+
+    assert_eq!(book.order_reservation(&order.id), None);
+
+    assert_eq!(
+        book.balance("alice", &Asset::BTC),
+        Balance {
+            available: 10 * protocol::message::AMOUNT_SCALE,
+            locked: 0,
+        }
+    );
+}

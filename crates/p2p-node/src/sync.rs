@@ -286,7 +286,6 @@ pub fn apply_snapshot(
         }
     }
 
-
     // Historical trades may be learned from a snapshot, but adding them
     // must never replay them against the order book.
     for trade in state.trades {

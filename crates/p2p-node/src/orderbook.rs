@@ -65,10 +65,9 @@ impl OrderBook {
     }
 
     pub fn upsert_order(&mut self, order: Order) -> Vec<Trade> {
-        let mut applied_pending_trades = Vec::new();
 
         if self.removed_orders.contains(&order.id) {
-            return applied_pending_trades;
+         return Vec::new();
         }
 
         let order_id = order.id;
@@ -93,22 +92,27 @@ impl OrderBook {
             self.orders.push(order);
         }
 
-        // Re-check pending trades involving this order.
-        let pending_trades: Vec<Trade> = self
-            .pending_trades
-            .iter()
-            .filter(|trade| trade.buy_order == order_id || trade.sell_order == order_id)
-            .cloned()
-            .collect();
-
-        for trade in pending_trades {
-            if self.apply_trade(&trade) {
-                self.pending_trades.retain(|t| t.id != trade.id);
-                applied_pending_trades.push(trade);
-            }
+        // Return pending trades involving this order to the caller.
+// The Exchange layer is responsible for applying the trade and
+// reconciling the associated balance reservation.
+let pending_trades: Vec<Trade> = self
+    .pending_trades
+    .iter()
+    .filter(|trade| {
+        if trade.buy_order != order_id && trade.sell_order != order_id {
+            return false;
         }
 
-        applied_pending_trades
+        let has_buy = self.orders.iter().any(|o| o.id == trade.buy_order);
+        let has_sell = self.orders.iter().any(|o| o.id == trade.sell_order);
+
+        has_buy && has_sell
+    })
+    .cloned()
+    .collect();
+
+pending_trades
+
     }
     pub fn update_order_from_snapshot(&mut self, order: Order) {
         if self.removed_orders.contains(&order.id) {

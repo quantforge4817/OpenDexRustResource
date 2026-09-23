@@ -106,28 +106,28 @@ impl BalanceBook {
 
         Ok(())
     }
-pub fn required_reservation(&self, order: &Order) -> Result<u64> {
-    match order.side {
-        Side::Buy => quote_amount(order.price, order.amount),
-        Side::Sell => Ok(order.amount),
+    pub fn required_reservation(&self, order: &Order) -> Result<u64> {
+        match order.side {
+            Side::Buy => quote_amount(order.price, order.amount),
+            Side::Sell => Ok(order.amount),
+        }
     }
-}
-pub fn lock_for_order(&mut self, order: &Order) -> Result<()> {
-    let required = self.required_reservation(order)?;
+    pub fn lock_for_order(&mut self, order: &Order) -> Result<()> {
+        let required = self.required_reservation(order)?;
 
-    if self.order_reservations.contains_key(&order.id) {
-        return Err(anyhow!("order {} already has a reservation", order.id));
-    }
+        if self.order_reservations.contains_key(&order.id) {
+            return Err(anyhow!("order {} already has a reservation", order.id));
+        }
 
-    let asset = match order.side {
-        Side::Buy => order.market.quote.clone(),
-        Side::Sell => order.market.base.clone(),
-    };
+        let asset = match order.side {
+            Side::Buy => order.market.quote.clone(),
+            Side::Sell => order.market.base.clone(),
+        };
 
-    self.lock(&order.trader, asset, required)?;
-    self.order_reservations.insert(order.id, required);
+        self.lock(&order.trader, asset, required)?;
+        self.order_reservations.insert(order.id, required);
 
-    Ok(())
+        Ok(())
     }
 
     pub fn unlock_for_order(&mut self, order: &Order) -> Result<()> {
@@ -179,44 +179,42 @@ pub fn lock_for_order(&mut self, order: &Order) -> Result<()> {
 
         Ok(())
     }
-pub fn reconcile_order_reservation(
-    &mut self,
-    order: &Order,
-    remaining_required: u64,
-) -> Result<()> {
-    let current = self
-        .order_reservations
-        .get(&order.id)
-        .copied()
-        .ok_or_else(|| anyhow!("no reservation found for order {}", order.id))?;
+    pub fn reconcile_order_reservation(
+        &mut self,
+        order: &Order,
+        remaining_required: u64,
+    ) -> Result<()> {
+        let current = self
+            .order_reservations
+            .get(&order.id)
+            .copied()
+            .ok_or_else(|| anyhow!("no reservation found for order {}", order.id))?;
 
-    let asset = match order.side {
-        Side::Buy => order.market.quote.clone(),
-        Side::Sell => order.market.base.clone(),
-    };
+        let asset = match order.side {
+            Side::Buy => order.market.quote.clone(),
+            Side::Sell => order.market.base.clone(),
+        };
 
-    let trader = &order.trader;
+        let trader = &order.trader;
 
-    if remaining_required > current {
-        return Err(anyhow!(
-            "remaining reservation exceeds current reservation for order {}",
-            order.id
-        ));
+        if remaining_required > current {
+            return Err(anyhow!(
+                "remaining reservation exceeds current reservation for order {}",
+                order.id
+            ));
+        }
+
+        let release = current - remaining_required;
+
+        if release > 0 {
+            self.unlock(trader, asset, release)?;
+        }
+
+        if remaining_required == 0 {
+            self.order_reservations.remove(&order.id);
+        } else {
+            self.order_reservations.insert(order.id, remaining_required);
+        }
+        Ok(())
     }
-
-    let release = current - remaining_required;
-
-    if release > 0 {
-        self.unlock(trader, asset, release)?;
-    }
-
-if remaining_required == 0 {
-    self.order_reservations.remove(&order.id);
-} else {
-    self.order_reservations
-        .insert(order.id, remaining_required);
-    }
-    Ok(())
-   }
-
 }

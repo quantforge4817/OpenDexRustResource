@@ -34,6 +34,115 @@ impl<'a> Exchange<'a> {
         }
     }
 
+    fn reconcile_trade_reservation(
+        &mut self,
+        trade: &Trade,
+        buy_order: Option<Order>,
+        sell_order: Option<Order>,
+    ) -> Result<()> {
+        if let Some(order) = buy_order {
+            if self
+                .balance_book
+                .order_reservation(&order.id)
+                .is_some()
+            {
+                let remaining_amount = order.amount.saturating_sub(trade.amount);
+
+                let remaining_order = Order {
+                    amount: remaining_amount,
+                    ..order.clone()
+                };
+
+                let remaining_required =
+                    self.balance_book.required_reservation(&remaining_order)?;
+
+                self.balance_book
+                    .reconcile_order_reservation(&order, remaining_required)?;
+            }
+        }
+
+        if let Some(order) = sell_order {
+            if self
+                .balance_book
+                .order_reservation(&order.id)
+                .is_some()
+            {
+                let remaining_amount = order.amount.saturating_sub(trade.amount);
+
+                self.balance_book
+                    .reconcile_order_reservation(&order, remaining_amount)?;
+            }
+        }
+
+        Ok(())
+    }
+
+fn add_order_and_reconcile_pending(&mut self, order: Order) -> Result<()> {
+    let incoming_order = order.clone();
+    let pending_trades = self.order_book.upsert_order(order);
+
+    for trade in pending_trades {
+        let buy_order = self
+            .order_book
+            .orders
+            .iter()
+            .find(|order| order.id == trade.buy_order)
+            .cloned()
+            .or_else(|| {
+                if trade.buy_order == incoming_order.id {
+                    Some(incoming_order.clone())
+                } else {
+                    None
+                }
+            });
+
+        let sell_order = self
+            .order_book
+            .orders
+            .iter()
+            .find(|order| order.id == trade.sell_order)
+            .cloned()
+            .or_else(|| {
+                if trade.sell_order == incoming_order.id {
+                    Some(incoming_order.clone())
+                } else {
+                    None
+                }
+            });
+
+        if !self.order_book.apply_trade(&trade) {
+            anyhow::bail!(
+                "pending trade {} could not be applied",
+                trade.id
+            );
+        }
+
+        self.reconcile_trade_reservation(
+            &trade,
+            buy_order,
+            sell_order,
+        )?;
+
+        self.order_book
+            .pending_trades
+            .retain(|pending| pending.id != trade.id);
+    }
+
+    Ok(())
+}
+
+pub fn add_order(&mut self, operation: SubmitOrder) -> Result<()> {
+    if operation.actor != operation.order.trader {
+        anyhow::bail!(
+            "submit order actor is not the order owner: actor={}, trader={}",
+            operation.actor,
+            operation.order.trader
+        );
+    }
+
+    self.add_order_and_reconcile_pending(operation.order)
+}
+
     pub fn submit_order(&mut self, operation: SubmitOrder) -> Result<Vec<Trade>> {
         if operation.actor != operation.order.trader {
             anyhow::bail!(
@@ -46,7 +155,7 @@ impl<'a> Exchange<'a> {
         let order = operation.order;
         let trades = self.order_book.match_order(&order);
 
-        self.order_book.add_order(order);
+        self.add_order_and_reconcile_pending(order)?;
 
         for trade in &trades {
             self.order_book.validate_trade_structure(trade)?;
@@ -56,6 +165,8 @@ impl<'a> Exchange<'a> {
                 continue;
             }
 
+            // Capture the original orders before apply_trade() can remove
+            // them after a full fill.
             let buy_order = self
                 .order_book
                 .orders
@@ -71,42 +182,17 @@ impl<'a> Exchange<'a> {
                 .cloned();
 
             if !self.order_book.apply_trade(trade) {
-                anyhow::bail!("trade {} could not be applied after matching", trade.id);
+                anyhow::bail!(
+                    "trade {} could not be applied after matching",
+                    trade.id
+                );
             }
 
-            if let Some(order) = buy_order {
-                let remaining_amount = order.amount.saturating_sub(trade.amount);
-
-                let remaining_order = Order {
-                    amount: remaining_amount,
-                    ..order.clone()
-                };
-
-                let remaining_required =
-                    self.balance_book.required_reservation(&remaining_order)?;
-
-                if self
-                    .balance_book
-                    .order_reservation(&order.id)
-                    .is_some()
-                {
-                    self.balance_book
-                        .reconcile_order_reservation(&order, remaining_required)?;
-                }
-            }
-
-            if let Some(order) = sell_order {
-                let remaining_amount = order.amount.saturating_sub(trade.amount);
-
-                if self
-                    .balance_book
-                    .order_reservation(&order.id)
-                    .is_some()
-                {
-                    self.balance_book
-                        .reconcile_order_reservation(&order, remaining_amount)?;
-                }
-            }
+            self.reconcile_trade_reservation(
+                trade,
+                buy_order,
+                sell_order,
+            )?;
 
             self.order_book
                 .pending_trades
@@ -134,7 +220,29 @@ impl<'a> Exchange<'a> {
             return Ok(false);
         }
 
+        // Capture the orders before apply_trade() can remove them after
+        // a full fill.
+        let buy_order = self
+            .order_book
+            .orders
+            .iter()
+            .find(|order| order.id == trade.buy_order)
+            .cloned();
+
+        let sell_order = self
+            .order_book
+            .orders
+            .iter()
+            .find(|order| order.id == trade.sell_order)
+            .cloned();
+
         if self.order_book.apply_trade(&trade) {
+            self.reconcile_trade_reservation(
+                &trade,
+                buy_order,
+                sell_order,
+            )?;
+
             self.order_book
                 .pending_trades
                 .retain(|pending| pending.id != trade.id);
