@@ -19,10 +19,11 @@ fn trade_id(
     sell_order: Uuid,
     price: u64,
     amount: u64,
+    fill_sequence: u64,
 ) -> Uuid {
     let input = format!(
-        "{}:{}:{}:{}",
-        buy_order, sell_order, price, amount);
+        "{}:{}:{}:{}:{}",
+        buy_order, sell_order, price, amount, fill_sequence);
 
     let hash = Sha256::digest(input.as_bytes());
 
@@ -273,7 +274,10 @@ fn apply_trade_is_idempotent() {
     book.add_order(buy.clone());
     book.add_order(sell.clone());
 
-    let trade_input = format!("{}:{}:{}:{}", buy.id, sell.id, 100, 4);
+    let fill_sequence = 10;
+    let trade_input = format!(
+        "{}:{}:{}:{}:{}",
+        buy.id, sell.id, 100, 4, fill_sequence);
     let hash = Sha256::digest(trade_input.as_bytes());
     let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
@@ -315,7 +319,7 @@ fn distributed_event_order_converges() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -397,7 +401,7 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -487,7 +491,7 @@ fn duplicate_out_of_order_delivery_converges() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -566,7 +570,7 @@ fn orderbook_persistence_preserves_distributed_state() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -670,7 +674,7 @@ fn pending_trade_survives_restart() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -763,6 +767,7 @@ let trade = Trade {
         order_id,
         100,
         10,
+        10,
     ),
     buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
     sell_order: order_id,
@@ -834,7 +839,7 @@ fn trade_waits_for_both_orders_then_applies_once() {
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -1000,7 +1005,7 @@ fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
     book.add_order(sell.clone());
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -1043,7 +1048,7 @@ fn rejects_trade_with_wrong_seller_identity() {
     book.add_order(sell.clone());
 
     let trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: sell.trader.clone(),
@@ -1238,6 +1243,7 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
             existing_order.id,
             100,
             10,
+            10,
         ),
         buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
         sell_order: existing_order.id,
@@ -1306,7 +1312,7 @@ fn rejects_snapshot_trade_with_invalid_maker() {
     let original_trades = trade_book.trades.clone();
 
     let invalid_trade = Trade {
-        id: trade_id(buy.id, sell.id, 100, 4),
+        id: trade_id(buy.id, sell.id, 100, 4, 10),
         buy_order: buy.id,
         sell_order: sell.id,
         maker: "not-a-participant".to_string(),
