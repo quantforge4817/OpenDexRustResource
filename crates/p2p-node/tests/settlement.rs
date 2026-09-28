@@ -17,7 +17,7 @@ fn peer() -> (PeerId, String) {
     (peer_id, trader)
 }
 
-fn test_trade(buyer: &str, seller: &str, price: u64, amount: u64) -> Trade {
+fn test_trade(buyer: &str, seller: &str, price: u64, amount: u64, fill_sequence: u64) -> Trade {
     Trade {
         id: Uuid::new_v4(),
         buy_order: Uuid::new_v4(),
@@ -32,6 +32,7 @@ fn test_trade(buyer: &str, seller: &str, price: u64, amount: u64) -> Trade {
         },
         price,
         amount,
+        fill_sequence,
         state: TradeState::Settled,
         created_at: 1,
         updated_at: 1,
@@ -49,7 +50,7 @@ fn settles_local_buyer_and_is_idempotent() {
 
     book.lock(&alice, Asset::XMR, 200 * AMOUNT_SCALE).unwrap();
 
-    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
     settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
 
@@ -104,7 +105,7 @@ fn settles_local_seller_and_is_idempotent() {
 
     book.lock(&bob, Asset::BTC, 2 * AMOUNT_SCALE).unwrap();
 
-    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
     settle_local_trade(&mut book, &bob_peer, &trade).unwrap();
 
@@ -158,7 +159,7 @@ fn ignores_non_participant() {
     book.credit(&charlie, Asset::BTC, 10 * AMOUNT_SCALE)
         .unwrap();
 
-    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE);
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
     settle_local_trade(&mut book, &charlie_peer, &trade).unwrap();
 
@@ -192,7 +193,7 @@ fn rejects_quote_overflow_without_mutating_balance() {
 
     book.lock(&alice, Asset::XMR, 100 * AMOUNT_SCALE).unwrap();
 
-    let trade = test_trade(&alice, &bob, u64::MAX, u64::MAX);
+    let trade = test_trade(&alice, &bob, u64::MAX, u64::MAX, 10);
 
     assert!(settle_local_trade(&mut book, &alice_peer, &trade).is_err());
 
@@ -226,7 +227,7 @@ fn partial_trade_consumes_only_traded_locked_amount() {
 
     book.lock(&alice, Asset::XMR, 200 * AMOUNT_SCALE).unwrap();
 
-    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE / 2);
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE / 2, 10);
 
     settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
 
@@ -261,7 +262,7 @@ fn settlement_failure_does_not_partially_mutate_balances() {
     // Force the BTC credit to overflow.
     book.credit(&alice, Asset::BTC, u64::MAX).unwrap();
 
-    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE);
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE, 10);
 
     assert!(settle_local_trade(&mut book, &alice_peer, &trade).is_err());
 

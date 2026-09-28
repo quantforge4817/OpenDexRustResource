@@ -14,6 +14,26 @@ fn market() -> Market {
     }
 }
 
+fn deterministic_trade_id(
+    buy_order: Uuid,
+    sell_order: Uuid,
+    price: u64,
+    amount: u64,
+    fill_sequence: u64,
+) -> Uuid {
+    let trade_input = format!(
+        "{}:{}:{}:{}:{}",
+        buy_order,
+        sell_order,
+        price,
+        amount,
+        fill_sequence,
+    );
+
+    let hash = Sha256::digest(trade_input.as_bytes());
+    Uuid::from_slice(&hash[..16]).unwrap()
+}
+
 fn books() -> (OrderBook, TradeBook, BalanceBook) {
     let suffix = Uuid::new_v4();
 
@@ -72,6 +92,7 @@ fn record_trade_rejects_invalid_deterministic_trade_id() {
         market: market(),
         price: 100,
         amount: 5,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -143,16 +164,13 @@ fn record_trade_reconciles_buy_reservation() {
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_input = format!(
-        "{}:{}:{}:{}",
+    let trade_id = deterministic_trade_id(
         buy.id,
         sell.id,
         price,
-        trade_amount
+        trade_amount,
+        10,
     );
-
-    let hash = Sha256::digest(trade_input.as_bytes());
-    let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
     let trade = Trade {
         id: trade_id,
@@ -165,6 +183,7 @@ fn record_trade_reconciles_buy_reservation() {
         market: market(),
         price,
         amount: trade_amount,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -253,16 +272,13 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
 
     balance_book.lock_for_order(&buy).unwrap();
 
-    let trade_input = format!(
-        "{}:{}:{}:{}",
+    let trade_id = deterministic_trade_id(
         buy.id,
         sell.id,
         price,
-        trade_amount
+        trade_amount,
+        10,
     );
-
-    let hash = Sha256::digest(trade_input.as_bytes());
-    let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
     let trade = Trade {
         id: trade_id,
@@ -275,6 +291,7 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
         market: market(),
         price,
         amount: trade_amount,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -473,16 +490,13 @@ fn record_trade_reconciles_sell_reservation() {
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_input = format!(
-        "{}:{}:{}:{}",
+    let trade_id = deterministic_trade_id(
         buy.id,
         sell.id,
         price,
-        trade_amount
+        trade_amount,
+        10,
     );
-
-    let hash = Sha256::digest(trade_input.as_bytes());
-    let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
     let trade = Trade {
         id: trade_id,
@@ -495,6 +509,7 @@ fn record_trade_reconciles_sell_reservation() {
         market: market(),
         price,
         amount: trade_amount,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -575,17 +590,15 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
         .into_iter()
         .enumerate()
         {
-            let trade_input = format!(
-                "{}:{}:{}:{}",
+            let fill_sequence = index as u64;
+
+            let trade_id = deterministic_trade_id(
                 buy.id,
                 sell.id,
                 price,
-                fill_amount
+                fill_amount,
+                fill_sequence,
             );
-
-            let hash = Sha256::digest(trade_input.as_bytes());
-
-            let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
             let trade = Trade {
                 id: trade_id,
@@ -598,6 +611,7 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
                 market: market(),
                 price,
                 amount: fill_amount,
+                fill_sequence,
                 state: TradeState::Created,
                 created_at: index as u64 + 1,
                 updated_at: index as u64 + 1,
@@ -661,16 +675,13 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_input = format!(
-        "{}:{}:{}:{}",
+    let trade_id = deterministic_trade_id(
         buy.id,
         sell.id,
         price,
-        trade_amount
+        trade_amount,
+        10,
     );
-
-    let hash = Sha256::digest(trade_input.as_bytes());
-    let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
     let trade = Trade {
         id: trade_id,
@@ -683,6 +694,7 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
         market: market(),
         price,
         amount: trade_amount,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,

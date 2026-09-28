@@ -54,7 +54,15 @@ fn test_trade(buyer: &str, seller: &str) -> Trade {
     let price = 100 * PRICE_SCALE;
     let amount = AMOUNT_SCALE;
 
-    let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, price, amount);
+    let fill_sequence = 10;
+    let trade_input = format!(
+        "{}:{}:{}:{}:{}",
+        buy_order,
+        sell_order,
+        price,
+        amount,
+        fill_sequence,
+    );
     let hash = Sha256::digest(trade_input.as_bytes());
     let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
 
@@ -72,6 +80,7 @@ fn test_trade(buyer: &str, seller: &str) -> Trade {
         },
         price,
         amount,
+        fill_sequence,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -545,6 +554,7 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
                 market: existing_order.market.clone(),
                 price: existing_order.price,
                 amount: 1,
+                fill_sequence: 10,
                 state: TradeState::Created,
                 created_at: 1,
                 updated_at: 1,

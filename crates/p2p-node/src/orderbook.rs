@@ -5,11 +5,26 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-fn deterministic_trade_id(buy_order: Uuid, sell_order: Uuid, price: u64, amount: u64) -> Uuid {
-    let trade_input = format!("{}:{}:{}:{}", buy_order, sell_order, price, amount);
+fn deterministic_trade_id(
+    buy_order: Uuid,
+    sell_order: Uuid,
+    price: u64,
+    amount: u64,
+    fill_sequence: u64,
+) -> Uuid {
+    let trade_input = format!(
+        "{}:{}:{}:{}:{}",
+        buy_order,
+        sell_order,
+        price,
+        amount,
+        fill_sequence,
+    );
+
     let hash = Sha256::digest(trade_input.as_bytes());
 
-    Uuid::from_slice(&hash[..16]).expect("SHA-256 always has at least 16 bytes")
+    Uuid::from_slice(&hash[..16])
+        .expect("SHA-256 always has at least 16 bytes")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +38,9 @@ pub struct OrderBook {
     #[serde(default)]
     pub removed_orders: Vec<Uuid>,
 
+    #[serde(default)]
+    pub fill_sequences: std::collections::HashMap<Uuid, u64>,
+
     #[serde(skip)]
     path: PathBuf,
 }
@@ -34,6 +52,7 @@ impl OrderBook {
             applied_trades: Vec::new(),
             removed_orders: Vec::new(),
             pending_trades: Vec::new(),
+            fill_sequences: std::collections::HashMap::new(),
             path,
         }
     }
@@ -374,9 +393,26 @@ pending_trades
             };
 
             let amount = remaining_amount.min(existing_remaining);
+
             let trade_price = existing.price;
 
-            let trade_id = deterministic_trade_id(buy_order, sell_order, trade_price, amount);
+
+            let fill_sequence = self
+                .fill_sequences
+                .get(&existing.id)
+                .copied()
+                .unwrap_or(0);
+
+            self.fill_sequences
+                .insert(existing.id, fill_sequence + 1);
+
+            let trade_id = deterministic_trade_id(
+                buy_order,
+                sell_order,
+                trade_price,
+                amount,
+                fill_sequence,
+            );
 
             let now = chrono::Utc::now().timestamp() as u64;
 
@@ -398,6 +434,7 @@ pending_trades
                 existing.trader.clone()
             };
 
+
             let trade = Trade {
                 id: trade_id,
                 buy_order,
@@ -409,6 +446,7 @@ pending_trades
                 market: incoming.market.clone(),
                 price: trade_price,
                 amount,
+                fill_sequence,
                 state: TradeState::Created,
                 created_at: now,
                 updated_at: now,
@@ -466,7 +504,13 @@ pending_trades
 
     pub fn validate_trade_identity(&self, trade: &Trade) -> Result<()> {
         let expected_id =
-            deterministic_trade_id(trade.buy_order, trade.sell_order, trade.price, trade.amount);
+            deterministic_trade_id(
+                trade.buy_order,
+                trade.sell_order,
+                trade.price,
+                trade.amount,
+                trade.fill_sequence,
+            );
 
         if trade.id != expected_id {
             anyhow::bail!(

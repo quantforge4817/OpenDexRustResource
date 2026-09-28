@@ -25,6 +25,7 @@ fn test_trade() -> Trade {
         },
         price: 100 * PRICE_SCALE,
         amount: AMOUNT_SCALE,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -276,7 +277,15 @@ fn sell_order(id: Uuid, trader: &str) -> Order {
 }
 
 fn trade(buy: &Order, sell: &Order) -> Trade {
-    let trade_input = format!("{}:{}:{}:{}", buy.id, sell.id, buy.price, buy.amount);
+    let fill_sequence = 10;
+    let trade_input = format!(
+        "{}:{}:{}:{}:{}",
+        buy.id,
+        sell.id,
+        buy.price,
+        buy.amount,
+        fill_sequence,
+    );
     let hash = Sha256::digest(trade_input.as_bytes());
     let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
 
@@ -291,6 +300,7 @@ fn trade(buy: &Order, sell: &Order) -> Trade {
         market: market(),
         price: buy.price,
         amount: buy.amount,
+        fill_sequence,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,

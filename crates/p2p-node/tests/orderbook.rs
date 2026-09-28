@@ -14,13 +14,17 @@ fn market() -> Market {
         quote: Asset::XMR,
     }
 }
-fn trade_id(buy_order: Uuid, sell_order: Uuid, price: u64, amount: u64) -> Uuid {
-    let trade_input = format!(
+fn trade_id(
+    buy_order: Uuid,
+    sell_order: Uuid,
+    price: u64,
+    amount: u64,
+) -> Uuid {
+    let input = format!(
         "{}:{}:{}:{}",
-        buy_order, sell_order, price, amount
-    );
+        buy_order, sell_order, price, amount);
 
-    let hash = Sha256::digest(trade_input.as_bytes());
+    let hash = Sha256::digest(input.as_bytes());
 
     Uuid::from_slice(&hash[..16]).unwrap()
 }
@@ -284,6 +288,7 @@ fn apply_trade_is_idempotent() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -320,6 +325,7 @@ fn distributed_event_order_converges() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -339,7 +345,7 @@ fn distributed_event_order_converges() {
 
      assert_eq!(pending.len(), 1);
 
-     for trade in pending {
+	     for trade in pending {
     assert!(node_a.apply_trade(&trade));
     }
 
@@ -401,6 +407,7 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -490,6 +497,7 @@ fn duplicate_out_of_order_delivery_converges() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -568,6 +576,7 @@ fn orderbook_persistence_preserves_distributed_state() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -671,6 +680,7 @@ fn pending_trade_survives_restart() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -763,6 +773,7 @@ let trade = Trade {
     market: market(),
     price: 100,
     amount: 10,
+    fill_sequence: 10,
     state: TradeState::Created,
     created_at: 0,
     updated_at: 0,
@@ -833,6 +844,7 @@ fn trade_waits_for_both_orders_then_applies_once() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -998,6 +1010,7 @@ fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1040,6 +1053,7 @@ fn rejects_trade_with_wrong_seller_identity() {
         market: market(),
         price: 100,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1079,6 +1093,7 @@ fn rejects_trade_above_buy_limit() {
         market: market(),
         price: 101,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1114,6 +1129,7 @@ fn rejects_trade_below_sell_limit() {
         market: market(),
         price: 89,
         amount: 4,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1149,6 +1165,7 @@ fn rejects_trade_exceeding_remaining_amount() {
         market: market(),
         price: 100,
         amount: 6,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1186,6 +1203,7 @@ fn rejects_zero_amount_trade() {
         market: market(),
         price: 100,
         amount: 0,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 0,
         updated_at: 0,
@@ -1230,6 +1248,7 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
         market: market(),
         price: 100,
         amount: 10,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -1297,6 +1316,7 @@ fn rejects_snapshot_trade_with_invalid_maker() {
         market: market(),
         price: 100,
         amount: 10,
+        fill_sequence: 10,
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
@@ -1444,5 +1464,67 @@ fn matching_rejects_self_trade() {
     assert!(
         trades.is_empty(),
         "a trader must not match against their own resting order"
+    );
+}
+#[test]
+fn identical_sized_partial_fills_must_have_distinct_trade_ids() {
+    let path = std::env::temp_dir().join(
+        format!("opendex-test-identical-partial-fills-{}.json", Uuid::new_v4())
+    );
+
+    let mut book = OrderBook::new(path);
+
+    let buy = order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Buy,
+        100,
+        10,
+    );
+
+    let sell = order(
+        "00000000-0000-0000-0000-000000000002",
+        Side::Sell,
+        100,
+        10,
+    );
+
+    book.add_order(buy.clone());
+    book.add_order(sell.clone());
+
+    // First legitimate 4-unit fill.
+    let trades1 = book.match_order(&order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Buy,
+        100,
+        4,
+    ));
+
+    assert_eq!(trades1.len(), 1);
+
+    // Apply the first fill.
+    assert!(book.apply_trade(&trades1[0]));
+
+    // The resting sell order now has 6 remaining.
+    let remaining_sell = book.orders.iter().find(|o| o.id == sell.id).unwrap();
+    assert_eq!(remaining_sell.amount, 6);
+
+    // Second legitimate 4-unit fill against the same sell order.
+    //
+    // We construct the trade through matching again rather than inventing
+    // a UUID, so this tests the actual production trade-ID generation path.
+    let trades2 = book.match_order(&order(
+        "00000000-0000-0000-0000-000000000001",
+        Side::Buy,
+        100,
+        4,
+    ));
+
+    assert_eq!(trades2.len(), 1);
+
+    // These are two different trade events.
+    assert_ne!(
+        trades1[0].id,
+        trades2[0].id,
+        "two legitimate fills must not share the same trade ID"
     );
 }
