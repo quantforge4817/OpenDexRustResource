@@ -57,11 +57,7 @@ fn test_trade(buyer: &str, seller: &str) -> Trade {
     let fill_sequence = 10;
     let trade_input = format!(
         "{}:{}:{}:{}:{}",
-        buy_order,
-        sell_order,
-        price,
-        amount,
-        fill_sequence,
+        buy_order, sell_order, price, amount, fill_sequence,
     );
     let hash = Sha256::digest(trade_input.as_bytes());
     let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
@@ -370,7 +366,7 @@ async fn handler_rejects_cancellation_by_non_owner() {
     let mut balance_book = BalanceBook::new(temp_path("cancel-balances"));
     let mut pending_trade_states = HashMap::new();
 
-    order_book.add_order(order.clone());
+    order_book.upsert_order(order.clone());
     order_book.save_orders().unwrap();
 
     let mut ctx = HandlerContext {
@@ -573,7 +569,7 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
     let mut balance_book = BalanceBook::new(temp_path("snapshot-invalid-balances"));
     let mut pending_trade_states = HashMap::new();
 
-    order_book.add_order(existing_order.clone());
+    order_book.upsert_order(existing_order.clone());
 
     let original_order_count = order_book.orders.len();
     let original_trade_count = trade_book.trades.len();
@@ -744,7 +740,7 @@ async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
     let mut balance_book = BalanceBook::new(temp_path("forged-cancel-balances"));
     let mut pending_trade_states = HashMap::new();
 
-    order_book.add_order(order.clone());
+    order_book.upsert_order(order.clone());
     order_book.save_orders().unwrap();
 
     let mut ctx = HandlerContext {

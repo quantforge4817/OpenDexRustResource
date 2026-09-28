@@ -1,6 +1,5 @@
-
 use p2p_node::balances::{Balance, BalanceBook};
-use p2p_node::exchange::{Exchange, RecordTrade,  SubmitOrder};
+use p2p_node::exchange::{Exchange, RecordTrade, SubmitOrder};
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
 use protocol::message::{Asset, Market, Order, Side, Trade, TradeState};
@@ -23,11 +22,7 @@ fn deterministic_trade_id(
 ) -> Uuid {
     let trade_input = format!(
         "{}:{}:{}:{}:{}",
-        buy_order,
-        sell_order,
-        price,
-        amount,
-        fill_sequence,
+        buy_order, sell_order, price, amount, fill_sequence,
     );
 
     let hash = Sha256::digest(trade_input.as_bytes());
@@ -39,19 +34,13 @@ fn books() -> (OrderBook, TradeBook, BalanceBook) {
 
     (
         OrderBook::new(
-            std::env::temp_dir().join(format!(
-                "opendex-test-exchange-orders-{suffix}.json"
-            )),
+            std::env::temp_dir().join(format!("opendex-test-exchange-orders-{suffix}.json")),
         ),
         TradeBook::new(
-            std::env::temp_dir().join(format!(
-                "opendex-test-exchange-trades-{suffix}.json"
-            )),
+            std::env::temp_dir().join(format!("opendex-test-exchange-trades-{suffix}.json")),
         ),
         BalanceBook::new(
-            std::env::temp_dir().join(format!(
-                "opendex-test-exchange-balances-{suffix}.json"
-            )),
+            std::env::temp_dir().join(format!("opendex-test-exchange-balances-{suffix}.json")),
         ),
     )
 }
@@ -96,13 +85,9 @@ fn record_trade_rejects_invalid_deterministic_trade_id() {
         state: TradeState::Created,
         created_at: 1,
         updated_at: 1,
-};
+    };
 
-    let mut exchange = Exchange::new(
-        &mut order_book,
-        &mut trade_book,
-        &mut balance_book,
-    );
+    let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
     let result = exchange.record_trade(RecordTrade {
         actor: "seller".to_string(),
@@ -152,11 +137,7 @@ fn record_trade_reconciles_buy_reservation() {
     };
 
     balance_book
-        .credit(
-            "buyer",
-            Asset::XMR,
-            1000 * protocol::message::AMOUNT_SCALE,
-        )
+        .credit("buyer", Asset::XMR, 1000 * protocol::message::AMOUNT_SCALE)
         .unwrap();
 
     balance_book.lock_for_order(&buy).unwrap();
@@ -164,13 +145,7 @@ fn record_trade_reconciles_buy_reservation() {
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_id = deterministic_trade_id(
-        buy.id,
-        sell.id,
-        price,
-        trade_amount,
-        10,
-    );
+    let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
     let trade = Trade {
         id: trade_id,
@@ -190,11 +165,7 @@ fn record_trade_reconciles_buy_reservation() {
     };
 
     {
-        let mut exchange = Exchange::new(
-            &mut order_book,
-            &mut trade_book,
-            &mut balance_book,
-        );
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
         let result = exchange
             .record_trade(RecordTrade {
@@ -263,22 +234,12 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
     };
 
     balance_book
-        .credit(
-            "buyer",
-            Asset::XMR,
-            1000 * protocol::message::AMOUNT_SCALE,
-        )
+        .credit("buyer", Asset::XMR, 1000 * protocol::message::AMOUNT_SCALE)
         .unwrap();
 
     balance_book.lock_for_order(&buy).unwrap();
 
-    let trade_id = deterministic_trade_id(
-        buy.id,
-        sell.id,
-        price,
-        trade_amount,
-        10,
-    );
+    let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
     let trade = Trade {
         id: trade_id,
@@ -299,11 +260,7 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
 
     // The trade arrives before either order.
     {
-        let mut exchange = Exchange::new(
-            &mut order_book,
-            &mut trade_book,
-            &mut balance_book,
-        );
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
         let result = exchange
             .record_trade(RecordTrade {
@@ -332,27 +289,23 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
     );
 
     // Now deliver the orders.
-     {
-    let mut exchange = Exchange::new(
-        &mut order_book,
-        &mut trade_book,
-        &mut balance_book,
-    );
+    {
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
-    exchange
-        .add_order(SubmitOrder {
-            actor: "buyer".to_string(),
-            order: buy.clone(),
-        })
-        .unwrap();
+        exchange
+            .submit_order(SubmitOrder {
+                actor: "buyer".to_string(),
+                order: buy.clone(),
+            })
+            .unwrap();
 
-    exchange
-        .add_order(SubmitOrder {
-            actor: "seller".to_string(),
-            order: sell.clone(),
-        })
-        .unwrap();
-}
+        exchange
+            .submit_order(SubmitOrder {
+                actor: "seller".to_string(),
+                order: sell.clone(),
+            })
+            .unwrap();
+    }
 
     // The pending trade should have applied to the order book.
     assert_eq!(order_book.pending_trades.len(), 0);
@@ -408,11 +361,7 @@ fn submit_order_reconciles_local_buy_reservation() {
     };
 
     balance_book
-        .credit(
-            "buyer",
-            Asset::XMR,
-            100 * protocol::message::AMOUNT_SCALE,
-        )
+        .credit("buyer", Asset::XMR, 100 * protocol::message::AMOUNT_SCALE)
         .unwrap();
 
     balance_book.lock_for_order(&buy).unwrap();
@@ -420,20 +369,15 @@ fn submit_order_reconciles_local_buy_reservation() {
     // The seller is already resting on the book.
     order_book.orders.push(sell);
 
-
     let trades = {
-        let mut exchange = Exchange::new(
-        &mut order_book,
-        &mut trade_book,
-        &mut balance_book,
-    );
-      exchange
-        .submit_order(SubmitOrder {
-            actor: "buyer".to_string(),
-            order: buy.clone(),
-        })
-        .unwrap()
-};
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
+        exchange
+            .submit_order(SubmitOrder {
+                actor: "buyer".to_string(),
+                order: buy.clone(),
+            })
+            .unwrap()
+    };
     assert_eq!(trades.len(), 1);
 
     // 5 BTC of the 10 BTC buy order was filled.
@@ -478,11 +422,7 @@ fn record_trade_reconciles_sell_reservation() {
     };
 
     balance_book
-        .credit(
-            "seller",
-            Asset::BTC,
-            10 * protocol::message::AMOUNT_SCALE,
-        )
+        .credit("seller", Asset::BTC, 10 * protocol::message::AMOUNT_SCALE)
         .unwrap();
 
     balance_book.lock_for_order(&sell).unwrap();
@@ -490,13 +430,7 @@ fn record_trade_reconciles_sell_reservation() {
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_id = deterministic_trade_id(
-        buy.id,
-        sell.id,
-        price,
-        trade_amount,
-        10,
-    );
+    let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
     let trade = Trade {
         id: trade_id,
@@ -515,11 +449,7 @@ fn record_trade_reconciles_sell_reservation() {
         updated_at: 1,
     };
 
-    let mut exchange = Exchange::new(
-        &mut order_book,
-        &mut trade_book,
-        &mut balance_book,
-    );
+    let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
     exchange
         .record_trade(RecordTrade {
@@ -566,9 +496,7 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
         amount,
     };
 
-    balance_book
-        .credit("seller", Asset::BTC, amount)
-        .unwrap();
+    balance_book.credit("seller", Asset::BTC, amount).unwrap();
 
     balance_book.lock_for_order(&sell).unwrap();
 
@@ -576,11 +504,7 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
     order_book.orders.push(sell.clone());
 
     {
-        let mut exchange = Exchange::new(
-            &mut order_book,
-            &mut trade_book,
-            &mut balance_book,
-        );
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
         for (index, fill_amount) in [
             3 * protocol::message::AMOUNT_SCALE,
@@ -592,13 +516,8 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
         {
             let fill_sequence = index as u64;
 
-            let trade_id = deterministic_trade_id(
-                buy.id,
-                sell.id,
-                price,
-                fill_amount,
-                fill_sequence,
-            );
+            let trade_id =
+                deterministic_trade_id(buy.id, sell.id, price, fill_amount, fill_sequence);
 
             let trade = Trade {
                 id: trade_id,
@@ -626,10 +545,7 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
         }
     }
 
-    assert_eq!(
-        balance_book.order_reservation(&sell.id),
-        None
-    );
+    assert_eq!(balance_book.order_reservation(&sell.id), None);
 
     assert_eq!(
         balance_book.balance("seller", &Asset::BTC),
@@ -666,22 +582,14 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
         amount,
     };
 
-    balance_book
-        .credit("seller", Asset::BTC, amount)
-        .unwrap();
+    balance_book.credit("seller", Asset::BTC, amount).unwrap();
 
     balance_book.lock_for_order(&sell).unwrap();
 
     order_book.orders.push(buy.clone());
     order_book.orders.push(sell.clone());
 
-    let trade_id = deterministic_trade_id(
-        buy.id,
-        sell.id,
-        price,
-        trade_amount,
-        10,
-    );
+    let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
     let trade = Trade {
         id: trade_id,
@@ -701,11 +609,7 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
     };
 
     {
-        let mut exchange = Exchange::new(
-            &mut order_book,
-            &mut trade_book,
-            &mut balance_book,
-        );
+        let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
 
         exchange
             .record_trade(RecordTrade {

@@ -280,11 +280,7 @@ fn trade(buy: &Order, sell: &Order) -> Trade {
     let fill_sequence = 10;
     let trade_input = format!(
         "{}:{}:{}:{}:{}",
-        buy.id,
-        sell.id,
-        buy.price,
-        buy.amount,
-        fill_sequence,
+        buy.id, sell.id, buy.price, buy.amount, fill_sequence,
     );
     let hash = Sha256::digest(trade_input.as_bytes());
     let id = Uuid::from_slice(&hash[..16]).expect("failed to create trade uuid");
@@ -363,8 +359,8 @@ fn trade_created_then_settled_updates_local_balances() {
 
     fund_buyer(&mut balance_book, &local_trader);
 
-    order_book.add_order(buy);
-    order_book.add_order(sell);
+    order_book.upsert_order(buy);
+    order_book.upsert_order(sell);
 
     handle_trade_created(
         trade.clone(),

@@ -23,7 +23,8 @@ fn trade_id(
 ) -> Uuid {
     let input = format!(
         "{}:{}:{}:{}:{}",
-        buy_order, sell_order, price, amount, fill_sequence);
+        buy_order, sell_order, price, amount, fill_sequence
+    );
 
     let hash = Sha256::digest(input.as_bytes());
 
@@ -63,8 +64,8 @@ fn buy_matches_cheapest_sell_first() {
     let cheap_sell = order("00000000-0000-0000-0000-000000000001", Side::Sell, 90, 10);
 
     // Deliberately add the expensive order first.
-    book.add_order(expensive_sell);
-    book.add_order(cheap_sell);
+    book.upsert_order(expensive_sell);
+    book.upsert_order(cheap_sell);
 
     let incoming = order("00000000-0000-0000-0000-000000000003", Side::Buy, 100, 10);
 
@@ -89,8 +90,8 @@ fn sell_matches_highest_buy_first() {
     let expensive_buy = order("00000000-0000-0000-0000-000000000002", Side::Buy, 100, 10);
 
     // Deliberately add the cheap order first.
-    book.add_order(cheap_buy);
-    book.add_order(expensive_buy);
+    book.upsert_order(cheap_buy);
+    book.upsert_order(expensive_buy);
 
     let incoming = order("00000000-0000-0000-0000-000000000003", Side::Sell, 90, 10);
 
@@ -112,7 +113,7 @@ fn partial_fill_leaves_remaining_order() {
 
     let sell = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 5);
 
-    book.add_order(sell);
+    book.upsert_order(sell);
 
     let incoming = order("00000000-0000-0000-0000-000000000002", Side::Buy, 100, 10);
 
@@ -121,7 +122,7 @@ fn partial_fill_leaves_remaining_order() {
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].amount, 5);
 
-    book.add_order(incoming.clone());
+    book.upsert_order(incoming.clone());
     assert!(book.apply_trade(&trades[0]));
 
     let remaining = book
@@ -146,12 +147,12 @@ fn different_arrival_order_produces_same_trades() {
     let sell_90 = order("00000000-0000-0000-0000-000000000002", Side::Sell, 90, 5);
 
     // Node A receives 100 first.
-    book_a.add_order(sell_100.clone());
-    book_a.add_order(sell_90.clone());
+    book_a.upsert_order(sell_100.clone());
+    book_a.upsert_order(sell_90.clone());
 
     // Node B receives 90 first.
-    book_b.add_order(sell_90);
-    book_b.add_order(sell_100);
+    book_b.upsert_order(sell_90);
+    book_b.upsert_order(sell_100);
 
     let incoming_a = order("00000000-0000-0000-0000-000000000003", Side::Buy, 100, 10);
 
@@ -183,7 +184,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
 
     let sell = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 13);
 
-    book.add_order(sell.clone());
+    book.upsert_order(sell.clone());
 
     let buy1 = order("00000000-0000-0000-0000-000000000002", Side::Buy, 100, 3);
 
@@ -197,7 +198,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
     assert_eq!(trades1.len(), 1);
     assert_eq!(trades1[0].amount, 3);
 
-    book.add_order(buy1.clone());
+    book.upsert_order(buy1.clone());
     assert!(book.apply_trade(&trades1[0]));
 
     let remaining = book
@@ -212,7 +213,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
     assert_eq!(trades2.len(), 1);
     assert_eq!(trades2[0].amount, 4);
 
-    book.add_order(buy2.clone());
+    book.upsert_order(buy2.clone());
     assert!(book.apply_trade(&trades2[0]));
 
     let remaining = book
@@ -227,7 +228,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
     assert_eq!(trades3.len(), 1);
     assert_eq!(trades3[0].amount, 4);
 
-    book.add_order(buy3.clone());
+    book.upsert_order(buy3.clone());
     assert!(book.apply_trade(&trades3[0]));
 
     let remaining = book
@@ -242,7 +243,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
     assert_eq!(trades4.len(), 1);
     assert_eq!(trades4[0].amount, 2);
 
-    book.add_order(buy4.clone());
+    book.upsert_order(buy4.clone());
     assert!(book.apply_trade(&trades4[0]));
 
     assert!(
@@ -271,13 +272,11 @@ fn apply_trade_is_idempotent() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let fill_sequence = 10;
-    let trade_input = format!(
-        "{}:{}:{}:{}:{}",
-        buy.id, sell.id, 100, 4, fill_sequence);
+    let trade_input = format!("{}:{}:{}:{}:{}", buy.id, sell.id, 100, 4, fill_sequence);
     let hash = Sha256::digest(trade_input.as_bytes());
     let trade_id = Uuid::from_slice(&hash[..16]).unwrap();
 
@@ -342,22 +341,22 @@ fn distributed_event_order_converges() {
     assert!(!node_a.apply_trade(&trade));
     assert_eq!(node_a.pending_trades.len(), 1);
 
-    node_a.add_order(buy.clone());
+    node_a.upsert_order(buy.clone());
     assert_eq!(node_a.pending_trades.len(), 1);
 
-     let pending = node_a.add_order(sell.clone());
+    let pending = node_a.upsert_order(sell.clone());
 
-     assert_eq!(pending.len(), 1);
+    assert_eq!(pending.len(), 1);
 
-	     for trade in pending {
-    assert!(node_a.apply_trade(&trade));
+    for trade in pending {
+        assert!(node_a.apply_trade(&trade));
     }
 
     assert!(node_a.pending_trades.is_empty());
 
     // Node B receives the orders first, then the trade.
-    node_b.add_order(sell);
-    node_b.add_order(buy);
+    node_b.upsert_order(sell);
+    node_b.upsert_order(buy);
 
     assert!(node_b.apply_trade(&trade));
 
@@ -425,18 +424,18 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
     assert!(book.applied_trades.is_empty());
 
     // First order arrives. Trade must remain pending.
-    book.add_order(buy.clone());
+    book.upsert_order(buy.clone());
 
     assert_eq!(book.pending_trades.len(), 1);
     assert!(book.applied_trades.is_empty());
 
     // Second order arrives. The pending trade is now applicable.
-    let pending = book.add_order(sell.clone());
+    let pending = book.upsert_order(sell.clone());
 
     assert_eq!(pending.len(), 1);
 
     for trade in pending {
-    assert!(book.apply_trade(&trade));
+        assert!(book.apply_trade(&trade));
     }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
@@ -516,22 +515,22 @@ fn duplicate_out_of_order_delivery_converges() {
     assert!(!node_a.apply_trade(&trade));
     assert_eq!(node_a.pending_trades.len(), 1);
 
-    node_a.add_order(buy.clone());
+    node_a.upsert_order(buy.clone());
     assert_eq!(node_a.pending_trades.len(), 1);
 
     // The duplicate trade must not be added twice to pending trades.
     assert!(!node_a.apply_trade(&trade));
     assert_eq!(node_a.pending_trades.len(), 1);
 
-    node_a.add_order(sell.clone());
+    node_a.upsert_order(sell.clone());
 
-     let pending = node_a.add_order(sell.clone());
+    let pending = node_a.upsert_order(sell.clone());
 
     assert_eq!(pending.len(), 1);
 
     for trade in pending {
-    assert!(node_a.apply_trade(&trade));
-   }
+        assert!(node_a.apply_trade(&trade));
+    }
     assert!(node_a.pending_trades.is_empty());
     assert_eq!(node_a.applied_trades.len(), 1);
     assert_eq!(node_a.applied_trades[0], trade.id.to_string());
@@ -539,8 +538,8 @@ fn duplicate_out_of_order_delivery_converges() {
     // Node B receives:
     // SELL -> BUY -> TRADE
 
-    node_b.add_order(sell);
-    node_b.add_order(buy);
+    node_b.upsert_order(sell);
+    node_b.upsert_order(buy);
 
     assert!(node_b.apply_trade(&trade));
 
@@ -589,8 +588,8 @@ fn orderbook_persistence_preserves_distributed_state() {
     // Build state before persistence.
     let mut book = OrderBook::new(path.clone());
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     assert!(book.apply_trade(&trade));
 
@@ -708,19 +707,19 @@ fn pending_trade_survives_restart() {
     assert_eq!(recovered.pending_trades[0].id, trade.id);
 
     // Orders arrive after restart.
-    recovered.add_order(buy.clone());
+    recovered.upsert_order(buy.clone());
 
     // Still waiting for the sell order.
     assert_eq!(recovered.pending_trades.len(), 1);
 
-    recovered.add_order(sell.clone());
+    recovered.upsert_order(sell.clone());
 
-    let pending = recovered.add_order(sell.clone());
+    let pending = recovered.upsert_order(sell.clone());
 
     assert_eq!(pending.len(), 1);
 
     for trade in pending {
-    assert!(recovered.apply_trade(&trade));
+        assert!(recovered.apply_trade(&trade));
     }
     assert!(recovered.pending_trades.is_empty());
     assert_eq!(recovered.applied_trades.len(), 1);
@@ -757,35 +756,35 @@ fn removed_order_is_not_resurrected_by_stale_state() {
     let order_a = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
     // Both nodes initially know the order.
-    node_a.add_order(order_a.clone());
-    node_b.add_order(order_a.clone());
+    node_a.upsert_order(order_a.clone());
+    node_b.upsert_order(order_a.clone());
 
-// Node A receives a trade that completely fills the order.
-let trade = Trade {
-    id: trade_id(
-        Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
-        order_id,
-        100,
-        10,
-        10,
-    ),
-    buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
-    sell_order: order_id,
-    maker: order_a.trader.clone(),
-    taker: "trader-00000000-0000-0000-0000-000000000003".to_string(),
-    buyer: "trader-00000000-0000-0000-0000-000000000003".to_string(),
-    seller: order_a.trader.clone(),
-    market: market(),
-    price: 100,
-    amount: 10,
-    fill_sequence: 10,
-    state: TradeState::Created,
-    created_at: 0,
-    updated_at: 0,
-};
+    // Node A receives a trade that completely fills the order.
+    let trade = Trade {
+        id: trade_id(
+            Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+            order_id,
+            100,
+            10,
+            10,
+        ),
+        buy_order: Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+        sell_order: order_id,
+        maker: order_a.trader.clone(),
+        taker: "trader-00000000-0000-0000-0000-000000000003".to_string(),
+        buyer: "trader-00000000-0000-0000-0000-000000000003".to_string(),
+        seller: order_a.trader.clone(),
+        market: market(),
+        price: 100,
+        amount: 10,
+        fill_sequence: 10,
+        state: TradeState::Created,
+        created_at: 0,
+        updated_at: 0,
+    };
 
     // Add the buy order so the trade can be applied.
-    node_a.add_order(order(
+    node_a.upsert_order(order(
         "00000000-0000-0000-0000-000000000003",
         Side::Buy,
         100,
@@ -813,7 +812,7 @@ let trade = Trade {
             continue;
         }
 
-        node_a.add_order(stale_order);
+        node_a.upsert_order(stale_order);
     }
 
     // The filled order must still be absent.
@@ -862,7 +861,7 @@ fn trade_waits_for_both_orders_then_applies_once() {
     assert!(book.applied_trades.is_empty());
 
     // BUY arrives. Trade still cannot be applied.
-    book.add_order(buy.clone());
+    book.upsert_order(buy.clone());
 
     assert_eq!(book.pending_trades.len(), 1);
     assert!(book.applied_trades.is_empty());
@@ -876,12 +875,12 @@ fn trade_waits_for_both_orders_then_applies_once() {
     assert_eq!(buy_remaining.amount, 10);
 
     // SELL arrives. The pending trade is now applicable.
-    let pending = book.add_order(sell.clone());
+    let pending = book.upsert_order(sell.clone());
 
     assert_eq!(pending.len(), 1);
 
     for trade in pending {
-    assert!(book.apply_trade(&trade));
+        assert!(book.apply_trade(&trade));
     }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
@@ -931,7 +930,7 @@ fn cancellation_before_order_creation_prevents_resurrection() {
     let order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
     // A stale OrderCreated must not resurrect the cancelled order.
-    book.add_order(order);
+    book.upsert_order(order);
 
     assert!(
         !book.orders.iter().any(|o| o.id == order_id),
@@ -951,7 +950,7 @@ fn duplicate_cancellation_is_idempotent() {
 
     let order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
-    book.add_order(order);
+    book.upsert_order(order);
 
     assert!(book.remove_order(order_id));
     assert!(!book.remove_order(order_id));
@@ -970,14 +969,14 @@ fn stale_order_cannot_be_added_after_cancellation() {
 
     let original = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
-    book.add_order(original);
+    book.upsert_order(original);
 
     assert!(book.remove_order(order_id));
 
     // Simulate an old OrderCreated message arriving later.
     let stale_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
-    book.add_order(stale_order);
+    book.upsert_order(stale_order);
 
     assert!(book.orders.is_empty());
     assert_eq!(book.removed_orders.len(), 1);
@@ -1001,8 +1000,8 @@ fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: trade_id(buy.id, sell.id, 100, 4, 10),
@@ -1044,8 +1043,8 @@ fn rejects_trade_with_wrong_seller_identity() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: trade_id(buy.id, sell.id, 100, 4, 10),
@@ -1084,8 +1083,8 @@ fn rejects_trade_above_buy_limit() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 90, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: Uuid::new_v4(),
@@ -1120,8 +1119,8 @@ fn rejects_trade_below_sell_limit() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 90, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: Uuid::new_v4(),
@@ -1156,8 +1155,8 @@ fn rejects_trade_exceeding_remaining_amount() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: Uuid::new_v4(),
@@ -1194,8 +1193,8 @@ fn rejects_zero_amount_trade() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: Uuid::new_v4(),
@@ -1221,13 +1220,12 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
     let order_path = std::env::temp_dir().join("opendex-test-snapshot-atomic.json");
     let trade_path = std::env::temp_dir().join("opendex-test-snapshot-atomic-trades.json");
 
-       let mut order_book = OrderBook::new(order_path);
+    let mut order_book = OrderBook::new(order_path);
     let mut trade_book = TradeBook::new(trade_path);
 
-    let existing_order =
-        order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
+    let existing_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
-    order_book.add_order(existing_order.clone());
+    order_book.upsert_order(existing_order.clone());
 
     let original_orders = order_book.orders.clone();
     let original_trades = trade_book.trades.clone();
@@ -1305,8 +1303,8 @@ fn rejects_snapshot_trade_with_invalid_maker() {
 
     let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    order_book.add_order(buy.clone());
-    order_book.add_order(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     let original_orders = order_book.orders.clone();
     let original_trades = trade_book.trades.clone();
@@ -1358,7 +1356,7 @@ fn snapshot_can_reduce_existing_order_amount() {
 
     let local_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 100);
 
-    order_book.add_order(local_order.clone());
+    order_book.upsert_order(local_order.clone());
 
     let newer_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 40);
 
@@ -1395,7 +1393,7 @@ fn conflicting_snapshot_order_terms_are_rejected() {
 
     let local_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 40);
 
-    order_book.add_order(local_order.clone());
+    order_book.upsert_order(local_order.clone());
 
     let mut conflicting = local_order.clone();
     conflicting.trader = "attacker".to_string();
@@ -1431,7 +1429,7 @@ fn snapshot_does_not_resurrect_removed_order() {
 
     let original = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 10);
 
-    book.add_order(original.clone());
+    book.upsert_order(original.clone());
     book.remove_order(original.id);
 
     let snapshot_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 50);
@@ -1463,7 +1461,7 @@ fn matching_rejects_self_trade() {
         AMOUNT_SCALE,
     );
     buy.trader = sell.trader.clone();
-    book.add_order(sell);
+    book.upsert_order(sell);
 
     let trades = book.match_order(&buy);
 
@@ -1474,28 +1472,19 @@ fn matching_rejects_self_trade() {
 }
 #[test]
 fn identical_sized_partial_fills_must_have_distinct_trade_ids() {
-    let path = std::env::temp_dir().join(
-        format!("opendex-test-identical-partial-fills-{}.json", Uuid::new_v4())
-    );
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-identical-partial-fills-{}.json",
+        Uuid::new_v4()
+    ));
 
     let mut book = OrderBook::new(path);
 
-    let buy = order(
-        "00000000-0000-0000-0000-000000000001",
-        Side::Buy,
-        100,
-        10,
-    );
+    let buy = order("00000000-0000-0000-0000-000000000001", Side::Buy, 100, 10);
 
-    let sell = order(
-        "00000000-0000-0000-0000-000000000002",
-        Side::Sell,
-        100,
-        10,
-    );
+    let sell = order("00000000-0000-0000-0000-000000000002", Side::Sell, 100, 10);
 
-    book.add_order(buy.clone());
-    book.add_order(sell.clone());
+    book.upsert_order(buy.clone());
+    book.upsert_order(sell.clone());
 
     // First legitimate 4-unit fill.
     let trades1 = book.match_order(&order(
@@ -1529,8 +1518,7 @@ fn identical_sized_partial_fills_must_have_distinct_trade_ids() {
 
     // These are two different trade events.
     assert_ne!(
-        trades1[0].id,
-        trades2[0].id,
+        trades1[0].id, trades2[0].id,
         "two legitimate fills must not share the same trade ID"
     );
 }

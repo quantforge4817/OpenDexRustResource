@@ -14,17 +14,12 @@ fn deterministic_trade_id(
 ) -> Uuid {
     let trade_input = format!(
         "{}:{}:{}:{}:{}",
-        buy_order,
-        sell_order,
-        price,
-        amount,
-        fill_sequence,
+        buy_order, sell_order, price, amount, fill_sequence,
     );
 
     let hash = Sha256::digest(trade_input.as_bytes());
 
-    Uuid::from_slice(&hash[..16])
-        .expect("SHA-256 always has at least 16 bytes")
+    Uuid::from_slice(&hash[..16]).expect("SHA-256 always has at least 16 bytes")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,14 +74,9 @@ impl OrderBook {
         Ok(())
     }
 
-    pub fn add_order(&mut self, order: Order) -> Vec<Trade> {
-        self.upsert_order(order)
-    }
-
     pub fn upsert_order(&mut self, order: Order) -> Vec<Trade> {
-
         if self.removed_orders.contains(&order.id) {
-         return Vec::new();
+            return Vec::new();
         }
 
         let order_id = order.id;
@@ -112,26 +102,25 @@ impl OrderBook {
         }
 
         // Return pending trades involving this order to the caller.
-// The Exchange layer is responsible for applying the trade and
-// reconciling the associated balance reservation.
-let pending_trades: Vec<Trade> = self
-    .pending_trades
-    .iter()
-    .filter(|trade| {
-        if trade.buy_order != order_id && trade.sell_order != order_id {
-            return false;
-        }
+        // The Exchange layer is responsible for applying the trade and
+        // reconciling the associated balance reservation.
+        let pending_trades: Vec<Trade> = self
+            .pending_trades
+            .iter()
+            .filter(|trade| {
+                if trade.buy_order != order_id && trade.sell_order != order_id {
+                    return false;
+                }
 
-        let has_buy = self.orders.iter().any(|o| o.id == trade.buy_order);
-        let has_sell = self.orders.iter().any(|o| o.id == trade.sell_order);
+                let has_buy = self.orders.iter().any(|o| o.id == trade.buy_order);
+                let has_sell = self.orders.iter().any(|o| o.id == trade.sell_order);
 
-        has_buy && has_sell
-    })
-    .cloned()
-    .collect();
+                has_buy && has_sell
+            })
+            .cloned()
+            .collect();
 
-pending_trades
-
+        pending_trades
     }
     pub fn update_order_from_snapshot(&mut self, order: Order) {
         if self.removed_orders.contains(&order.id) {
@@ -295,8 +284,7 @@ pending_trades
             .unwrap_or(0);
 
         if next_sequence > current {
-            self.fill_sequences
-                .insert(sequence_order_id, next_sequence);
+            self.fill_sequences.insert(sequence_order_id, next_sequence);
         }
 
         // Mark the trade as applied before changing order quantities.
@@ -415,23 +403,12 @@ pending_trades
 
             let trade_price = existing.price;
 
+            let fill_sequence = self.fill_sequences.get(&existing.id).copied().unwrap_or(0);
 
-            let fill_sequence = self
-                .fill_sequences
-                .get(&existing.id)
-                .copied()
-                .unwrap_or(0);
+            self.fill_sequences.insert(existing.id, fill_sequence + 1);
 
-            self.fill_sequences
-                .insert(existing.id, fill_sequence + 1);
-
-            let trade_id = deterministic_trade_id(
-                buy_order,
-                sell_order,
-                trade_price,
-                amount,
-                fill_sequence,
-            );
+            let trade_id =
+                deterministic_trade_id(buy_order, sell_order, trade_price, amount, fill_sequence);
 
             let now = chrono::Utc::now().timestamp() as u64;
 
@@ -452,7 +429,6 @@ pending_trades
             } else {
                 existing.trader.clone()
             };
-
 
             let trade = Trade {
                 id: trade_id,
@@ -522,14 +498,13 @@ pending_trades
     }
 
     pub fn validate_trade_identity(&self, trade: &Trade) -> Result<()> {
-        let expected_id =
-            deterministic_trade_id(
-                trade.buy_order,
-                trade.sell_order,
-                trade.price,
-                trade.amount,
-                trade.fill_sequence,
-            );
+        let expected_id = deterministic_trade_id(
+            trade.buy_order,
+            trade.sell_order,
+            trade.price,
+            trade.amount,
+            trade.fill_sequence,
+        );
 
         if trade.id != expected_id {
             anyhow::bail!(

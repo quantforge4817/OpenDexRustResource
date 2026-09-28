@@ -41,11 +41,7 @@ impl<'a> Exchange<'a> {
         sell_order: Option<Order>,
     ) -> Result<()> {
         if let Some(order) = buy_order {
-            if self
-                .balance_book
-                .order_reservation(&order.id)
-                .is_some()
-            {
+            if self.balance_book.order_reservation(&order.id).is_some() {
                 let remaining_amount = order.amount.saturating_sub(trade.amount);
 
                 let remaining_order = Order {
@@ -62,11 +58,7 @@ impl<'a> Exchange<'a> {
         }
 
         if let Some(order) = sell_order {
-            if self
-                .balance_book
-                .order_reservation(&order.id)
-                .is_some()
-            {
+            if self.balance_book.order_reservation(&order.id).is_some() {
                 let remaining_amount = order.amount.saturating_sub(trade.amount);
 
                 self.balance_book
@@ -77,71 +69,53 @@ impl<'a> Exchange<'a> {
         Ok(())
     }
 
-fn add_order_and_reconcile_pending(&mut self, order: Order) -> Result<()> {
-    let incoming_order = order.clone();
-    let pending_trades = self.order_book.upsert_order(order);
+    fn add_order_and_reconcile_pending(&mut self, order: Order) -> Result<bool> {
+        let incoming_order = order.clone();
+        let pending_trades = self.order_book.upsert_order(order);
+        let had_pending_trades = !pending_trades.is_empty();
 
-    for trade in pending_trades {
-        let buy_order = self
-            .order_book
-            .orders
-            .iter()
-            .find(|order| order.id == trade.buy_order)
-            .cloned()
-            .or_else(|| {
-                if trade.buy_order == incoming_order.id {
-                    Some(incoming_order.clone())
-                } else {
-                    None
-                }
-            });
+        for trade in pending_trades {
+            let buy_order = self
+                .order_book
+                .orders
+                .iter()
+                .find(|order| order.id == trade.buy_order)
+                .cloned()
+                .or_else(|| {
+                    if trade.buy_order == incoming_order.id {
+                        Some(incoming_order.clone())
+                    } else {
+                        None
+                    }
+                });
 
-        let sell_order = self
-            .order_book
-            .orders
-            .iter()
-            .find(|order| order.id == trade.sell_order)
-            .cloned()
-            .or_else(|| {
-                if trade.sell_order == incoming_order.id {
-                    Some(incoming_order.clone())
-                } else {
-                    None
-                }
-            });
+            let sell_order = self
+                .order_book
+                .orders
+                .iter()
+                .find(|order| order.id == trade.sell_order)
+                .cloned()
+                .or_else(|| {
+                    if trade.sell_order == incoming_order.id {
+                        Some(incoming_order.clone())
+                    } else {
+                        None
+                    }
+                });
 
-        if !self.order_book.apply_trade(&trade) {
-            anyhow::bail!(
-                "pending trade {} could not be applied",
-                trade.id
-            );
+            if !self.order_book.apply_trade(&trade) {
+                anyhow::bail!("pending trade {} could not be applied", trade.id);
+            }
+
+            self.reconcile_trade_reservation(&trade, buy_order, sell_order)?;
+
+            self.order_book
+                .pending_trades
+                .retain(|pending| pending.id != trade.id);
         }
 
-        self.reconcile_trade_reservation(
-            &trade,
-            buy_order,
-            sell_order,
-        )?;
-
-        self.order_book
-            .pending_trades
-            .retain(|pending| pending.id != trade.id);
+        Ok(had_pending_trades)
     }
-
-    Ok(())
-}
-
-pub fn add_order(&mut self, operation: SubmitOrder) -> Result<()> {
-    if operation.actor != operation.order.trader {
-        anyhow::bail!(
-            "submit order actor is not the order owner: actor={}, trader={}",
-            operation.actor,
-            operation.order.trader
-        );
-    }
-
-    self.add_order_and_reconcile_pending(operation.order)
-}
 
     pub fn submit_order(&mut self, operation: SubmitOrder) -> Result<Vec<Trade>> {
         if operation.actor != operation.order.trader {
@@ -153,9 +127,27 @@ pub fn add_order(&mut self, operation: SubmitOrder) -> Result<()> {
         }
 
         let order = operation.order;
-        let trades = self.order_book.match_order(&order);
 
-        self.add_order_and_reconcile_pending(order)?;
+        // Materialize the order and reconcile any remote trades that arrived
+        // before the order itself. A pending remote trade already represents
+        // the match for this arrival, so do not immediately create a second
+        // local match from the remaining quantity.
+        let had_pending_trades = self.add_order_and_reconcile_pending(order.clone())?;
+
+        if had_pending_trades {
+            return Ok(Vec::new());
+        }
+
+        let live_order = self
+            .order_book
+            .orders
+            .iter()
+            .find(|existing| existing.id == order.id)
+            .cloned();
+
+        let trades = live_order
+            .map(|live_order| self.order_book.match_order(&live_order))
+            .unwrap_or_default();
 
         for trade in &trades {
             self.order_book.validate_trade_structure(trade)?;
@@ -182,17 +174,10 @@ pub fn add_order(&mut self, operation: SubmitOrder) -> Result<()> {
                 .cloned();
 
             if !self.order_book.apply_trade(trade) {
-                anyhow::bail!(
-                    "trade {} could not be applied after matching",
-                    trade.id
-                );
+                anyhow::bail!("trade {} could not be applied after matching", trade.id);
             }
 
-            self.reconcile_trade_reservation(
-                trade,
-                buy_order,
-                sell_order,
-            )?;
+            self.reconcile_trade_reservation(trade, buy_order, sell_order)?;
 
             self.order_book
                 .pending_trades
@@ -237,11 +222,7 @@ pub fn add_order(&mut self, operation: SubmitOrder) -> Result<()> {
             .cloned();
 
         if self.order_book.apply_trade(&trade) {
-            self.reconcile_trade_reservation(
-                &trade,
-                buy_order,
-                sell_order,
-            )?;
+            self.reconcile_trade_reservation(&trade, buy_order, sell_order)?;
 
             self.order_book
                 .pending_trades
