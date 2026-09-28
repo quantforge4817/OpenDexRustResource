@@ -276,8 +276,27 @@ pending_trades
         // the order book.
         if let Err(error) = self.validate_trade(trade) {
             eprintln!("Rejecting invalid trade {}: {}", trade.id, error);
-
             return false;
+        }
+        let next_sequence = trade.fill_sequence.saturating_add(1);
+
+        let sequence_order_id = if trade.maker == trade.buyer {
+            trade.buy_order
+        } else if trade.maker == trade.seller {
+            trade.sell_order
+        } else {
+            return false;
+        };
+
+        let current = self
+            .fill_sequences
+            .get(&sequence_order_id)
+            .copied()
+            .unwrap_or(0);
+
+        if next_sequence > current {
+            self.fill_sequences
+                .insert(sequence_order_id, next_sequence);
         }
 
         // Mark the trade as applied before changing order quantities.
