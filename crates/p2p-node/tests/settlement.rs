@@ -2,6 +2,7 @@ use libp2p::{PeerId, identity};
 use p2p_node::balances::{Balance, BalanceBook};
 use p2p_node::settlement::settle_local_trade;
 use protocol::message::{AMOUNT_SCALE, Asset, Market, PRICE_SCALE, Trade, TradeState};
+
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -286,4 +287,46 @@ fn settlement_failure_does_not_partially_mutate_balances() {
 
     // Failed settlement must not become permanently marked as settled.
     assert!(book.settled_trades.is_empty());
+}
+#[test]
+fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-u128-intermediate"));
+
+    let price = u64::MAX;
+    let amount = 2;
+
+    // The multiplication itself cannot fit in u64.
+    let product = u128::from(price) * u128::from(amount);
+    assert!(product > u128::from(u64::MAX));
+
+    // But after applying PRICE_SCALE, the final quote fits in u64.
+    let expected_quote = u64::try_from(product / u128::from(PRICE_SCALE)).unwrap();
+
+    book.credit(&alice, Asset::XMR, expected_quote).unwrap();
+    book.lock(&alice, Asset::XMR, expected_quote).unwrap();
+
+    let trade = test_trade(&alice, &bob, price, amount, 10);
+
+    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: amount,
+            locked: 0,
+        }
+    );
+
+    assert_eq!(book.settled_trades.len(), 1);
 }
