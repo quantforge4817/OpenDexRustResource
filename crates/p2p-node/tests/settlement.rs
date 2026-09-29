@@ -289,6 +289,82 @@ fn settlement_failure_does_not_partially_mutate_balances() {
     assert!(book.settled_trades.is_empty());
 }
 #[test]
+fn insufficient_locked_base_rejects_settlement_without_mutation() {
+    let (bob_peer, bob) = peer();
+    let (_, alice) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-insufficient-locked-base"));
+
+    // Bob has enough total BTC, but not enough locked BTC for this trade.
+    book.credit(&bob, Asset::BTC, 3 * AMOUNT_SCALE).unwrap();
+    book.lock(&bob, Asset::BTC, AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
+
+    // The trade requires 2 BTC, but only 1 BTC is locked.
+    assert!(settle_local_trade(&mut book, &bob_peer, &trade).is_err());
+
+    // Neither available nor locked BTC may change.
+    assert_eq!(
+        book.balance(&bob, &Asset::BTC),
+        Balance {
+            available: 2 * AMOUNT_SCALE,
+            locked: AMOUNT_SCALE,
+        }
+    );
+
+    // No XMR may be created by a failed settlement.
+    assert_eq!(
+        book.balance(&bob, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    // The failed settlement must remain retryable.
+    assert!(book.settled_trades.is_empty());
+}
+
+#[test]
+fn insufficient_locked_quote_rejects_settlement_without_mutation() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-insufficient-locked-quote"));
+
+    // Alice has enough total XMR, but not enough locked XMR for this trade.
+    book.credit(&alice, Asset::XMR, 200 * AMOUNT_SCALE).unwrap();
+    book.lock(&alice, Asset::XMR, 50 * AMOUNT_SCALE).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
+
+    // The trade requires 200 XMR, but only 50 XMR is locked.
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).is_err());
+
+    // Available funds must not be touched.
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 150 * AMOUNT_SCALE,
+            locked: 50 * AMOUNT_SCALE,
+        }
+    );
+
+    // No BTC may be created by a failed settlement.
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    // The failed settlement must remain retryable.
+    assert!(book.settled_trades.is_empty());
+}
+
+#[test]
 fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
     let (alice_peer, alice) = peer();
     let (_, bob) = peer();
@@ -329,4 +405,44 @@ fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
     );
 
     assert_eq!(book.settled_trades.len(), 1);
+}
+#[test]
+fn settlement_save_failure_does_not_mutate_in_memory_state() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let temp_dir = std::env::temp_dir().join("opendex-settlement-save-failure");
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let mut book = BalanceBook::new(temp_dir.clone());
+
+    let quote = 100 * AMOUNT_SCALE;
+    book.credit(&alice, Asset::XMR, quote).unwrap();
+    book.lock(&alice, Asset::XMR, quote).unwrap();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE, 10);
+
+    let result = settle_local_trade(&mut book, &alice_peer, &trade);
+
+    assert!(result.is_err());
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        Balance {
+            available: 0,
+            locked: quote,
+        }
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        Balance {
+            available: 0,
+            locked: 0,
+        }
+    );
+
+    assert!(book.settled_trades.is_empty());
+
+    std::fs::remove_dir_all(temp_dir).unwrap();
 }
