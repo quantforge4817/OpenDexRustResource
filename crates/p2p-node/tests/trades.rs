@@ -723,3 +723,134 @@ fn pending_trade_state_advances_through_happy_path() {
 
     assert!(!pending_trade_states.contains_key(&trade.id));
 }
+#[test]
+fn forward_trade_transition_does_not_regress_timestamp() {
+    let path = std::env::temp_dir().join(format!(
+        "opendex-test-trade-timestamp-order-{}.json",
+        Uuid::new_v4()
+    ));
+
+    let mut book = TradeBook::new(path);
+
+    let trade = test_trade();
+    let trade_id = trade.id;
+
+    assert!(book.add_trade(trade));
+
+    p2p_node::trade_state::advance_trade_to_state(
+        &mut book,
+        trade_id,
+        TradeState::PaymentConfirmed,
+        100,
+    )
+    .unwrap();
+
+    assert_eq!(
+        book.get_trade(trade_id).unwrap().state,
+        TradeState::PaymentConfirmed
+    );
+    assert_eq!(book.get_trade(trade_id).unwrap().updated_at, 100);
+
+    p2p_node::trade_state::advance_trade_to_state(
+        &mut book,
+        trade_id,
+        TradeState::PayoutPending,
+        50,
+    )
+    .unwrap();
+
+    assert_eq!(
+        book.get_trade(trade_id).unwrap().state,
+        TradeState::PayoutPending
+    );
+
+    // This documents the current behavior and should fail if we
+    // enforce monotonic updated_at semantics.
+    assert_eq!(book.get_trade(trade_id).unwrap().updated_at, 50);
+}
+#[test]
+fn duplicate_settlement_after_restart_does_not_move_balances_again() {
+    let (trade_path, balance_path, order_path) =
+        test_paths("opendex-test-handler-settlement-restart");
+
+    let local_peer_id = PeerId::random();
+    let local_trader = local_peer_id.to_string();
+
+    let buy = buy_order(Uuid::new_v4(), &local_trader);
+    let sell = sell_order(Uuid::new_v4(), "seller");
+    let trade = trade(&buy, &sell);
+
+    // First node instance.
+    {
+        let mut trade_book = TradeBook::new(trade_path.clone());
+        let mut balance_book = BalanceBook::new(balance_path.clone());
+        let mut order_book = OrderBook::new(order_path.clone());
+        let mut pending_trade_states = HashMap::new();
+
+        fund_buyer(&mut balance_book, &local_trader);
+
+        order_book.upsert_order(buy.clone());
+        order_book.upsert_order(sell.clone());
+
+        handle_trade_created(
+            trade.clone(),
+            &trade.maker,
+            &mut trade_book,
+            &mut order_book,
+            &mut pending_trade_states,
+            &mut balance_book,
+            &local_peer_id,
+        )
+        .unwrap();
+
+        handle_trade_state_changed(
+            TradeStateChanged {
+                trade_id: trade.id,
+                state: TradeState::Settled,
+                timestamp: 2,
+            },
+            "seller",
+            &mut trade_book,
+            &mut pending_trade_states,
+            &mut balance_book,
+            &local_peer_id,
+        )
+        .unwrap();
+
+        assert_settled_buyer_balance(&balance_book, &local_trader);
+    }
+
+    // Simulate restart by loading the persisted balance/trade state.
+    {
+        let mut trade_book = TradeBook::load_trades(trade_path).unwrap();
+        let mut balance_book = BalanceBook::load(balance_path).unwrap();
+        let mut pending_trade_states = HashMap::new();
+
+        assert_eq!(
+            trade_book.get_trade(trade.id).unwrap().state,
+            TradeState::Settled
+        );
+
+        assert!(balance_book
+            .settled_trades
+            .iter()
+            .any(|id| id == &trade.id.to_string()));
+
+        // Replay the same remote settlement after restart.
+        handle_trade_state_changed(
+            TradeStateChanged {
+                trade_id: trade.id,
+                state: TradeState::Settled,
+                timestamp: 3,
+            },
+            "seller",
+            &mut trade_book,
+            &mut pending_trade_states,
+            &mut balance_book,
+            &local_peer_id,
+        )
+        .unwrap();
+
+        assert_settled_buyer_balance(&balance_book, &local_trader);
+    }
+}

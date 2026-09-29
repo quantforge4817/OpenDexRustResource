@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use libp2p::PeerId;
-use protocol::message::{PRICE_SCALE, Trade};
+use protocol::message::Trade;
 
-use crate::balances::BalanceBook;
+use crate::balances::{BalanceBook, quote_amount};
 
 pub fn settle_local_trade(
     balance_book: &mut BalanceBook,
@@ -25,11 +25,7 @@ pub fn settle_local_trade(
 
     // Calculate this before mutating balances so an overflow leaves
     // the balance book unchanged.
-    let quote_amount = trade
-        .price
-        .checked_mul(trade.amount)
-        .ok_or_else(|| anyhow!("trade quote amount overflow"))?
-        / PRICE_SCALE;
+    let quote_amount = quote_amount(trade.price, trade.amount)?;
 
     // Validate the entire settlement before mutating anything.
     if local_trader == trade.buyer {

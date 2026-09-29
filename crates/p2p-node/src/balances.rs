@@ -26,7 +26,7 @@ pub struct BalanceBook {
     path: PathBuf,
 }
 
-fn quote_amount(price: u64, amount: u64) -> Result<u64> {
+pub(crate) fn quote_amount(price: u64, amount: u64) -> Result<u64> {
     let value = u128::from(price)
         .checked_mul(u128::from(amount))
         .ok_or_else(|| anyhow!("trade value overflow"))?;
