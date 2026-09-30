@@ -446,3 +446,40 @@ fn settlement_save_failure_does_not_mutate_in_memory_state() {
 
     std::fs::remove_dir_all(temp_dir).unwrap();
 }
+#[test]
+fn settlement_planning_does_not_mutate_balance_book() {
+    let (alice_peer, alice) = peer();
+    let (_, bob) = peer();
+
+    let mut book = BalanceBook::new(temp_path("settlement-plan-pure"));
+
+    let quote = 100 * AMOUNT_SCALE;
+
+    book.credit(&alice, Asset::XMR, quote).unwrap();
+    book.lock(&alice, Asset::XMR, quote).unwrap();
+
+    let before = book.clone();
+
+    let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE, 10);
+
+    let plan = p2p_node::settlement::plan_local_settlement(&book, &alice_peer, &trade)
+        .unwrap()
+        .expect("buyer should receive a settlement plan");
+
+    assert_eq!(plan.debit_asset, Asset::XMR);
+    assert_eq!(plan.debit_amount, quote);
+    assert_eq!(plan.credit_asset, Asset::BTC);
+    assert_eq!(plan.credit_amount, AMOUNT_SCALE);
+
+    assert_eq!(
+        book.balance(&alice, &Asset::XMR),
+        before.balance(&alice, &Asset::XMR)
+    );
+
+    assert_eq!(
+        book.balance(&alice, &Asset::BTC),
+        before.balance(&alice, &Asset::BTC)
+    );
+
+    assert_eq!(book.settled_trades, before.settled_trades);
+}
