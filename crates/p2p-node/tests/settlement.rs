@@ -53,7 +53,7 @@ fn settles_local_buyer_and_is_idempotent() {
 
     let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
-    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&alice, &Asset::BTC),
@@ -74,7 +74,7 @@ fn settles_local_buyer_and_is_idempotent() {
     assert_eq!(book.settled_trades.len(), 1);
 
     // The same settlement must not move funds twice.
-    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+    assert!(!settle_local_trade(&mut book, &alice_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&alice, &Asset::BTC),
@@ -108,7 +108,7 @@ fn settles_local_seller_and_is_idempotent() {
 
     let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
-    settle_local_trade(&mut book, &bob_peer, &trade).unwrap();
+    assert!(settle_local_trade(&mut book, &bob_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&bob, &Asset::BTC),
@@ -128,7 +128,7 @@ fn settles_local_seller_and_is_idempotent() {
 
     assert_eq!(book.settled_trades.len(), 1);
 
-    settle_local_trade(&mut book, &bob_peer, &trade).unwrap();
+    assert!(!settle_local_trade(&mut book, &bob_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&bob, &Asset::BTC),
@@ -162,7 +162,7 @@ fn ignores_non_participant() {
 
     let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, 2 * AMOUNT_SCALE, 10);
 
-    settle_local_trade(&mut book, &charlie_peer, &trade).unwrap();
+    assert!(!settle_local_trade(&mut book, &charlie_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&charlie, &Asset::BTC),
@@ -230,7 +230,7 @@ fn partial_trade_consumes_only_traded_locked_amount() {
 
     let trade = test_trade(&alice, &bob, 100 * PRICE_SCALE, AMOUNT_SCALE / 2, 10);
 
-    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).unwrap());
 
     // 0.5 BTC traded for 50 XMR.
     assert_eq!(
@@ -386,7 +386,7 @@ fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
 
     let trade = test_trade(&alice, &bob, price, amount, 10);
 
-    settle_local_trade(&mut book, &alice_peer, &trade).unwrap();
+    assert!(settle_local_trade(&mut book, &alice_peer, &trade).unwrap());
 
     assert_eq!(
         book.balance(&alice, &Asset::XMR),

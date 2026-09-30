@@ -123,9 +123,9 @@ pub fn settle_local_trade(
     balance_book: &mut BalanceBook,
     local_peer_id: &PeerId,
     trade: &Trade,
-) -> Result<()> {
+) -> Result<bool> {
     let Some(plan) = plan_local_settlement(balance_book, local_peer_id, trade)? else {
-        return Ok(());
+        return Ok(false);
     };
 
     commit_local_settlement(balance_book, &plan)?;
@@ -135,5 +135,5 @@ pub fn settle_local_trade(
         trade.id, trade.buyer, trade.seller
     );
 
-    Ok(())
+    Ok(true)
 }
