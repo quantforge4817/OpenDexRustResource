@@ -69,6 +69,25 @@ impl<'a> Exchange<'a> {
         Ok(())
     }
 
+    fn apply_trade_and_reconcile(
+        &mut self,
+        trade: &Trade,
+        buy_order: Option<Order>,
+        sell_order: Option<Order>,
+    ) -> Result<bool> {
+        if !self.order_book.apply_trade(trade) {
+            return Ok(false);
+        }
+
+        self.reconcile_trade_reservation(trade, buy_order, sell_order)?;
+
+        self.order_book
+            .pending_trades
+            .retain(|pending| pending.id != trade.id);
+
+        Ok(true)
+    }
+
     fn add_order_and_reconcile_pending(&mut self, order: Order) -> Result<bool> {
         let incoming_order = order.clone();
         let pending_trades = self.order_book.upsert_order(order);
@@ -103,15 +122,7 @@ impl<'a> Exchange<'a> {
                     }
                 });
 
-            if !self.order_book.apply_trade(&trade) {
-                anyhow::bail!("pending trade {} could not be applied", trade.id);
-            }
-
-            self.reconcile_trade_reservation(&trade, buy_order, sell_order)?;
-
-            self.order_book
-                .pending_trades
-                .retain(|pending| pending.id != trade.id);
+            self.apply_trade_and_reconcile(&trade, buy_order, sell_order)?;
         }
 
         Ok(had_pending_trades)
@@ -173,15 +184,7 @@ impl<'a> Exchange<'a> {
                 .find(|order| order.id == trade.sell_order)
                 .cloned();
 
-            if !self.order_book.apply_trade(trade) {
-                anyhow::bail!("trade {} could not be applied after matching", trade.id);
-            }
-
-            self.reconcile_trade_reservation(trade, buy_order, sell_order)?;
-
-            self.order_book
-                .pending_trades
-                .retain(|pending| pending.id != trade.id);
+            self.apply_trade_and_reconcile(trade, buy_order, sell_order)?;
         }
 
         Ok(trades)
@@ -221,13 +224,7 @@ impl<'a> Exchange<'a> {
             .find(|order| order.id == trade.sell_order)
             .cloned();
 
-        if self.order_book.apply_trade(&trade) {
-            self.reconcile_trade_reservation(&trade, buy_order, sell_order)?;
-
-            self.order_book
-                .pending_trades
-                .retain(|pending| pending.id != trade.id);
-        }
+        self.apply_trade_and_reconcile(&trade, buy_order, sell_order)?;
 
         Ok(true)
     }
