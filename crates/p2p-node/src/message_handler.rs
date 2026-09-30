@@ -205,22 +205,39 @@ pub fn handle_trade_created(
                 trade.id, pending.sender
             );
         } else {
-            advance_trade_to_state(
+            advance_trade_and_settle(
                 trade_book,
+                balance_book,
+                local_peer_id,
                 trade.id,
                 pending.change.state.clone(),
                 pending.change.timestamp,
             )?;
-
-            if pending.change.state == TradeState::Settled
-                && let Some(updated_trade) = trade_book.get_trade(trade.id).cloned()
-            {
-                settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
-            }
         }
     }
 
     trade_book.save_trades()?;
+
+    Ok(())
+}
+
+fn advance_trade_and_settle(
+    trade_book: &mut TradeBook,
+    balance_book: &mut BalanceBook,
+    local_peer_id: &PeerId,
+    trade_id: Uuid,
+    target_state: TradeState,
+    timestamp: u64,
+) -> Result<()> {
+    advance_trade_to_state(trade_book, trade_id, target_state, timestamp)?;
+
+    let Some(updated_trade) = trade_book.get_trade(trade_id).cloned() else {
+        anyhow::bail!("Trade {} disappeared after state transition", trade_id);
+    };
+
+    if updated_trade.state == TradeState::Settled {
+        settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
+    }
 
     Ok(())
 }
@@ -244,20 +261,15 @@ pub fn handle_trade_state_changed(
             }
 
             let current_state = trade.state.clone();
-
             if current_state != change.state {
-                advance_trade_to_state(
+                advance_trade_and_settle(
                     trade_book,
+                    balance_book,
+                    local_peer_id,
                     change.trade_id,
                     change.state.clone(),
                     change.timestamp,
                 )?;
-
-                if change.state == TradeState::Settled
-                    && let Some(updated_trade) = trade_book.get_trade(change.trade_id).cloned()
-                {
-                    settle_local_trade(balance_book, local_peer_id, &updated_trade)?;
-                }
             }
         }
 
