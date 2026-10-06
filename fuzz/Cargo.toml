@@ -1,0 +1,73 @@
+[workspace]
+
+[package]
+name = "opendexrustsource-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1.0"
+
+[dependencies.protocol]
+path = "../crates/protocol"
+
+[[bin]]
+name = "message"
+path = "fuzz_targets/message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "order"
+path = "fuzz_targets/order.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trade"
+path = "fuzz_targets/trade.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trade_state"
+path = "fuzz_targets/trade_state.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "state_response"
+path = "fuzz_targets/state_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "p2p_offer"
+path = "fuzz_targets/p2p_offer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "p2p_trade"
+path = "fuzz_targets/p2p_trade.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "p2p_trade_state"
+path = "fuzz_targets/p2p_trade_state.rs"
+test = false
+doc = false
+bench = false

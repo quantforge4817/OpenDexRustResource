@@ -14,6 +14,13 @@ fn defaults_are_correct() {
             port: 4001,
             peer: None,
             new_identity: false,
+            gui: false,
+            monero_rpc_url: None,
+            monero_rpc_user: None,
+            monero_rpc_pass: None,
+            btc_rpc_url: None,
+            btc_rpc_user: None,
+            btc_rpc_pass: None,
         })
     );
 }
@@ -28,6 +35,13 @@ fn parses_port() {
             port: 5000,
             peer: None,
             new_identity: false,
+            gui: false,
+            monero_rpc_url: None,
+            monero_rpc_user: None,
+            monero_rpc_pass: None,
+            btc_rpc_url: None,
+            btc_rpc_user: None,
+            btc_rpc_pass: None,
         })
     );
 }
@@ -78,6 +92,13 @@ fn parses_all_options() {
             port: 5000,
             peer: Some("/ip4/127.0.0.1/tcp/4001/p2p/test".to_string()),
             new_identity: true,
+            gui: false,
+            monero_rpc_url: None,
+            monero_rpc_user: None,
+            monero_rpc_pass: None,
+            btc_rpc_url: None,
+            btc_rpc_user: None,
+            btc_rpc_pass: None,
         })
     );
 }

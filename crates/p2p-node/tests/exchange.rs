@@ -67,8 +67,8 @@ fn record_trade_rejects_invalid_deterministic_trade_id() {
         amount: 10,
     };
 
-    order_book.orders.push(buy.clone());
-    order_book.orders.push(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     let trade = Trade {
         id: Uuid::new_v4(),
@@ -100,7 +100,7 @@ fn record_trade_rejects_invalid_deterministic_trade_id() {
     );
 
     assert!(
-        trade_book.trades.is_empty(),
+        trade_book.all_trades().is_empty(),
         "invalid trade must not be persisted"
     );
 
@@ -142,8 +142,8 @@ fn record_trade_reconciles_buy_reservation() {
 
     balance_book.lock_for_order(&buy).unwrap();
 
-    order_book.orders.push(buy.clone());
-    order_book.orders.push(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
@@ -187,7 +187,7 @@ fn record_trade_reconciles_buy_reservation() {
     assert_eq!(
         order_book
             .orders
-            .iter()
+            .values()
             .find(|order| order.id == buy.id)
             .unwrap()
             .amount,
@@ -199,11 +199,13 @@ fn record_trade_reconciles_buy_reservation() {
         Some(500 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("buyer", &Asset::XMR),
         Balance {
-            available: 500 * protocol::message::AMOUNT_SCALE,
-            locked: 500 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 1000 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -285,6 +287,7 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
         Balance {
             available: 0,
             locked: 1000 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -313,7 +316,7 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
     assert_eq!(
         order_book
             .orders
-            .iter()
+            .values()
             .find(|order| order.id == buy.id)
             .map(|order| order.amount),
         Some(5 * protocol::message::AMOUNT_SCALE)
@@ -326,11 +329,13 @@ fn pending_remote_trade_reconciles_reservation_when_orders_arrive() {
         Some(500 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("buyer", &Asset::XMR),
         Balance {
-            available: 500 * protocol::message::AMOUNT_SCALE,
-            locked: 500 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 1000 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -367,7 +372,7 @@ fn submit_order_reconciles_local_buy_reservation() {
     balance_book.lock_for_order(&buy).unwrap();
 
     // The seller is already resting on the book.
-    order_book.orders.push(sell);
+    order_book.upsert_order(sell);
 
     let trades = {
         let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
@@ -386,11 +391,13 @@ fn submit_order_reconciles_local_buy_reservation() {
         Some(50 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("buyer", &Asset::XMR),
         Balance {
-            available: 50 * protocol::message::AMOUNT_SCALE,
-            locked: 50 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 100 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -427,8 +434,8 @@ fn record_trade_reconciles_sell_reservation() {
 
     balance_book.lock_for_order(&sell).unwrap();
 
-    order_book.orders.push(buy.clone());
-    order_book.orders.push(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
@@ -463,11 +470,13 @@ fn record_trade_reconciles_sell_reservation() {
         Some(5 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("seller", &Asset::BTC),
         Balance {
-            available: 5 * protocol::message::AMOUNT_SCALE,
-            locked: 5 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -500,8 +509,8 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
 
     balance_book.lock_for_order(&sell).unwrap();
 
-    order_book.orders.push(buy.clone());
-    order_book.orders.push(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     {
         let mut exchange = Exchange::new(&mut order_book, &mut trade_book, &mut balance_book);
@@ -547,11 +556,13 @@ fn record_trade_multiple_fills_progressively_reduce_sell_reservation() {
 
     assert_eq!(balance_book.order_reservation(&sell.id), None);
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("seller", &Asset::BTC),
         Balance {
-            available: 10 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -586,8 +597,8 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
 
     balance_book.lock_for_order(&sell).unwrap();
 
-    order_book.orders.push(buy.clone());
-    order_book.orders.push(sell.clone());
+    order_book.upsert_order(buy.clone());
+    order_book.upsert_order(sell.clone());
 
     let trade_id = deterministic_trade_id(buy.id, sell.id, price, trade_amount, 10);
 
@@ -625,24 +636,28 @@ fn partial_fill_then_cancel_releases_only_remaining_sell_reservation() {
         Some(6 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         balance_book.balance("seller", &Asset::BTC),
         Balance {
-            available: 4 * protocol::message::AMOUNT_SCALE,
-            locked: 6 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
-    // Cancel the remaining order.
+    // Cancel the remaining order. Unlock releases only the reservation amount.
     balance_book.unlock_for_order(&sell).unwrap();
 
     assert_eq!(balance_book.order_reservation(&sell.id), None);
 
+    // 6 BTC released from reservation, 4 BTC still locked (consumed by trade).
     assert_eq!(
         balance_book.balance("seller", &Asset::BTC),
         Balance {
-            available: 10 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 6 * protocol::message::AMOUNT_SCALE,
+            locked: 4 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }

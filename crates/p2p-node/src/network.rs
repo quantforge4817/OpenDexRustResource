@@ -2,7 +2,7 @@ use anyhow::Result;
 use libp2p::{Swarm, SwarmBuilder, gossipsub, identify, identity, kad, noise, ping, tcp, yamux};
 
 use crate::OpenDexBehaviour;
-use protocol::message::OpenDexMessage;
+use protocol::message::Message;
 
 pub fn build_swarm(id_keys: identity::Keypair) -> Result<Swarm<OpenDexBehaviour>> {
     let swarm = SwarmBuilder::with_existing_identity(id_keys)
@@ -19,13 +19,13 @@ pub fn build_swarm(id_keys: identity::Keypair) -> Result<Swarm<OpenDexBehaviour>
 
             let config = gossipsub::ConfigBuilder::default()
                 .build()
-                .expect("valid gossipsub config");
+                .map_err(|e| anyhow::anyhow!("Invalid gossipsub config: {}", e))?;
 
             let gossipsub = gossipsub::Behaviour::new(
                 gossipsub::MessageAuthenticity::Signed(key.clone()),
                 config,
             )
-            .expect("create gossipsub");
+            .map_err(|e| anyhow::anyhow!("Failed to create gossipsub: {}", e))?;
 
             Ok(OpenDexBehaviour {
                 kademlia,
@@ -50,13 +50,13 @@ pub fn build_swarm(id_keys: identity::Keypair) -> Result<Swarm<OpenDexBehaviour>
 pub fn publish_message(
     swarm: &mut Swarm<OpenDexBehaviour>,
     topic: &gossipsub::IdentTopic,
-    message: &OpenDexMessage,
+    message: &Message,
 ) -> Result<()> {
     let encoded = serde_json::to_vec(message)?;
 
-    println!(
-        "Gossipsub peers before publish: {:?}",
-        swarm.behaviour().gossipsub.all_peers().collect::<Vec<_>>()
+    tracing::debug!(
+        peers = ?swarm.behaviour().gossipsub.all_peers().collect::<Vec<_>>(),
+        "Gossipsub peers before publish"
     );
 
     match swarm
@@ -65,11 +65,11 @@ pub fn publish_message(
         .publish(topic.clone(), encoded)
     {
         Ok(_) => {
-            println!("Gossipsub publish OK");
+            tracing::debug!("Gossipsub publish OK");
         }
 
         Err(e) => {
-            println!("Gossipsub publish failed: {:?}", e);
+            tracing::error!(error = %e, "Gossipsub publish failed");
             return Err(e.into());
         }
     }

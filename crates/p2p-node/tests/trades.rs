@@ -329,6 +329,7 @@ fn assert_settled_buyer_balance(balance_book: &BalanceBook, buyer: &str) {
         Balance {
             available: 2 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -337,6 +338,7 @@ fn assert_settled_buyer_balance(balance_book: &BalanceBook, buyer: &str) {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 }
@@ -557,6 +559,7 @@ fn unauthorized_pending_state_is_rejected_when_trade_arrives() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -565,6 +568,7 @@ fn unauthorized_pending_state_is_rejected_when_trade_arrives() {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 200 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -710,6 +714,7 @@ fn pending_trade_state_advances_through_happy_path() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -718,6 +723,7 @@ fn pending_trade_state_advances_through_happy_path() {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 200 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -833,8 +839,7 @@ fn duplicate_settlement_after_restart_does_not_move_balances_again() {
 
         assert!(balance_book
             .settled_trades
-            .iter()
-            .any(|id| id == &trade.id.to_string()));
+            .contains(&trade.id));
 
         // Replay the same remote settlement after restart.
         handle_trade_state_changed(

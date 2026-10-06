@@ -15,6 +15,7 @@ fn credit_adds_available_balance() {
         Balance {
             available: 10,
             locked: 0,
+            escrowed: 0,
         }
     );
 }
@@ -33,6 +34,7 @@ fn lock_moves_available_to_locked() {
         Balance {
             available: 6,
             locked: 4,
+            escrowed: 0,
         }
     );
 }
@@ -52,6 +54,7 @@ fn unlock_moves_locked_back_to_available() {
         Balance {
             available: 9,
             locked: 1,
+            escrowed: 0,
         }
     );
 }
@@ -71,6 +74,7 @@ fn cannot_lock_more_than_available() {
         Balance {
             available: 5,
             locked: 0,
+            escrowed: 0,
         }
     );
 }
@@ -108,6 +112,7 @@ fn lock_for_order_reserves_correct_asset() {
         Balance {
             available: 50 * protocol::message::AMOUNT_SCALE,
             locked: 200 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -134,6 +139,7 @@ fn lock_for_order_reserves_correct_asset() {
         Balance {
             available: 2 * protocol::message::AMOUNT_SCALE,
             locked: 3 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -170,6 +176,7 @@ fn buy_order_reservation_tracks_order_id() {
         Balance {
             available: 50 * protocol::message::AMOUNT_SCALE,
             locked: 200 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -203,6 +210,7 @@ fn cancelling_buy_order_releases_remaining_reservation() {
         Balance {
             available: 250 * protocol::message::AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 }
@@ -237,6 +245,7 @@ fn duplicate_order_reservation_does_not_double_lock() {
         Balance {
             available: 300 * protocol::message::AMOUNT_SCALE,
             locked: 200 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -284,11 +293,14 @@ fn partial_buy_fill_releases_remaining_quote_reservation() {
         Some(50 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked
+    // until settlement/escrow/cancel consumes them.
     assert_eq!(
         book.balance("alice", &Asset::XMR),
         Balance {
-            available: 50 * protocol::message::AMOUNT_SCALE,
-            locked: 50 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 100 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -297,11 +309,13 @@ fn partial_buy_fill_releases_remaining_quote_reservation() {
 
     assert_eq!(book.order_reservation(&order.id), None);
 
+    // Locked funds still remain; they are released by settlement/cancel.
     assert_eq!(
         book.balance("alice", &Asset::XMR),
         Balance {
-            available: 100 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 0,
+            locked: 100 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -343,11 +357,13 @@ fn partial_sell_fill_releases_remaining_base_reservation() {
         Some(5 * protocol::message::AMOUNT_SCALE)
     );
 
+    // Reconciliation only updates tracking; locked funds remain locked.
     assert_eq!(
         book.balance("alice", &Asset::BTC),
         Balance {
-            available: 5 * protocol::message::AMOUNT_SCALE,
-            locked: 5 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -356,11 +372,13 @@ fn partial_sell_fill_releases_remaining_base_reservation() {
 
     assert_eq!(book.order_reservation(&order.id), None);
 
+    // Locked funds still remain; released by settlement/cancel.
     assert_eq!(
         book.balance("alice", &Asset::BTC),
         Balance {
-            available: 10 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -411,11 +429,13 @@ fn multiple_partial_fills_progressively_reduce_reservation() {
 
     assert_eq!(book.order_reservation(&order.id), None);
 
+    // Locked funds still remain; released by settlement/cancel.
     assert_eq!(
         book.balance("alice", &Asset::BTC),
         Balance {
-            available: 10 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -447,11 +467,13 @@ fn full_fill_removes_reservation_entirely() {
 
     assert_eq!(book.order_reservation(&order.id), None);
 
+    // Locked funds still remain; released by settlement/cancel.
     assert_eq!(
         book.balance("alice", &Asset::XMR),
         Balance {
-            available: 100 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 0,
+            locked: 100 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -479,7 +501,8 @@ fn partial_fill_then_cancel_releases_only_remaining_reservation() {
 
     book.lock_for_order(&order).unwrap();
 
-    // Trade 4 BTC.
+    // Trade 4 BTC. Reconciliation only updates tracking; locked funds
+    // remain locked until settlement/escrow/cancel consumes them.
     book.reconcile_order_reservation(&order, 6 * protocol::message::AMOUNT_SCALE)
         .unwrap();
 
@@ -487,21 +510,19 @@ fn partial_fill_then_cancel_releases_only_remaining_reservation() {
         book.order_reservation(&order.id),
         Some(6 * protocol::message::AMOUNT_SCALE)
     );
-    assert_eq!(
-        book.order_reservation(&order.id),
-        Some(6 * protocol::message::AMOUNT_SCALE)
-    );
 
     assert_eq!(
         book.balance("alice", &Asset::BTC),
         Balance {
-            available: 4 * protocol::message::AMOUNT_SCALE,
-            locked: 6 * protocol::message::AMOUNT_SCALE,
+            available: 0,
+            locked: 10 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
-    // Cancel the partially filled order. Only the remaining 6 BTC
-    // reservation should be released.
+    // Cancel the partially filled order. Unlock releases only the
+    // remaining reservation (6 BTC). The 4 BTC consumed by settlement
+    // remains locked until explicitly consumed.
     book.unlock_for_order(&order).unwrap();
 
     assert_eq!(book.order_reservation(&order.id), None);
@@ -509,8 +530,9 @@ fn partial_fill_then_cancel_releases_only_remaining_reservation() {
     assert_eq!(
         book.balance("alice", &Asset::BTC),
         Balance {
-            available: 10 * protocol::message::AMOUNT_SCALE,
-            locked: 0,
+            available: 6 * protocol::message::AMOUNT_SCALE,
+            locked: 4 * protocol::message::AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }

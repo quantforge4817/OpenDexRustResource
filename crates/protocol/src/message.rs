@@ -13,10 +13,15 @@ pub enum MessageType {
     TradeStateChanged,
     StateRequest,
     StateResponse,
+    // P2P trading messages
+    P2POfferCreated,
+    P2POfferCancelled,
+    P2PTradeCreated,
+    P2PTradeStateChanged,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct OpenDexMessage {
+pub struct Message {
     pub message_type: MessageType,
     pub sender: String,
     pub payload: String,
@@ -29,16 +34,41 @@ pub enum Asset {
     XMR,
 }
 
+impl std::fmt::Display for Asset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Asset::BTC => write!(f, "BTC"),
+            Asset::XMR => write!(f, "XMR"),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Market {
     pub base: Asset,
     pub quote: Asset,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+impl std::fmt::Display for Market {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.base, self.quote)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 pub enum Side {
+    #[default]
     Buy,
     Sell,
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Side::Buy => write!(f, "Buy"),
+            Side::Sell => write!(f, "Sell"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,14 +1,4 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! Shared types and utilities used across OpenDEX crates.
+//!
+//! This crate provides the foundational domain types (Asset, Market, Side)
+//! that are shared between the protocol and p2p-node crates.

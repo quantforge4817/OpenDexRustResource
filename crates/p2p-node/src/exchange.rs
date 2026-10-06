@@ -81,9 +81,7 @@ impl<'a> Exchange<'a> {
 
         self.reconcile_trade_reservation(trade, buy_order, sell_order)?;
 
-        self.order_book
-            .pending_trades
-            .retain(|pending| pending.id != trade.id);
+        self.order_book.remove_pending_trade(trade.id);
 
         Ok(true)
     }
@@ -96,9 +94,7 @@ impl<'a> Exchange<'a> {
         for trade in pending_trades {
             let buy_order = self
                 .order_book
-                .orders
-                .iter()
-                .find(|order| order.id == trade.buy_order)
+                .get_order(&trade.buy_order)
                 .cloned()
                 .or_else(|| {
                     if trade.buy_order == incoming_order.id {
@@ -110,9 +106,7 @@ impl<'a> Exchange<'a> {
 
             let sell_order = self
                 .order_book
-                .orders
-                .iter()
-                .find(|order| order.id == trade.sell_order)
+                .get_order(&trade.sell_order)
                 .cloned()
                 .or_else(|| {
                     if trade.sell_order == incoming_order.id {
@@ -151,9 +145,7 @@ impl<'a> Exchange<'a> {
 
         let live_order = self
             .order_book
-            .orders
-            .iter()
-            .find(|existing| existing.id == order.id)
+            .get_order(&order.id)
             .cloned();
 
         let trades = live_order
@@ -172,16 +164,12 @@ impl<'a> Exchange<'a> {
             // them after a full fill.
             let buy_order = self
                 .order_book
-                .orders
-                .iter()
-                .find(|order| order.id == trade.buy_order)
+                .get_order(&trade.buy_order)
                 .cloned();
 
             let sell_order = self
                 .order_book
-                .orders
-                .iter()
-                .find(|order| order.id == trade.sell_order)
+                .get_order(&trade.sell_order)
                 .cloned();
 
             self.apply_trade_and_reconcile(trade, buy_order, sell_order)?;
@@ -212,16 +200,12 @@ impl<'a> Exchange<'a> {
         // a full fill.
         let buy_order = self
             .order_book
-            .orders
-            .iter()
-            .find(|order| order.id == trade.buy_order)
+            .get_order(&trade.buy_order)
             .cloned();
 
         let sell_order = self
             .order_book
-            .orders
-            .iter()
-            .find(|order| order.id == trade.sell_order)
+            .get_order(&trade.sell_order)
             .cloned();
 
         self.apply_trade_and_reconcile(&trade, buy_order, sell_order)?;

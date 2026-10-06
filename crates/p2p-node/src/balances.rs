@@ -2,7 +2,7 @@ use crate::persistence;
 use anyhow::{Result, anyhow};
 use protocol::message::{Asset, Order, PRICE_SCALE, Side};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -10,6 +10,8 @@ use uuid::Uuid;
 pub struct Balance {
     pub available: u64,
     pub locked: u64,
+    #[serde(default)]
+    pub escrowed: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,7 +19,10 @@ pub struct BalanceBook {
     pub balances: HashMap<String, HashMap<Asset, Balance>>,
 
     #[serde(default)]
-    pub settled_trades: Vec<String>,
+    pub settled_trades: HashSet<Uuid>,
+
+    #[serde(default)]
+    pub escrowed_trades: HashSet<Uuid>,
 
     #[serde(default)]
     pub order_reservations: HashMap<Uuid, u64>,
@@ -26,21 +31,34 @@ pub struct BalanceBook {
     path: PathBuf,
 }
 
-pub(crate) fn quote_amount(price: u64, amount: u64) -> Result<u64> {
-    let value = u128::from(price)
+/// Compute the quote amount for a trade using round-half-up fixed-point arithmetic.
+///
+/// Rounding policy (AUDIT-007):
+/// - The result is `price * amount / PRICE_SCALE` rounded to the nearest integer.
+/// - When the remainder is exactly half the divisor, round up (round-half-up).
+/// - This avoids systematic truncation bias that would favor one trading side
+///   over many repeated fractional trades.
+/// - The remainder (dust) is discarded after rounding; no dust accumulation
+///   mechanism is needed because rounding is unbiased in expectation.
+pub fn quote_amount(price: u64, amount: u64) -> Result<u64> {
+    let numerator = u128::from(price)
         .checked_mul(u128::from(amount))
         .ok_or_else(|| anyhow!("trade value overflow"))?;
 
-    let value = value / u128::from(PRICE_SCALE);
+    let divisor = u128::from(PRICE_SCALE);
 
-    u64::try_from(value).map_err(|_| anyhow!("quote amount overflow"))
+    // Round-half-up: (numerator + divisor/2) / divisor
+    let rounded = (numerator + divisor / 2) / divisor;
+
+    u64::try_from(rounded).map_err(|_| anyhow!("quote amount overflow"))
 }
 
 impl BalanceBook {
     pub fn new(path: PathBuf) -> Self {
         Self {
             balances: HashMap::new(),
-            settled_trades: Vec::new(),
+            settled_trades: HashSet::new(),
+            escrowed_trades: HashSet::new(),
             order_reservations: HashMap::new(),
             path,
         }
@@ -179,6 +197,150 @@ impl BalanceBook {
 
         Ok(())
     }
+
+    /// Consumes locked funds from a specific order's reservation.
+    ///
+    /// This is the per-order counterpart to `consume_locked`: instead of
+    /// drawing from the aggregate locked pool, it verifies that the order's
+    /// reservation covers the requested amount, reduces the reservation, and
+    /// consumes the corresponding locked balance.
+    ///
+    /// After consumption the reservation is updated to reflect the remaining
+    /// reserved amount.  When the reservation reaches zero it is removed.
+    pub fn consume_locked_for_order(
+        &mut self,
+        order_id: &Uuid,
+        trader: &str,
+        asset: Asset,
+        amount: u64,
+    ) -> Result<()> {
+        let current = self
+            .order_reservations
+            .get(order_id)
+            .copied()
+            .ok_or_else(|| anyhow!("no reservation found for order {}", order_id))?;
+
+        if current < amount {
+            return Err(anyhow!(
+                "order {} reservation ({}) insufficient for consumption ({})",
+                order_id, current, amount
+            ));
+        }
+
+        let remaining = current - amount;
+
+        // Consume from the aggregate locked balance.
+        self.consume_locked(trader, asset, amount)?;
+
+        // Update the per-order reservation.
+        if remaining == 0 {
+            self.order_reservations.remove(order_id);
+        } else {
+            self.order_reservations.insert(*order_id, remaining);
+        }
+
+        Ok(())
+    }
+
+    /// Moves funds from locked to escrowed.
+    pub fn escrow_lock(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
+        let balances = self.balances.entry(trader.to_string()).or_default();
+
+        let balance = balances.entry(asset).or_default();
+
+        if balance.locked < amount {
+            return Err(anyhow!("insufficient locked balance for escrow"));
+        }
+
+        balance.locked -= amount;
+
+        balance.escrowed = balance
+            .escrowed
+            .checked_add(amount)
+            .ok_or_else(|| anyhow!("escrowed balance overflow"))?;
+
+        Ok(())
+    }
+
+    /// Moves funds from an order's locked reservation to escrowed.
+    ///
+    /// Verifies that the order's reservation covers the requested amount,
+    /// reduces the reservation, and moves the corresponding locked balance
+    /// to escrowed.
+    pub fn escrow_lock_for_order(
+        &mut self,
+        order_id: &Uuid,
+        trader: &str,
+        asset: Asset,
+        amount: u64,
+    ) -> Result<()> {
+        let current = self
+            .order_reservations
+            .get(order_id)
+            .copied()
+            .ok_or_else(|| anyhow!("no reservation found for order {}", order_id))?;
+
+        if current < amount {
+            return Err(anyhow!(
+                "order {} reservation ({}) insufficient for escrow ({})",
+                order_id, current, amount
+            ));
+        }
+
+        let remaining = current - amount;
+
+        // Move from locked to escrowed.
+        self.escrow_lock(trader, asset, amount)?;
+
+        // Update the per-order reservation.
+        if remaining == 0 {
+            self.order_reservations.remove(order_id);
+        } else {
+            self.order_reservations.insert(*order_id, remaining);
+        }
+
+        Ok(())
+    }
+
+    /// Moves funds from escrowed to available.
+    pub fn escrow_release(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
+        let balances = self.balances.entry(trader.to_string()).or_default();
+
+        let balance = balances.entry(asset).or_default();
+
+        if balance.escrowed < amount {
+            return Err(anyhow!("insufficient escrowed balance for release"));
+        }
+
+        balance.escrowed -= amount;
+
+        balance.available = balance
+            .available
+            .checked_add(amount)
+            .ok_or_else(|| anyhow!("available balance overflow"))?;
+
+        Ok(())
+    }
+
+    /// Moves funds from escrowed back to locked.
+    pub fn escrow_return(&mut self, trader: &str, asset: Asset, amount: u64) -> Result<()> {
+        let balances = self.balances.entry(trader.to_string()).or_default();
+
+        let balance = balances.entry(asset).or_default();
+
+        if balance.escrowed < amount {
+            return Err(anyhow!("insufficient escrowed balance for return"));
+        }
+
+        balance.escrowed -= amount;
+
+        balance.locked = balance
+            .locked
+            .checked_add(amount)
+            .ok_or_else(|| anyhow!("locked balance overflow"))?;
+
+        Ok(())
+    }
     pub fn reconcile_order_reservation(
         &mut self,
         order: &Order,
@@ -190,13 +352,6 @@ impl BalanceBook {
             .copied()
             .ok_or_else(|| anyhow!("no reservation found for order {}", order.id))?;
 
-        let asset = match order.side {
-            Side::Buy => order.market.quote.clone(),
-            Side::Sell => order.market.base.clone(),
-        };
-
-        let trader = &order.trader;
-
         if remaining_required > current {
             return Err(anyhow!(
                 "remaining reservation exceeds current reservation for order {}",
@@ -204,12 +359,11 @@ impl BalanceBook {
             ));
         }
 
-        let release = current - remaining_required;
-
-        if release > 0 {
-            self.unlock(trader, asset, release)?;
-        }
-
+        // Update the per-order reservation to reflect the remaining required
+        // amount.  The locked funds are not released here — they remain locked
+        // until settlement or escrow consumes them via
+        // `consume_locked_for_order` / `escrow_lock_for_order`, or until the
+        // order is cancelled via `unlock_for_order`.
         if remaining_required == 0 {
             self.order_reservations.remove(&order.id);
         } else {

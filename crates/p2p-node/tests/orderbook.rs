@@ -42,14 +42,17 @@ fn order(id: &str, side: Side, price: u64, amount: u64) -> Order {
     }
 }
 
-fn assert_orders_unchanged(before: &[Order], after: &[Order]) {
+fn assert_orders_unchanged(
+    before: &std::collections::HashMap<Uuid, Order>,
+    after: &std::collections::HashMap<Uuid, Order>,
+) {
     assert_eq!(after.len(), before.len());
 
-    for (before, after) in before.iter().zip(after.iter()) {
-        assert_eq!(before.id, after.id);
-        assert_eq!(before.trader, after.trader);
-        assert_eq!(before.price, after.price);
-        assert_eq!(before.amount, after.amount);
+    for (id, order_ref) in before {
+        let order = after.get(id).expect("order should exist");
+        assert_eq!(order.trader, order_ref.trader);
+        assert_eq!(order.price, order_ref.price);
+        assert_eq!(order.amount, order_ref.amount);
     }
 }
 
@@ -127,7 +130,7 @@ fn partial_fill_leaves_remaining_order() {
 
     let remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == incoming.id)
         .expect("remaining incoming order should exist");
 
@@ -203,7 +206,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
 
     let remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == sell.id)
         .expect("sell order should remain");
 
@@ -218,7 +221,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
 
     let remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == sell.id)
         .expect("sell order should remain");
 
@@ -233,7 +236,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
 
     let remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == sell.id)
         .expect("sell order should remain");
 
@@ -247,7 +250,7 @@ fn one_order_can_be_filled_by_multiple_trades() {
     assert!(book.apply_trade(&trades4[0]));
 
     assert!(
-        !book.orders.iter().any(|o| o.id == sell.id),
+        !book.orders.values().any(|o| o.id == sell.id),
         "sell order should be fully filled"
     );
 
@@ -302,8 +305,8 @@ fn apply_trade_is_idempotent() {
     // Same trade arriving again must be ignored.
     assert!(!book.apply_trade(&trade));
 
-    let remaining_buy = book.orders.iter().find(|o| o.id == buy.id).unwrap();
-    let remaining_sell = book.orders.iter().find(|o| o.id == sell.id).unwrap();
+    let remaining_buy = book.orders.values().find(|o| o.id == buy.id).unwrap();
+    let remaining_sell = book.orders.values().find(|o| o.id == sell.id).unwrap();
 
     assert_eq!(remaining_buy.amount, 6);
     assert_eq!(remaining_sell.amount, 6);
@@ -363,10 +366,10 @@ fn distributed_event_order_converges() {
     // Both nodes should converge to the same state.
     assert_eq!(node_a.orders.len(), node_b.orders.len());
 
-    for order_a in &node_a.orders {
+    for (_, order_a) in &node_a.orders {
         let order_b = node_b
             .orders
-            .iter()
+            .values()
             .find(|order| order.id == order_a.id)
             .expect("node B should contain the same order");
 
@@ -439,17 +442,17 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
     }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
-    assert_eq!(book.applied_trades[0], trade.id.to_string());
+    assert!(book.applied_trades.contains(&trade.id));
 
     let remaining_buy = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("buy order should remain");
 
     let remaining_sell = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("sell order should remain");
 
@@ -464,13 +467,13 @@ fn trade_before_orders_applies_once_when_orders_arrive() {
 
     let remaining_buy = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("buy order should remain after duplicate");
 
     let remaining_sell = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("sell order should remain after duplicate");
 
@@ -533,7 +536,7 @@ fn duplicate_out_of_order_delivery_converges() {
     }
     assert!(node_a.pending_trades.is_empty());
     assert_eq!(node_a.applied_trades.len(), 1);
-    assert_eq!(node_a.applied_trades[0], trade.id.to_string());
+    assert!(node_a.applied_trades.contains(&trade.id));
 
     // Node B receives:
     // SELL -> BUY -> TRADE
@@ -546,10 +549,10 @@ fn duplicate_out_of_order_delivery_converges() {
     // Both nodes should have the same logical orderbook state.
     assert_eq!(node_a.orders.len(), node_b.orders.len());
 
-    for order_a in &node_a.orders {
+    for (_, order_a) in &node_a.orders {
         let order_b = node_b
             .orders
-            .iter()
+            .values()
             .find(|order| order.id == order_a.id)
             .expect("node B should contain the same order");
 
@@ -598,13 +601,13 @@ fn orderbook_persistence_preserves_distributed_state() {
 
     let buy_before = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("buy order should remain");
 
     let sell_before = book
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("sell order should remain");
 
@@ -622,13 +625,13 @@ fn orderbook_persistence_preserves_distributed_state() {
 
     let loaded_buy = loaded
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("loaded buy order should exist");
 
     let loaded_sell = loaded
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("loaded sell order should exist");
 
@@ -637,7 +640,7 @@ fn orderbook_persistence_preserves_distributed_state() {
 
     // Distributed state survived.
     assert_eq!(loaded.applied_trades.len(), 1);
-    assert_eq!(loaded.applied_trades[0], trade.id.to_string());
+    assert!(loaded.applied_trades.contains(&trade.id));
 
     assert!(loaded.pending_trades.is_empty());
     assert!(loaded.removed_orders.is_empty());
@@ -649,13 +652,13 @@ fn orderbook_persistence_preserves_distributed_state() {
 
     let recovered_buy = recovered
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("recovered buy order should exist");
 
     let recovered_sell = recovered
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("recovered sell order should exist");
 
@@ -723,18 +726,18 @@ fn pending_trade_survives_restart() {
     }
     assert!(recovered.pending_trades.is_empty());
     assert_eq!(recovered.applied_trades.len(), 1);
-    assert_eq!(recovered.applied_trades[0], trade.id.to_string());
+    assert!(recovered.applied_trades.contains(&trade.id));
 
     // Both orders should have been reduced exactly once.
     let recovered_buy = recovered
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == buy.id)
         .expect("recovered buy order should exist");
 
     let recovered_sell = recovered
         .orders
-        .iter()
+        .values()
         .find(|order| order.id == sell.id)
         .expect("recovered sell order should exist");
 
@@ -794,20 +797,20 @@ fn removed_order_is_not_resurrected_by_stale_state() {
     assert!(node_a.apply_trade(&trade));
 
     // The sell order was completely filled and removed.
-    assert!(!node_a.orders.iter().any(|o| o.id == order_id));
+    assert!(!node_a.orders.values().any(|o| o.id == order_id));
     assert!(node_a.removed_orders.contains(&order_id));
-    assert!(node_a.applied_trades.contains(&trade.id.to_string()));
+    assert!(node_a.applied_trades.contains(&trade.id));
 
     // Node B is stale and still has the old order.
-    assert!(node_b.orders.iter().any(|o| o.id == order_id));
+    assert!(node_b.orders.values().any(|o| o.id == order_id));
 
     // Simulate the important part of StateResponse merging:
     // Node A receives Node B's stale order, but must not resurrect it.
     if !node_a.removed_orders.contains(&order_id) {
-        node_a.removed_orders.push(order_id);
+        node_a.removed_orders.insert(order_id);
     }
 
-    for stale_order in node_b.orders.clone() {
+    for (_, stale_order) in node_b.orders.clone() {
         if node_a.removed_orders.contains(&stale_order.id) {
             continue;
         }
@@ -817,7 +820,7 @@ fn removed_order_is_not_resurrected_by_stale_state() {
 
     // The filled order must still be absent.
     assert!(
-        !node_a.orders.iter().any(|o| o.id == order_id),
+        !node_a.orders.values().any(|o| o.id == order_id),
         "a removed order must never be resurrected by stale state"
     );
 
@@ -825,7 +828,7 @@ fn removed_order_is_not_resurrected_by_stale_state() {
     assert!(node_a.removed_orders.contains(&order_id));
 
     // The trade must remain marked as applied.
-    assert!(node_a.applied_trades.contains(&trade.id.to_string()));
+    assert!(node_a.applied_trades.contains(&trade.id));
 }
 #[test]
 fn trade_waits_for_both_orders_then_applies_once() {
@@ -868,7 +871,7 @@ fn trade_waits_for_both_orders_then_applies_once() {
 
     let buy_remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == buy.id)
         .expect("buy order should exist");
 
@@ -884,17 +887,17 @@ fn trade_waits_for_both_orders_then_applies_once() {
     }
     assert!(book.pending_trades.is_empty());
     assert_eq!(book.applied_trades.len(), 1);
-    assert_eq!(book.applied_trades[0], trade.id.to_string());
+    assert!(book.applied_trades.contains(&trade.id));
 
     let buy_remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == buy.id)
         .expect("buy order should remain");
 
     let sell_remaining = book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == sell.id)
         .expect("sell order should remain");
 
@@ -906,9 +909,9 @@ fn trade_waits_for_both_orders_then_applies_once() {
 
     assert_eq!(book.pending_trades.len(), 0);
 
-    let buy_remaining = book.orders.iter().find(|o| o.id == buy.id).unwrap();
+    let buy_remaining = book.orders.values().find(|o| o.id == buy.id).unwrap();
 
-    let sell_remaining = book.orders.iter().find(|o| o.id == sell.id).unwrap();
+    let sell_remaining = book.orders.values().find(|o| o.id == sell.id).unwrap();
 
     assert_eq!(buy_remaining.amount, 6);
     assert_eq!(sell_remaining.amount, 6);
@@ -933,7 +936,7 @@ fn cancellation_before_order_creation_prevents_resurrection() {
     book.upsert_order(order);
 
     assert!(
-        !book.orders.iter().any(|o| o.id == order_id),
+        !book.orders.values().any(|o| o.id == order_id),
         "cancelled order must not be resurrected"
     );
 
@@ -956,7 +959,7 @@ fn duplicate_cancellation_is_idempotent() {
     assert!(!book.remove_order(order_id));
 
     assert_eq!(book.removed_orders.len(), 1);
-    assert_eq!(book.removed_orders[0], order_id);
+    assert!(book.removed_orders.contains(&order_id));
 }
 
 #[test]
@@ -980,7 +983,7 @@ fn stale_order_cannot_be_added_after_cancellation() {
 
     assert!(book.orders.is_empty());
     assert_eq!(book.removed_orders.len(), 1);
-    assert_eq!(book.removed_orders[0], order_id);
+    assert!(book.removed_orders.contains(&order_id));
 }
 #[test]
 fn rejects_trade_with_wrong_buy_side_without_mutating_state() {
@@ -1259,10 +1262,11 @@ fn failed_snapshot_trade_does_not_partially_mutate_live_state() {
     };
 
     let snapshot = StateSnapshot {
+        version: 1,
         orders: vec![existing_order],
         trades: vec![invalid_trade],
-        removed_orders: Vec::new(),
-        applied_trades: Vec::new(),
+        removed_orders: std::collections::HashSet::new(),
+        applied_trades: std::collections::HashSet::new(),
     };
 
     let result = apply_snapshot(snapshot, &mut order_book, &mut trade_book);
@@ -1327,10 +1331,11 @@ fn rejects_snapshot_trade_with_invalid_maker() {
     };
 
     let snapshot = StateSnapshot {
+        version: 1,
         orders: vec![buy, sell],
         trades: vec![invalid_trade],
-        removed_orders: Vec::new(),
-        applied_trades: Vec::new(),
+        removed_orders: std::collections::HashSet::new(),
+        applied_trades: std::collections::HashSet::new(),
     };
 
     let result = apply_snapshot(snapshot, &mut order_book, &mut trade_book);
@@ -1361,17 +1366,18 @@ fn snapshot_can_reduce_existing_order_amount() {
     let newer_order = order("00000000-0000-0000-0000-000000000001", Side::Sell, 100, 40);
 
     let snapshot = StateSnapshot {
+        version: 1,
         orders: vec![newer_order],
         trades: Vec::new(),
-        removed_orders: Vec::new(),
-        applied_trades: Vec::new(),
+        removed_orders: std::collections::HashSet::new(),
+        applied_trades: std::collections::HashSet::new(),
     };
 
     apply_snapshot(snapshot, &mut order_book, &mut trade_book).unwrap();
 
     let resulting_order = order_book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == local_order.id)
         .unwrap();
 
@@ -1400,17 +1406,18 @@ fn conflicting_snapshot_order_terms_are_rejected() {
     conflicting.price = 1;
 
     let snapshot = StateSnapshot {
+        version: 1,
         orders: vec![conflicting],
         trades: Vec::new(),
-        removed_orders: Vec::new(),
-        applied_trades: Vec::new(),
+        removed_orders: std::collections::HashSet::new(),
+        applied_trades: std::collections::HashSet::new(),
     };
 
     apply_snapshot(snapshot, &mut order_book, &mut trade_book).unwrap();
 
     let resulting_order = order_book
         .orders
-        .iter()
+        .values()
         .find(|o| o.id == local_order.id)
         .unwrap();
 
@@ -1500,7 +1507,7 @@ fn identical_sized_partial_fills_must_have_distinct_trade_ids() {
     assert!(book.apply_trade(&trades1[0]));
 
     // The resting sell order now has 6 remaining.
-    let remaining_sell = book.orders.iter().find(|o| o.id == sell.id).unwrap();
+    let remaining_sell = book.orders.values().find(|o| o.id == sell.id).unwrap();
     assert_eq!(remaining_sell.amount, 6);
 
     // Second legitimate 4-unit fill against the same sell order.

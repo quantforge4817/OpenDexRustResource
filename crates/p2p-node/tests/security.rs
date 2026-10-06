@@ -8,14 +8,15 @@ use p2p_node::message_handler::{
 use p2p_node::network::build_swarm;
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
+use p2p_node::p2p_offer_book::P2POfferBook;
 use protocol::message::{
-    AMOUNT_SCALE, Asset, Market, MessageType, OpenDexMessage, Order, OrderCancelled, PRICE_SCALE,
+    AMOUNT_SCALE, Asset, Market, MessageType, Message, Order, OrderCancelled, PRICE_SCALE,
     Side, Trade, TradeState, TradeStateChanged,
 };
 use protocol::state::StateSnapshot;
 
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -83,8 +84,8 @@ fn test_trade(buyer: &str, seller: &str) -> Trade {
     }
 }
 
-fn test_message(message_type: MessageType, sender: &str, payload: String) -> OpenDexMessage {
-    OpenDexMessage {
+fn test_message(message_type: MessageType, sender: &str, payload: String) -> Message {
+    Message {
         message_type,
         sender: sender.to_string(),
         payload,
@@ -206,7 +207,7 @@ async fn handler_rejects_forged_sender_without_mutating_state() {
     let mut trade_book = TradeBook::new(temp_path("forged-sender-trades"));
     let mut balance_book = BalanceBook::new(temp_path("forged-sender-balances"));
     let mut pending_trade_states = HashMap::new();
-
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -215,8 +216,8 @@ async fn handler_rejects_forged_sender_without_mutating_state() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -225,7 +226,7 @@ async fn handler_rejects_forged_sender_without_mutating_state() {
     .unwrap();
 
     assert!(
-        order_book.orders.is_empty(),
+        order_book.active_orders().is_empty(),
         "forged message must not create an order"
     );
 }
@@ -254,7 +255,7 @@ async fn handler_rejects_order_from_impersonated_trader_without_mutating_state()
     let mut trade_book = TradeBook::new(temp_path("impersonated-trades"));
     let mut balance_book = BalanceBook::new(temp_path("impersonated-balances"));
     let mut pending_trade_states = HashMap::new();
-
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -263,8 +264,8 @@ async fn handler_rejects_order_from_impersonated_trader_without_mutating_state()
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -273,7 +274,7 @@ async fn handler_rejects_order_from_impersonated_trader_without_mutating_state()
     .unwrap();
 
     assert!(
-        order_book.orders.is_empty(),
+        order_book.active_orders().is_empty(),
         "impersonated order must not enter the order book"
     );
 }
@@ -313,7 +314,7 @@ async fn handler_rejects_unauthorized_trade_state_change() {
     let mut order_book = OrderBook::new(temp_path("unauthorized-state-orders"));
     let mut balance_book = BalanceBook::new(temp_path("unauthorized-state-balances"));
     let mut pending_trade_states = HashMap::new();
-
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -322,8 +323,8 @@ async fn handler_rejects_unauthorized_trade_state_change() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -365,7 +366,7 @@ async fn handler_rejects_cancellation_by_non_owner() {
     let mut trade_book = TradeBook::new(temp_path("cancel-trades"));
     let mut balance_book = BalanceBook::new(temp_path("cancel-balances"));
     let mut pending_trade_states = HashMap::new();
-
+    let mut p2p_offers = P2POfferBook::new();
     order_book.upsert_order(order.clone());
     order_book.save_orders().unwrap();
 
@@ -377,8 +378,8 @@ async fn handler_rejects_cancellation_by_non_owner() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -387,7 +388,7 @@ async fn handler_rejects_cancellation_by_non_owner() {
     .unwrap();
 
     assert!(
-        order_book.orders.iter().any(|order| order.id == order_id),
+        order_book.is_order_active(&order_id),
         "non-owner cancellation must not remove the order"
     );
 }
@@ -405,10 +406,11 @@ async fn handler_state_response_does_not_resurrect_removed_order() {
         MessageType::StateResponse,
         &authenticated_peer.to_string(),
         serde_json::to_string(&StateSnapshot {
+            version: 1,
             orders: vec![order],
             trades: Vec::new(),
-            removed_orders: Vec::new(),
-            applied_trades: Vec::new(),
+            removed_orders: HashSet::new(),
+            applied_trades: HashSet::new(),
         })
         .unwrap(),
     );
@@ -422,8 +424,9 @@ async fn handler_state_response_does_not_resurrect_removed_order() {
     let mut pending_trade_states = HashMap::new();
 
     // Local node has already permanently removed this order.
-    order_book.removed_orders.push(order_id);
+    order_book.removed_orders.insert(order_id);
 
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -432,8 +435,8 @@ async fn handler_state_response_does_not_resurrect_removed_order() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -442,12 +445,12 @@ async fn handler_state_response_does_not_resurrect_removed_order() {
     .unwrap();
 
     assert!(
-        !order_book.orders.iter().any(|o| o.id == order_id),
+        !order_book.is_order_active(&order_id),
         "state sync must not resurrect a locally removed order"
     );
 
     assert!(
-        order_book.removed_orders.contains(&order_id),
+        order_book.is_order_removed(&order_id),
         "the removal tombstone must survive state sync"
     );
 }
@@ -474,10 +477,11 @@ async fn handler_state_response_does_not_replace_existing_trade() {
         MessageType::StateResponse,
         &authenticated_peer.to_string(),
         serde_json::to_string(&StateSnapshot {
+            version: 1,
             orders: Vec::new(),
             trades: vec![stale_trade],
-            removed_orders: Vec::new(),
-            applied_trades: Vec::new(),
+            removed_orders: HashSet::new(),
+            applied_trades: HashSet::new(),
         })
         .unwrap(),
     );
@@ -492,6 +496,7 @@ async fn handler_state_response_does_not_replace_existing_trade() {
 
     assert!(trade_book.add_trade(existing_trade));
 
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -500,8 +505,8 @@ async fn handler_state_response_does_not_replace_existing_trade() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -538,6 +543,7 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
         MessageType::StateResponse,
         &authenticated_peer.to_string(),
         serde_json::to_string(&StateSnapshot {
+            version: 1,
             orders: vec![existing_order.clone()],
             trades: vec![Trade {
                 id: Uuid::new_v4(),
@@ -555,8 +561,8 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
                 created_at: 1,
                 updated_at: 1,
             }],
-            removed_orders: Vec::new(),
-            applied_trades: Vec::new(),
+            removed_orders: HashSet::new(),
+            applied_trades: HashSet::new(),
         })
         .unwrap(),
     );
@@ -568,13 +574,13 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
     let mut trade_book = TradeBook::new(temp_path("snapshot-invalid-trades"));
     let mut balance_book = BalanceBook::new(temp_path("snapshot-invalid-balances"));
     let mut pending_trade_states = HashMap::new();
-
+    let mut p2p_offers = P2POfferBook::new();
     order_book.upsert_order(existing_order.clone());
 
-    let original_order_count = order_book.orders.len();
-    let original_trade_count = trade_book.trades.len();
-    let original_removed_count = order_book.removed_orders.len();
-    let original_applied_count = order_book.applied_trades.len();
+    let original_order_count = order_book.active_orders().len();
+    let original_trade_count = trade_book.all_trades().len();
+    let original_removed_count = order_book.removed_order_ids().len();
+    let original_applied_count = order_book.applied_trade_ids().len();
 
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
@@ -584,6 +590,7 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
 
     let result = handle_gossipsub_message(
@@ -595,25 +602,25 @@ async fn handler_rejects_invalid_snapshot_without_mutating_state() {
     assert!(result.is_err(), "invalid snapshot must be rejected");
 
     assert_eq!(
-        order_book.orders.len(),
+        order_book.active_orders().len(),
         original_order_count,
         "invalid snapshot must not change orders"
     );
 
     assert_eq!(
-        trade_book.trades.len(),
+        trade_book.all_trades().len(),
         original_trade_count,
         "invalid snapshot must not add trades"
     );
 
     assert_eq!(
-        order_book.removed_orders.len(),
+        order_book.removed_order_ids().len(),
         original_removed_count,
         "invalid snapshot must not add removal tombstones"
     );
 
     assert_eq!(
-        order_book.applied_trades.len(),
+        order_book.applied_trade_ids().len(),
         original_applied_count,
         "invalid snapshot must not mark trades as applied"
     );
@@ -644,6 +651,7 @@ async fn pending_trade_state_cache_is_bounded() {
             serde_json::to_string(&change).unwrap(),
         );
 
+    let mut p2p_offers = P2POfferBook::new();
         let mut ctx = HandlerContext {
             swarm: &mut swarm,
             topic: &topic,
@@ -652,8 +660,8 @@ async fn pending_trade_state_cache_is_bounded() {
             trade_book: &mut trade_book,
             balance_book: &mut balance_book,
             pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
         };
-
         handle_gossipsub_message(
             &serde_json::to_vec(&message).unwrap(),
             &authenticated_peer,
@@ -682,6 +690,7 @@ async fn pending_trade_state_cache_is_bounded() {
         serde_json::to_string(&attack_change).unwrap(),
     );
 
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -690,8 +699,8 @@ async fn pending_trade_state_cache_is_bounded() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&attack_message).unwrap(),
         &authenticated_peer,
@@ -739,10 +748,10 @@ async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
     let mut trade_book = TradeBook::new(temp_path("forged-cancel-trades"));
     let mut balance_book = BalanceBook::new(temp_path("forged-cancel-balances"));
     let mut pending_trade_states = HashMap::new();
-
     order_book.upsert_order(order.clone());
     order_book.save_orders().unwrap();
 
+    let mut p2p_offers = P2POfferBook::new();
     let mut ctx = HandlerContext {
         swarm: &mut swarm,
         topic: &topic,
@@ -751,8 +760,8 @@ async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
         trade_book: &mut trade_book,
         balance_book: &mut balance_book,
         pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
     };
-
     handle_gossipsub_message(
         &serde_json::to_vec(&message).unwrap(),
         &authenticated_peer,
@@ -761,7 +770,7 @@ async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
     .unwrap();
 
     assert!(
-        order_book.orders.iter().any(|order| order.id == order_id),
+        order_book.is_order_active(&order_id),
         "forged cancellation must not remove another trader's order"
     );
 }

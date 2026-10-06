@@ -4,7 +4,27 @@ resolver = "2"
 members = [
     "crates/common",
     "crates/protocol",
-    "crates/p2p-node"
+    "crates/p2p-node",
+
+    # Milestone 1: BTC-XMR atomic swap foundation
+    "crates/opendex-types",
+    "crates/opendex-errors",
+    "crates/opendex-protocol-types",
+    "crates/opendex-protocol",
+    "crates/opendex-btc-xmr",
+    "crates/opendex-bitcoin",
+    "crates/opendex-monero",
+    "crates/opendex-swap",
+
+    # Milestone 2: Persistence, watchers, recovery
+    "crates/opendex-events",
+    "crates/opendex-storage",
+    "crates/opendex-watchers",
+    "crates/opendex-recovery",
+
+    # Milestone 3: P2P transport, peer discovery, messaging
+    "crates/opendex-transport",
+    "crates/opendex-chain",
 ]
 
 [workspace.dependencies]
@@ -15,9 +35,9 @@ anyhow = "1"
 
 tracing = "0.1"
 
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-libp2p = { version = "0.54",
+libp2p = { version = "0.57",
 features = [
     "tcp",
     "tokio",

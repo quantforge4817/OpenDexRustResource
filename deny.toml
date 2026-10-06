@@ -1,0 +1,75 @@
+# OpenDex cargo-deny configuration
+# Enforces license compliance, bans, and source policies for the P2P exchange.
+# Run with: cargo deny check
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# Advisory checks — complements cargo-audit with the same rustsec database.
+[advisories]
+ignore = [
+    # paste is unmaintained but only used as a transitive dep of wgpu (iced GUI) and libp2p.
+    # No safe upgrade available; low risk as a macro-only crate.
+    { id = "RUSTSEC-2024-0436", reason = "Transitive dep of wgpu/libp2p, macro-only crate with no runtime risk" },
+    # ttf-parser is unmaintained but only used as a transitive dep of iced (GUI rendering).
+    # No safe upgrade available; low risk as a font parser with no network exposure.
+    { id = "RUSTSEC-2026-0192", reason = "Transitive dep of iced GUI, font parser with no network exposure" },
+]
+
+# License policy — only permissive licenses allowed for a financial application.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "Unlicense",
+    "Zlib",
+    "OpenSSL",
+    "BSL-1.0",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+private = { ignore = true }
+exceptions = [
+    # ring uses a custom license text that is MIT + ISC + OpenSSL
+    { allow = ["MIT", "ISC", "OpenSSL"], crate = "ring" },
+]
+
+[[licenses.clarify]]
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# Bans — detect duplicate crate versions and disallow wildcard dependencies.
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+# Sources — only allow crates.io, no git dependencies for supply chain security.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

@@ -1,15 +1,21 @@
 pub mod balances;
 pub mod cli;
+pub mod escrow;
 pub mod exchange;
+pub mod gui_bridge;
 pub mod message_handler;
 pub mod network;
 pub mod order_factory;
 pub mod orderbook;
+pub mod p2p_escrow;
+pub mod p2p_offer_book;
 pub mod persistence;
 pub mod settlement;
 pub mod sync;
 pub mod trade_state;
 pub mod trades;
+pub mod wallet_client;
+pub mod btc_wallet_client;
 
 use libp2p::{gossipsub, identify, kad, ping, swarm::NetworkBehaviour};
 

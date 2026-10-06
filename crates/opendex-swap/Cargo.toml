@@ -1,0 +1,28 @@
+[package]
+name = "opendex-swap"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+
+[dependencies]
+opendex-types = { path = "../opendex-types" }
+opendex-errors = { path = "../opendex-errors" }
+opendex-protocol-types = { path = "../opendex-protocol-types" }
+opendex-protocol = { path = "../opendex-protocol" }
+opendex-btc-xmr = { path = "../opendex-btc-xmr" }
+opendex-bitcoin = { path = "../opendex-bitcoin" }
+opendex-monero = { path = "../opendex-monero" }
+opendex-events = { path = "../opendex-events" }
+opendex-storage = { path = "../opendex-storage" }
+opendex-recovery = { path = "../opendex-recovery" }
+opendex-transport = { path = "../opendex-transport" }
+tokio = { version = "1", features = ["sync"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["sync", "rt", "macros"] }

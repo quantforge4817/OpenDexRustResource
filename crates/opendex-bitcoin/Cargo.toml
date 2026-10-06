@@ -1,0 +1,11 @@
+[package]
+name = "opendex-bitcoin"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+
+[dependencies]
+opendex-types = { path = "../opendex-types" }
+opendex-errors = { path = "../opendex-errors" }
+serde = { version = "1", features = ["derive"] }

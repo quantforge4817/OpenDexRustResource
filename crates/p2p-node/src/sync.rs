@@ -10,6 +10,12 @@ pub fn validate_state_snapshot(
     order_book: &OrderBook,
     trade_book: &TradeBook,
 ) -> Result<()> {
+    // AUDIT-010: Reject snapshots with invalid version numbers.
+    // Version 0 indicates an uninitialized snapshot and must be rejected.
+    if state.version == 0 {
+        anyhow::bail!("StateResponse has invalid version 0");
+    }
+
     // A remote snapshot must not contain duplicate order IDs.
     let mut order_ids = std::collections::HashSet::new();
 
@@ -50,7 +56,7 @@ pub fn validate_state_snapshot(
     // locally active. Order removal must come from an authenticated
     // local protocol event or a validated trade.
     for order_id in &state.removed_orders {
-        if order_book.orders.iter().any(|order| order.id == *order_id) {
+        if order_book.is_order_active(order_id) {
             anyhow::bail!(
                 "StateResponse attempts to remove locally active order {}",
                 order_id
@@ -105,13 +111,13 @@ pub fn validate_state_snapshot(
             );
         }
 
-        let is_known_trade = trade_book.trades.iter().any(|t| t.id == trade.id);
+        let is_known_trade = trade_book.has_trade(&trade.id);
 
         let is_known_order = |order_id: uuid::Uuid| -> bool {
             state.orders.iter().any(|o| o.id == order_id)
                 || state.removed_orders.contains(&order_id)
-                || order_book.orders.iter().any(|o| o.id == order_id)
-                || order_book.removed_orders.contains(&order_id)
+                || order_book.is_order_active(&order_id)
+                || order_book.is_order_removed(&order_id)
         };
 
         if !is_known_trade {
@@ -138,7 +144,7 @@ pub fn validate_state_snapshot(
                 .iter()
                 .find(|o| o.id == order_id)
                 .cloned()
-                .or_else(|| order_book.orders.iter().find(|o| o.id == order_id).cloned())
+                .or_else(|| order_book.get_order(&order_id).cloned())
         };
 
         if let Some(buy_order) = find_order(trade.buy_order) {
@@ -199,18 +205,11 @@ pub fn validate_state_snapshot(
     // Do not allow the remote snapshot to claim that a trade was applied
     // without that trade actually being present in the snapshot or locally.
     for trade_id in &state.applied_trades {
-        if trade_id.is_empty() {
-            anyhow::bail!("StateResponse contains an empty applied trade ID");
-        }
-
         if !state
             .trades
             .iter()
-            .any(|trade| trade.id.to_string() == *trade_id)
-            && !trade_book
-                .trades
-                .iter()
-                .any(|trade| trade.id.to_string() == *trade_id)
+            .any(|trade| trade.id == *trade_id)
+            && !trade_book.has_trade(trade_id)
         {
             anyhow::bail!(
                 "StateResponse references unknown applied trade {}",
@@ -223,21 +222,16 @@ pub fn validate_state_snapshot(
 }
 
 pub fn create_snapshot(order_book: &OrderBook, trade_book: &TradeBook) -> StateSnapshot {
-    let mut orders: Vec<_> = order_book
-        .orders
-        .iter()
-        .filter(|order| !order_book.removed_orders.contains(&order.id))
-        .cloned()
-        .collect();
-
-    orders.sort_by_key(|order| order.id);
-    orders.dedup_by_key(|order| order.id);
+    // AUDIT-010: Version is derived from the last accepted version + 1,
+    // starting at 1 for the first snapshot.
+    let version = order_book.snapshot_version() + 1;
 
     StateSnapshot {
-        orders,
-        trades: trade_book.trades.clone(),
-        removed_orders: order_book.removed_orders.clone(),
-        applied_trades: order_book.applied_trades.clone(),
+        version,
+        orders: order_book.active_orders(),
+        trades: trade_book.all_trades(),
+        removed_orders: order_book.removed_order_ids(),
+        applied_trades: order_book.applied_trade_ids(),
     }
 }
 
@@ -248,7 +242,25 @@ pub fn apply_snapshot(
 ) -> Result<()> {
     validate_state_snapshot(&state, order_book, trade_book)?;
 
-    println!("=== State Sync Received ===");
+    // AUDIT-010: Reject stale or duplicate snapshots.
+    // The incoming version must be strictly greater than the last accepted version.
+    if state.version <= order_book.snapshot_version() {
+        tracing::warn!(
+            incoming_version = state.version,
+            last_accepted_version = order_book.snapshot_version(),
+            "Rejecting stale snapshot"
+        );
+        anyhow::bail!(
+            "StateResponse version {} is not newer than last accepted version {}",
+            state.version,
+            order_book.snapshot_version()
+        );
+    }
+
+    tracing::info!(
+        version = state.version,
+        "=== State Sync Received ==="
+    );
 
     // Remote snapshots are reconciliation data, not an authority over
     // already-known local state.
@@ -271,15 +283,11 @@ pub fn apply_snapshot(
     // rejecting an increase. Orders already known to be removed cannot
     // be resurrected.
     for order in state.orders {
-        if next_order_book.removed_orders.contains(&order.id) {
+        if next_order_book.contains_removed_order(&order.id) {
             continue;
         }
 
-        if next_order_book
-            .orders
-            .iter()
-            .any(|existing| existing.id == order.id)
-        {
+        if next_order_book.is_order_active(&order.id) {
             next_order_book.update_order_from_snapshot(order);
         } else {
             next_order_book.upsert_order(order);
@@ -302,6 +310,9 @@ pub fn apply_snapshot(
     // A trade becomes applied only when our local validated trade
     // processing actually applies it.
 
+    // AUDIT-010: Update the last accepted version after successful application.
+    next_order_book.accept_snapshot_version(state.version);
+
     // Persist the merged informational state before committing it.
     next_order_book.save_orders()?;
     next_trade_book.save_trades()?;
@@ -312,7 +323,10 @@ pub fn apply_snapshot(
     order_book.print_orders();
     trade_book.print_trades();
 
-    println!("=== State Sync Complete ===");
+    tracing::info!(
+        version = state.version,
+        "=== State Sync Complete ==="
+    );
 
     Ok(())
 }

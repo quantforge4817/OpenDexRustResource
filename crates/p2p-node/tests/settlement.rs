@@ -60,6 +60,7 @@ fn settles_local_buyer_and_is_idempotent() {
         Balance {
             available: 2 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -68,6 +69,7 @@ fn settles_local_buyer_and_is_idempotent() {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -81,6 +83,7 @@ fn settles_local_buyer_and_is_idempotent() {
         Balance {
             available: 2 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -89,6 +92,7 @@ fn settles_local_buyer_and_is_idempotent() {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -115,6 +119,7 @@ fn settles_local_seller_and_is_idempotent() {
         Balance {
             available: AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -123,6 +128,7 @@ fn settles_local_seller_and_is_idempotent() {
         Balance {
             available: 200 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -135,6 +141,7 @@ fn settles_local_seller_and_is_idempotent() {
         Balance {
             available: AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -143,6 +150,7 @@ fn settles_local_seller_and_is_idempotent() {
         Balance {
             available: 200 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -169,6 +177,7 @@ fn ignores_non_participant() {
         Balance {
             available: 10 * AMOUNT_SCALE,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -177,6 +186,7 @@ fn ignores_non_participant() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -203,6 +213,7 @@ fn rejects_quote_overflow_without_mutating_balance() {
         Balance {
             available: 0,
             locked: 100 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -211,6 +222,7 @@ fn rejects_quote_overflow_without_mutating_balance() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -238,6 +250,7 @@ fn partial_trade_consumes_only_traded_locked_amount() {
         Balance {
             available: AMOUNT_SCALE / 2,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -246,6 +259,7 @@ fn partial_trade_consumes_only_traded_locked_amount() {
         Balance {
             available: 100 * AMOUNT_SCALE,
             locked: 150 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 }
@@ -273,6 +287,7 @@ fn settlement_failure_does_not_partially_mutate_balances() {
         Balance {
             available: 0,
             locked: 100 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -282,6 +297,7 @@ fn settlement_failure_does_not_partially_mutate_balances() {
         Balance {
             available: u64::MAX,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -310,6 +326,7 @@ fn insufficient_locked_base_rejects_settlement_without_mutation() {
         Balance {
             available: 2 * AMOUNT_SCALE,
             locked: AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -319,6 +336,7 @@ fn insufficient_locked_base_rejects_settlement_without_mutation() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -348,6 +366,7 @@ fn insufficient_locked_quote_rejects_settlement_without_mutation() {
         Balance {
             available: 150 * AMOUNT_SCALE,
             locked: 50 * AMOUNT_SCALE,
+            escrowed: 0,
         }
     );
 
@@ -357,6 +376,7 @@ fn insufficient_locked_quote_rejects_settlement_without_mutation() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -393,6 +413,7 @@ fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -401,6 +422,7 @@ fn settlement_accepts_u128_intermediate_product_that_fits_after_scaling() {
         Balance {
             available: amount,
             locked: 0,
+            escrowed: 0,
         }
     );
 
@@ -431,6 +453,7 @@ fn settlement_save_failure_does_not_mutate_in_memory_state() {
         Balance {
             available: 0,
             locked: quote,
+            escrowed: 0,
         }
     );
 
@@ -439,6 +462,7 @@ fn settlement_save_failure_does_not_mutate_in_memory_state() {
         Balance {
             available: 0,
             locked: 0,
+            escrowed: 0,
         }
     );
 

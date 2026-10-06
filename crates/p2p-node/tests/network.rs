@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId, gossipsub, identity, multiaddr::Protocol, swarm::SwarmEvent};
 use p2p_node::network::build_swarm;
-use protocol::message::{Asset, Market, MessageType, OpenDexMessage, Order, Side};
+use protocol::message::{Asset, Market, MessageType, Message, Order, Side};
 use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -152,7 +152,7 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
 
     let order = test_order();
 
-    let message = OpenDexMessage {
+    let message = Message {
         message_type: MessageType::OrderCreated,
         sender: peer_a.to_string(),
         payload: serde_json::to_string(&order).expect("serialize order"),
@@ -177,9 +177,9 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
                         ),
                     ) = event
                     {
-                        let decoded: OpenDexMessage =
+                        let decoded: Message =
                             serde_json::from_slice(&message.data)
-                                .expect("received invalid OpenDexMessage");
+                                .expect("received invalid Message");
 
                         if decoded.message_type == MessageType::OrderCreated {
                             let received_order: Order =
@@ -198,9 +198,9 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
                         ),
                     ) = event
                     {
-                        let decoded: OpenDexMessage =
+                        let decoded: Message =
                             serde_json::from_slice(&message.data)
-                                .expect("received invalid OpenDexMessage");
+                                .expect("received invalid Message");
 
                         if decoded.message_type == MessageType::OrderCreated {
                             let received_order: Order =

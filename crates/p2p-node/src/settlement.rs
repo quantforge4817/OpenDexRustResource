@@ -13,6 +13,10 @@ pub struct SettlementPlan {
     pub debit_amount: u64,
     pub credit_asset: Asset,
     pub credit_amount: u64,
+    /// The order ID whose reservation is consumed during settlement.
+    /// Present when per-order reservations are used; `None` falls back
+    /// to aggregate locked consumption for backward compatibility.
+    pub debit_order_id: Option<Uuid>,
 }
 
 pub fn plan_local_settlement(
@@ -29,8 +33,7 @@ pub fn plan_local_settlement(
 
     // Idempotency belongs to planning as well: an already-settled trade
     // produces no work.
-    let trade_id = trade.id.to_string();
-    if balance_book.settled_trades.iter().any(|id| id == &trade_id) {
+    if balance_book.settled_trades.contains(&trade.id) {
         return Ok(None);
     }
 
@@ -46,10 +49,18 @@ pub fn plan_local_settlement(
     let quote = quote_amount(trade.price, trade.amount)?;
 
     if local_trader == trade.buyer {
-        let quote_balance = balance_book.balance(&local_trader, &trade.market.quote);
+        // Check the per-order reservation first; fall back to aggregate locked.
+        let has_sufficient_reservation = balance_book
+            .order_reservation(&trade.buy_order)
+            .map(|res| res >= quote)
+            .unwrap_or(false);
 
-        if quote_balance.locked < quote {
-            return Err(anyhow!("insufficient locked quote balance"));
+        if !has_sufficient_reservation {
+            let quote_balance = balance_book.balance(&local_trader, &trade.market.quote);
+
+            if quote_balance.locked < quote {
+                return Err(anyhow!("insufficient locked quote balance"));
+            }
         }
 
         let base_balance = balance_book.balance(&local_trader, &trade.market.base);
@@ -66,12 +77,21 @@ pub fn plan_local_settlement(
             debit_amount: quote,
             credit_asset: trade.market.base.clone(),
             credit_amount: trade.amount,
+            debit_order_id: Some(trade.buy_order),
         }))
     } else {
-        let base_balance = balance_book.balance(&local_trader, &trade.market.base);
+        // Check the per-order reservation first; fall back to aggregate locked.
+        let has_sufficient_reservation = balance_book
+            .order_reservation(&trade.sell_order)
+            .map(|res| res >= trade.amount)
+            .unwrap_or(false);
 
-        if base_balance.locked < trade.amount {
-            return Err(anyhow!("insufficient locked base balance"));
+        if !has_sufficient_reservation {
+            let base_balance = balance_book.balance(&local_trader, &trade.market.base);
+
+            if base_balance.locked < trade.amount {
+                return Err(anyhow!("insufficient locked base balance"));
+            }
         }
 
         let quote_balance = balance_book.balance(&local_trader, &trade.market.quote);
@@ -88,16 +108,38 @@ pub fn plan_local_settlement(
             debit_amount: trade.amount,
             credit_asset: trade.market.quote.clone(),
             credit_amount: quote,
+            debit_order_id: Some(trade.sell_order),
         }))
     }
 }
 
 fn apply_settlement_plan(balance_book: &mut BalanceBook, plan: &SettlementPlan) -> Result<()> {
-    balance_book.consume_locked(&plan.trader, plan.debit_asset.clone(), plan.debit_amount)?;
+    // Consume from the per-order reservation when available; fall back to
+    // aggregate locked consumption when the reservation was already removed
+    // (e.g., full fill reconciled the reservation to zero).
+    match plan.debit_order_id {
+        Some(order_id) => {
+            if balance_book.order_reservation(&order_id).is_some() {
+                balance_book.consume_locked_for_order(
+                    &order_id,
+                    &plan.trader,
+                    plan.debit_asset.clone(),
+                    plan.debit_amount,
+                )?;
+            } else {
+                // Reservation already removed by reconciliation; consume from
+                // aggregate locked balance.
+                balance_book.consume_locked(&plan.trader, plan.debit_asset.clone(), plan.debit_amount)?;
+            }
+        }
+        None => {
+            balance_book.consume_locked(&plan.trader, plan.debit_asset.clone(), plan.debit_amount)?;
+        }
+    }
 
     balance_book.credit(&plan.trader, plan.credit_asset.clone(), plan.credit_amount)?;
 
-    balance_book.settled_trades.push(plan.trade_id.to_string());
+    balance_book.settled_trades.insert(plan.trade_id);
 
     Ok(())
 }
@@ -130,9 +172,11 @@ pub fn settle_local_trade(
 
     commit_local_settlement(balance_book, &plan)?;
 
-    println!(
-        "Settled trade {} locally: buyer={}, seller={}",
-        trade.id, trade.buyer, trade.seller
+    tracing::info!(
+        trade_id = %trade.id,
+        buyer = %trade.buyer,
+        seller = %trade.seller,
+        "Settled trade locally"
     );
 
     Ok(true)

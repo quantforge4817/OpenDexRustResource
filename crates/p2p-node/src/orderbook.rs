@@ -2,6 +2,7 @@ use anyhow::Result;
 use protocol::message::{Order, Side, Trade, TradeState};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -19,22 +20,37 @@ fn deterministic_trade_id(
 
     let hash = Sha256::digest(trade_input.as_bytes());
 
-    Uuid::from_slice(&hash[..16]).expect("SHA-256 always has at least 16 bytes")
+    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| {
+        panic!("SHA-256 digest is 32 bytes, always enough for Uuid")
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderBook {
-    pub orders: Vec<Order>,
-    pub applied_trades: Vec<String>,
+    /// Active orders.  Production code should access this field only through
+    /// the accessor methods (`get_order`, `is_order_active`, `active_orders`).
+    /// Direct access is allowed in tests for state inspection.
+    pub orders: HashMap<Uuid, Order>,
 
+    /// Trades that have been applied to the order book.
+    pub applied_trades: HashSet<Uuid>,
+
+    /// Trades that arrived before their counterpart orders.
     #[serde(default)]
     pub pending_trades: Vec<Trade>,
 
+    /// Orders that have been cancelled or fully filled.
     #[serde(default)]
-    pub removed_orders: Vec<Uuid>,
+    pub removed_orders: HashSet<Uuid>,
 
+    /// Fill sequence counters per resting order.
     #[serde(default)]
-    pub fill_sequences: std::collections::HashMap<Uuid, u64>,
+    pub fill_sequences: HashMap<Uuid, u64>,
+
+    /// Highest snapshot version accepted from a remote peer (AUDIT-010).
+    /// Used to reject stale or replayed snapshots.
+    #[serde(default)]
+    pub last_accepted_version: u64,
 
     #[serde(skip)]
     path: PathBuf,
@@ -43,11 +59,12 @@ pub struct OrderBook {
 impl OrderBook {
     pub fn new(path: PathBuf) -> Self {
         Self {
-            orders: Vec::new(),
-            applied_trades: Vec::new(),
-            removed_orders: Vec::new(),
+            orders: HashMap::new(),
+            applied_trades: HashSet::new(),
+            removed_orders: HashSet::new(),
             pending_trades: Vec::new(),
-            fill_sequences: std::collections::HashMap::new(),
+            fill_sequences: HashMap::new(),
+            last_accepted_version: 0,
             path,
         }
     }
@@ -60,8 +77,6 @@ impl OrderBook {
         let mut order_book: OrderBook = crate::persistence::read(&path)?;
 
         order_book.path = path;
-
-        order_book.orders.dedup_by(|a, b| a.id == b.id);
 
         order_book.save_orders()?;
 
@@ -81,25 +96,22 @@ impl OrderBook {
 
         let order_id = order.id;
 
-        if let Some(index) = self
-            .orders
-            .iter()
-            .position(|existing| existing.id == order_id)
-        {
-            println!(
-                "Updating order {} amount: {} -> {}",
-                order_id, self.orders[index].amount, order.amount
+        if let Some(existing) = self.orders.get(&order_id) {
+            tracing::info!(
+                order_id = %order_id,
+                old_amount = existing.amount,
+                new_amount = order.amount,
+                "Updating order amount"
             );
-
-            self.orders[index] = order;
         } else {
-            println!(
-                "Adding new order {} with remaining amount {}",
-                order_id, order.amount
+            tracing::info!(
+                order_id = %order_id,
+                amount = order.amount,
+                "Adding new order"
             );
-
-            self.orders.push(order);
         }
+
+        self.orders.insert(order_id, order);
 
         // Return pending trades involving this order to the caller.
         // The Exchange layer is responsible for applying the trade and
@@ -112,8 +124,8 @@ impl OrderBook {
                     return false;
                 }
 
-                let has_buy = self.orders.iter().any(|o| o.id == trade.buy_order);
-                let has_sell = self.orders.iter().any(|o| o.id == trade.sell_order);
+                let has_buy = self.orders.contains_key(&trade.buy_order);
+                let has_sell = self.orders.contains_key(&trade.sell_order);
 
                 has_buy && has_sell
             })
@@ -124,31 +136,35 @@ impl OrderBook {
     }
     pub fn update_order_from_snapshot(&mut self, order: Order) {
         if self.removed_orders.contains(&order.id) {
-            println!("Ignoring removed order during snapshot sync: {}", order.id);
+            tracing::debug!(order_id = %order.id, "Ignoring removed order during snapshot sync");
             return;
         }
 
-        if let Some(existing) = self.orders.iter_mut().find(|o| o.id == order.id) {
+        if let Some(existing) = self.orders.get_mut(&order.id) {
             if existing.trader != order.trader
                 || existing.market != order.market
                 || existing.side != order.side
                 || existing.price != order.price
             {
-                println!("Ignoring conflicting snapshot terms for order {}", order.id);
+                tracing::debug!(order_id = %order.id, "Ignoring conflicting snapshot terms");
                 return;
             }
 
             if order.amount > existing.amount {
-                println!(
-                    "Ignoring snapshot increase for order {}: {} -> {}",
-                    order.id, existing.amount, order.amount
+                tracing::debug!(
+                    order_id = %order.id,
+                    old_amount = existing.amount,
+                    new_amount = order.amount,
+                    "Ignoring snapshot increase"
                 );
                 return;
             }
 
-            println!(
-                "Updating snapshot order {} amount: {} -> {}",
-                order.id, existing.amount, order.amount
+            tracing::debug!(
+                order_id = %order.id,
+                old_amount = existing.amount,
+                new_amount = order.amount,
+                "Updating snapshot order amount"
             );
 
             existing.amount = order.amount;
@@ -159,15 +175,11 @@ impl OrderBook {
     }
 
     pub fn remove_order(&mut self, id: Uuid) -> bool {
-        let before = self.orders.len();
+        let removed = self.orders.remove(&id).is_some();
 
-        self.orders.retain(|order| order.id != id);
+        self.removed_orders.insert(id);
 
-        if !self.removed_orders.contains(&id) {
-            self.removed_orders.push(id);
-        }
-
-        before != self.orders.len()
+        removed
     }
 
     pub fn validate_trade(&self, trade: &Trade) -> Result<()> {
@@ -177,14 +189,12 @@ impl OrderBook {
 
         let buy_order = self
             .orders
-            .iter()
-            .find(|order| order.id == trade.buy_order)
+            .get(&trade.buy_order)
             .ok_or_else(|| anyhow::anyhow!("buy order {} not found", trade.buy_order))?;
 
         let sell_order = self
             .orders
-            .iter()
-            .find(|order| order.id == trade.sell_order)
+            .get(&trade.sell_order)
             .ok_or_else(|| anyhow::anyhow!("sell order {} not found", trade.sell_order))?;
 
         // The referenced orders must have the correct sides.
@@ -235,23 +245,29 @@ impl OrderBook {
         Ok(())
     }
     pub fn apply_trade(&mut self, trade: &Trade) -> bool {
-        let trade_id = trade.id.to_string();
-
         // Idempotency: never apply the same trade twice.
-        if self.applied_trades.contains(&trade_id) {
+        if self.applied_trades.contains(&trade.id) {
             return false;
         }
         // Reject malformed or forged trades before they can become pending
         // or mutate the order book.
         if let Err(error) = self.validate_trade_structure(trade) {
-            eprintln!("Rejecting invalid trade {}: {}", trade.id, error);
+            tracing::error!(trade_id = %trade.id, error = %error, "Rejecting invalid trade");
+            return false;
+        }
+
+        // Verify the trade ID matches its deterministic hash.
+        // This guard protects against tampered or fabricated trades,
+        // including those arriving via pending trade reconciliation.
+        if let Err(error) = self.validate_trade_identity(trade) {
+            tracing::error!(trade_id = %trade.id, error = %error, "Rejecting trade with invalid ID");
             return false;
         }
 
         // A trade may arrive before one or both orders.
         // Keep it pending until the required orders arrive.
-        let has_buy_order = self.orders.iter().any(|o| o.id == trade.buy_order);
-        let has_sell_order = self.orders.iter().any(|o| o.id == trade.sell_order);
+        let has_buy_order = self.orders.contains_key(&trade.buy_order);
+        let has_sell_order = self.orders.contains_key(&trade.sell_order);
 
         if !has_buy_order || !has_sell_order {
             if !self.pending_trades.iter().any(|t| t.id == trade.id) {
@@ -264,7 +280,7 @@ impl OrderBook {
         // Both orders exist, so validate the trade before mutating
         // the order book.
         if let Err(error) = self.validate_trade(trade) {
-            eprintln!("Rejecting invalid trade {}: {}", trade.id, error);
+            tracing::error!(trade_id = %trade.id, error = %error, "Rejecting invalid trade");
             return false;
         }
         let next_sequence = trade.fill_sequence.saturating_add(1);
@@ -288,29 +304,26 @@ impl OrderBook {
         }
 
         // Mark the trade as applied before changing order quantities.
-        self.applied_trades.push(trade_id);
+        self.applied_trades.insert(trade.id);
 
         let mut fully_filled = Vec::new();
 
-        self.orders.retain_mut(|order| {
-            if order.id == trade.buy_order || order.id == trade.sell_order {
+        for order_id in [trade.buy_order, trade.sell_order] {
+            if let Some(order) = self.orders.get(&order_id) {
                 if order.amount > trade.amount {
-                    order.amount -= trade.amount;
-                    true
+                    if let Some(order) = self.orders.get_mut(&order_id) {
+                        order.amount -= trade.amount;
+                    }
                 } else {
-                    fully_filled.push(order.id);
-                    false
+                    fully_filled.push(order_id);
+                    self.orders.remove(&order_id);
                 }
-            } else {
-                true
             }
-        });
+        }
 
         // Fully consumed orders are permanently removed.
         for id in fully_filled {
-            if !self.removed_orders.contains(&id) {
-                self.removed_orders.push(id);
-            }
+            self.removed_orders.insert(id);
         }
 
         // The trade is no longer pending because it was successfully
@@ -321,10 +334,10 @@ impl OrderBook {
     }
 
     pub fn print_orders(&self) {
-        println!("=== OpenDEX OrderBook ===");
+        tracing::info!("=== OpenDEX OrderBook ===");
 
-        for order in &self.orders {
-            println!("{:?}", order);
+        for order in self.orders.values() {
+            tracing::info!("{:?}", order);
         }
     }
 
@@ -335,20 +348,19 @@ impl OrderBook {
         // Track the remaining quantity of resting orders without mutating
         // the actual order book. apply_trade() is the only function that
         // changes/removes orders.
-        let mut available: std::collections::HashMap<Uuid, u64> = self
+        let mut available: HashMap<Uuid, u64> = self
             .orders
             .iter()
-            .map(|order| (order.id, order.amount))
+            .map(|(id, order)| (*id, order.amount))
             .collect();
 
         while remaining_amount > 0 {
-            let best_index = self
+            let best_order = self
                 .orders
                 .iter()
-                .enumerate()
-                .filter(|(_, existing)| {
+                .filter(|(id, existing)| {
                     let available_amount = available
-                        .get(&existing.id)
+                        .get(id)
                         .copied()
                         .unwrap_or(existing.amount);
 
@@ -362,50 +374,50 @@ impl OrderBook {
                             Side::Sell => existing.price >= incoming.price,
                         }
                 })
-                .min_by(|(_, a), (_, b)| {
+                .min_by(|(a_id, a), (b_id, b)| {
                     let price_cmp = match incoming.side {
                         Side::Buy => a.price.cmp(&b.price),
                         Side::Sell => b.price.cmp(&a.price),
                     };
 
                     if price_cmp == std::cmp::Ordering::Equal {
-                        a.id.cmp(&b.id)
+                        a_id.cmp(b_id)
                     } else {
                         price_cmp
                     }
-                })
-                .map(|(index, _)| index);
+                });
 
-            let Some(index) = best_index else {
+            let Some((_, existing)) = best_order else {
                 break;
             };
 
-            let existing = self.orders[index].clone();
+            let existing_id = existing.id;
+            let existing = existing.clone();
 
             let existing_remaining = available
-                .get(&existing.id)
+                .get(&existing_id)
                 .copied()
                 .unwrap_or(existing.amount);
 
             let buy_order = if matches!(incoming.side, Side::Buy) {
                 incoming.id
             } else {
-                existing.id
+                existing_id
             };
 
             let sell_order = if matches!(incoming.side, Side::Sell) {
                 incoming.id
             } else {
-                existing.id
+                existing_id
             };
 
             let amount = remaining_amount.min(existing_remaining);
 
             let trade_price = existing.price;
 
-            let fill_sequence = self.fill_sequences.get(&existing.id).copied().unwrap_or(0);
+            let fill_sequence = self.fill_sequences.get(&existing_id).copied().unwrap_or(0);
 
-            self.fill_sequences.insert(existing.id, fill_sequence + 1);
+            self.fill_sequences.insert(existing_id, fill_sequence + 1);
 
             let trade_id =
                 deterministic_trade_id(buy_order, sell_order, trade_price, amount, fill_sequence);
@@ -447,14 +459,13 @@ impl OrderBook {
                 updated_at: now,
             };
 
-            println!("Match found:");
-            println!("{:?}", trade);
+            tracing::info!(trade_id = %trade.id, "Match found");
 
             trades.push(trade);
 
             // Only update our temporary matching state.
             // The real order book is updated later by apply_trade().
-            available.insert(existing.id, existing_remaining - amount);
+            available.insert(existing_id, existing_remaining - amount);
 
             remaining_amount -= amount;
         }
@@ -515,5 +526,117 @@ impl OrderBook {
         }
 
         Ok(())
+    }
+
+    // -----------------------------------------------------------------
+    // Accessors for sync.rs — provide controlled read access to internal
+    // state without exposing fields directly.  These methods are used
+    // during snapshot validation and application so that sync.rs cannot
+    // bypass domain invariants.
+    // -----------------------------------------------------------------
+
+    /// Returns true if the order is currently active (not removed).
+    pub fn is_order_active(&self, order_id: &Uuid) -> bool {
+        self.orders.contains_key(order_id)
+    }
+
+    /// Returns true if the order has been removed (cancelled or fully filled).
+    pub fn is_order_removed(&self, order_id: &Uuid) -> bool {
+        self.removed_orders.contains(order_id)
+    }
+
+    /// Look up an active order by ID.
+    pub fn get_order(&self, order_id: &Uuid) -> Option<&Order> {
+        self.orders.get(order_id)
+    }
+
+    /// Returns all active orders as a cloned vector, sorted by ID.
+    pub fn active_orders(&self) -> Vec<Order> {
+        let mut orders: Vec<_> = self.orders.values().cloned().collect();
+        orders.sort_by_key(|order| order.id);
+        orders.dedup_by_key(|order| order.id);
+        orders
+    }
+
+    /// Returns the set of removed order IDs.
+    pub fn removed_order_ids(&self) -> HashSet<Uuid> {
+        self.removed_orders.clone()
+    }
+
+    /// Returns the set of applied trade IDs.
+    pub fn applied_trade_ids(&self) -> HashSet<Uuid> {
+        self.applied_trades.clone()
+    }
+
+    /// Returns the highest snapshot version accepted from a remote peer.
+    pub fn snapshot_version(&self) -> u64 {
+        self.last_accepted_version
+    }
+
+    /// Advance the accepted snapshot version after a successful sync.
+    pub fn accept_snapshot_version(&mut self, version: u64) {
+        self.last_accepted_version = version;
+    }
+
+    /// Check whether a removed order ID is present in the removal set.
+    pub fn contains_removed_order(&self, order_id: &Uuid) -> bool {
+        self.removed_orders.contains(order_id)
+    }
+
+    /// Remove any pending trade matching the given ID.
+    pub fn remove_pending_trade(&mut self, trade_id: Uuid) {
+        self.pending_trades.retain(|pending| pending.id != trade_id);
+    }
+
+    /// Returns the number of pending trades.
+    pub fn pending_trades_count(&self) -> usize {
+        self.pending_trades.len()
+    }
+}
+
+// ---------------------------------------------------------------------
+// Test-only accessors — allow test code to inspect internal state
+// without exposing fields to production code.  These are prefixed with
+// `_test_` to signal they are not part of the stable API.
+// ---------------------------------------------------------------------
+impl OrderBook {
+    /// Returns a reference to the internal orders map (tests only).
+    pub fn _test_orders(&self) -> &HashMap<Uuid, Order> {
+        &self.orders
+    }
+
+    /// Returns a mutable reference to the internal orders map (tests only).
+    pub fn _test_orders_mut(&mut self) -> &mut HashMap<Uuid, Order> {
+        &mut self.orders
+    }
+
+    /// Returns a reference to the internal removed_orders set (tests only).
+    pub fn _test_removed_orders(&self) -> &HashSet<Uuid> {
+        &self.removed_orders
+    }
+
+    /// Returns a reference to the internal applied_trades set (tests only).
+    pub fn _test_applied_trades(&self) -> &HashSet<Uuid> {
+        &self.applied_trades
+    }
+
+    /// Returns a reference to the internal pending_trades vec (tests only).
+    pub fn _test_pending_trades(&self) -> &Vec<Trade> {
+        &self.pending_trades
+    }
+
+    /// Returns a reference to the internal fill_sequences map (tests only).
+    pub fn _test_fill_sequences(&self) -> &HashMap<Uuid, u64> {
+        &self.fill_sequences
+    }
+
+    /// Returns the last accepted snapshot version (tests only).
+    pub fn _test_last_accepted_version(&self) -> u64 {
+        self.last_accepted_version
+    }
+
+    /// Sets the last accepted snapshot version directly (tests only).
+    pub fn _test_set_last_accepted_version(&mut self, version: u64) {
+        self.last_accepted_version = version;
     }
 }
