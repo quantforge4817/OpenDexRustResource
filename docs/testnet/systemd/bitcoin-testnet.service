@@ -1,0 +1,26 @@
+[Unit]
+Description=Bitcoin Testnet Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=bitcoin
+Group=bitcoin
+ExecStart=/usr/local/bin/bitcoind \
+  --testnet \
+  --datadir=/home/bitcoin/.bitcoin/testnet3 \
+  --rpcport=18332 \
+  --server=1 \
+  --rpcallowip=127.0.0.1 \
+  --rpcuser=opendex \
+  --rpcpassword=opendex_testnet \
+  --prune=550 \
+  -daemon=0
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bitcoin-testnet
+
+[Install]
+WantedBy=multi-user.target

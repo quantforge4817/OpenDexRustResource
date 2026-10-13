@@ -97,6 +97,15 @@ pub enum ChainError {
 
     #[error("chain state unknown (backends disagree)")]
     StateUnknown,
+
+    #[error("connection failed: {0}")]
+    ConnectionFailed(String),
+
+    #[error("RPC error: {0}")]
+    RpcError(String),
+
+    #[error("serialization error: {0}")]
+    SerializationError(String),
 }
 
 /// Errors from storage operations.

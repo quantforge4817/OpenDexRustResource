@@ -9,3 +9,7 @@ rust-version = "1.85"
 opendex-types = { path = "../opendex-types" }
 opendex-errors = { path = "../opendex-errors" }
 serde = { version = "1", features = ["derive"] }
+
+# Real Monero RPC
+monero-rpc = { version = "0.5", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["sync"] }

@@ -1,0 +1,24 @@
+[package]
+name = "opendex-fiat"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+description = "Fiat settlement subsystem for OpenDex P2P trading"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+opendex-types = { path = "../opendex-types" }
+protocol = { path = "../protocol" }
+
+# Bitcoin cryptography for 2-of-2 multisig escrow
+bitcoin = { version = "0.32", features = ["rand-std", "ordered", "std"] }
+secp256k1 = { version = "0.29", features = ["rand-std", "serde"] }
+hex = "0.4"
+serde_json = "1"
+thiserror = "2"
+async-trait = "0.1"
+zeroize = { version = "1", features = ["derive"] }

@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenDex Bootstrap Node
+After=network.target monero-stagenet.service bitcoin-testnet.service
+
+[Service]
+Type=simple
+User=opendex
+Group=opendex
+ExecStart=/home/opendex/opendex/target/release/p2p-node \
+  --port 4001 \
+  --monero-rpc http://127.0.0.1:18082 \
+  --btc-rpc http://127.0.0.1:18332
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opendex-bootstrap
+
+[Install]
+WantedBy=multi-user.target

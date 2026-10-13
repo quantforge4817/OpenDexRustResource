@@ -9,3 +9,8 @@ rust-version = "1.85"
 opendex-types = { path = "../opendex-types" }
 opendex-errors = { path = "../opendex-errors" }
 serde = { version = "1", features = ["derive"] }
+
+# Real Bitcoin RPC via Electrum
+electrum-client = "0.24"
+bitcoin = { version = "0.32", features = ["std"] }
+hex = "0.4"

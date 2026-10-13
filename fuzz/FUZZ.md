@@ -1085,7 +1085,7 @@ Record the result in:
 
 ```
 audit/BUG_LOG.md
-audit/AUDIT_FINDINGS.md
+audit/AUDIT_CHECKLIST.md
 audit/SECURITY_LOG.md
 ```
 

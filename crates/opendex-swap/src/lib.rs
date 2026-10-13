@@ -7,18 +7,21 @@
 use serde::{Deserialize, Serialize};
 
 use opendex_types::{
-    BitcoinNetwork, MoneroNetwork, ParticipantId, ProtocolVersion,
+    Asset, BitcoinNetwork, MoneroNetwork, ParticipantId, ProtocolVersion,
     Satoshis, Piconero, SwapId, TradeId,
 };
-use opendex_errors::{OpenDexError, ProtocolError, StorageError};
+use opendex_errors::{ChainError, OpenDexError, ProtocolError, StorageError};
 use opendex_protocol_types::{
     ChainObservation, ProtocolAction, SettlementProtocol, Swap, SwapContext, SwapState,
+    TransactionType,
 };
 use opendex_events::{EventId, SwapEvent};
 use opendex_storage::{EventRepository, SwapRepository, TransactionIntentRepository};
 use opendex_recovery::{RecoveryEngine, RecoveryDecision};
 use opendex_transport::{MessageStore, ProtocolEnvelope};
 use opendex_types::MessageId;
+use opendex_bitcoin::BitcoinChain;
+use opendex_monero::MoneroChain;
 
 // Re-export Swap for convenience
 pub use opendex_protocol_types::Swap as ProtocolSwap;
@@ -32,12 +35,18 @@ pub struct SwapEngine<
     ER: EventRepository,
     TR: TransactionIntentRepository,
     RE: RecoveryEngine,
+    BC: BitcoinChain,
+    MC: MoneroChain,
 > {
     protocol: P,
     swap_repo: SR,
     event_repo: ER,
     tx_intent_repo: TR,
     recovery_engine: RE,
+    /// Bitcoin chain instance for reconciliation.
+    bitcoin_chain: BC,
+    /// Monero chain instance for reconciliation.
+    monero_chain: MC,
     /// Tracks seen message IDs for replay protection.
     message_store: MessageStore,
     /// Next sequence number for outgoing messages.
@@ -50,7 +59,9 @@ impl<
     ER: EventRepository,
     TR: TransactionIntentRepository,
     RE: RecoveryEngine,
-> SwapEngine<P, SR, ER, TR, RE>
+    BC: BitcoinChain,
+    MC: MoneroChain,
+> SwapEngine<P, SR, ER, TR, RE, BC, MC>
 {
     pub fn new(
         protocol: P,
@@ -58,6 +69,8 @@ impl<
         event_repo: ER,
         tx_intent_repo: TR,
         recovery_engine: RE,
+        bitcoin_chain: BC,
+        monero_chain: MC,
     ) -> Self {
         Self {
             protocol,
@@ -65,6 +78,8 @@ impl<
             event_repo,
             tx_intent_repo,
             recovery_engine,
+            bitcoin_chain,
+            monero_chain,
             message_store: MessageStore::new(),
             next_sequence: 0,
         }
@@ -172,11 +187,20 @@ impl<
     }
 
     /// Reconcile incomplete swaps on startup.
+    ///
+    /// For each incomplete swap, checks the blockchain for transactions that
+    /// were broadcast but not recorded in the event log. If a broadcast is
+    /// detected without a corresponding event, a `FundingDetected` or
+    /// `RedemptionDetected` event is replayed.
+    ///
+    /// Returns the list of swaps that had missing events replayed.
     pub fn reconcile(&self) -> Result<Vec<Swap>, OpenDexError> {
         let incomplete = self
             .swap_repo
             .list_incomplete()
             .map_err(|e| OpenDexError::Storage(e))?;
+
+        let mut reconciled = Vec::new();
 
         for swap in &incomplete {
             // Load events for this swap
@@ -193,18 +217,94 @@ impl<
 
             // Check for unrecorded broadcasts
             for intent in &intents {
-                // In a real implementation, we'd check the blockchain here
-                // to see if the transaction was actually broadcast
-                let _ = intent;
-            }
+                // Skip if no txid recorded (not yet broadcast)
+                if intent.txid.is_empty() {
+                    continue;
+                }
 
-            // Check for relevant events
-            for event in &events {
-                let _ = event;
+                // Check the appropriate blockchain for this transaction
+                let on_chain = match intent.chain {
+                    Asset::Btc => {
+                        opendex_bitcoin::BitcoinChain::transaction(
+                            &self.bitcoin_chain, &intent.txid
+                        )
+                        .map(|tx| tx.is_some())
+                        .unwrap_or(false)
+                    }
+                    Asset::Xmr => {
+                        opendex_monero::MoneroChain::transaction(
+                            &self.monero_chain, &intent.txid
+                        )
+                        .map(|tx| tx.is_some())
+                        .unwrap_or(false)
+                    }
+                    _ => false,
+                };
+
+                // If the transaction is on-chain, check if we already have an event
+                if on_chain {
+                    let swap_id = swap.id;
+                    let has_event = events.iter().any(|record| {
+                        matches!(
+                            record.event,
+                            SwapEvent::FundingDetected { swap_id: sid, .. }
+                            | SwapEvent::RedemptionDetected { swap_id: sid, .. }
+                            | SwapEvent::RefundDetected { swap_id: sid, .. }
+                            if sid == swap_id
+                        )
+                    });
+
+                    // If no event recorded, replay the appropriate event
+                    if !has_event {
+                        let amount = match intent.tx_type {
+                            TransactionType::BtcFunding => swap.btc_amount.0,
+                            TransactionType::XmrFunding => swap.xmr_amount.0,
+                            TransactionType::BtcRedemption => swap.btc_amount.0,
+                            TransactionType::XmrRedemption => swap.xmr_amount.0,
+                            TransactionType::BtcRefund => swap.btc_amount.0,
+                            TransactionType::XmrRefund => swap.xmr_amount.0,
+                        };
+
+                        let event = match intent.tx_type {
+                            TransactionType::BtcFunding | TransactionType::XmrFunding => {
+                                SwapEvent::FundingDetected {
+                                    swap_id: swap.id,
+                                    chain: intent.chain.clone(),
+                                    txid: intent.txid.clone(),
+                                    amount,
+                                    confirmations: 0,
+                                }
+                            }
+                            TransactionType::BtcRedemption | TransactionType::XmrRedemption => {
+                                SwapEvent::RedemptionDetected {
+                                    swap_id: swap.id,
+                                    chain: intent.chain.clone(),
+                                    txid: intent.txid.clone(),
+                                }
+                            }
+                            TransactionType::BtcRefund | TransactionType::XmrRefund => {
+                                SwapEvent::RefundDetected {
+                                    swap_id: swap.id,
+                                    chain: intent.chain.clone(),
+                                    txid: intent.txid.clone(),
+                                }
+                            }
+                        };
+
+                        self.event_repo
+                            .append(event)
+                            .map_err(|e| OpenDexError::Storage(e))?;
+
+                        // Track reconciled swap by ID to avoid duplicates
+                        if !reconciled.iter().any(|s: &Swap| s.id == swap.id) {
+                            reconciled.push(swap.clone());
+                        }
+                    }
+                }
             }
         }
 
-        Ok(incomplete)
+        Ok(reconciled)
     }
 
     /// Recover an interrupted swap using the recovery engine.
@@ -354,6 +454,8 @@ mod tests {
     };
     use opendex_recovery::DeterministicRecoveryEngine;
     use opendex_protocol_types::SwapState;
+    use opendex_bitcoin::MockBitcoinChain;
+    use opendex_monero::MockMoneroChain;
 
     type TestEngine = SwapEngine<
         BtcXmrAdapter,
@@ -361,7 +463,17 @@ mod tests {
         InMemoryEventRepository,
         InMemoryTransactionIntentRepository,
         DeterministicRecoveryEngine,
+        MockBitcoinChain,
+        MockMoneroChain,
     >;
+
+    fn check_btc_on_chain(chain: &MockBitcoinChain, txid: &str) -> bool {
+        BitcoinChain::transaction(chain, txid).map(|tx| tx.is_some()).unwrap_or(false)
+    }
+
+    fn check_xmr_on_chain(chain: &MockMoneroChain, txid: &str) -> bool {
+        MoneroChain::transaction(chain, txid).map(|tx| tx.is_some()).unwrap_or(false)
+    }
 
     fn create_test_engine() -> (TestEngine, Swap) {
         let protocol = BtcXmrAdapter::new();
@@ -369,8 +481,13 @@ mod tests {
         let event_repo = InMemoryEventRepository::new();
         let tx_repo = InMemoryTransactionIntentRepository::new();
         let recovery = DeterministicRecoveryEngine::new();
+        let bitcoin_chain = MockBitcoinChain::new();
+        let monero_chain = MockMoneroChain::new();
 
-        let engine = TestEngine::new(protocol, swap_repo, event_repo, tx_repo, recovery);
+        let engine = TestEngine::new(
+            protocol, swap_repo, event_repo, tx_repo, recovery,
+            bitcoin_chain, monero_chain,
+        );
 
         let swap = Swap::new(
             SwapId(uuid::Uuid::new_v4()),
@@ -493,9 +610,164 @@ mod tests {
         engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
-        let incomplete = engine.reconcile().unwrap();
-        assert_eq!(incomplete.len(), 1);
-        assert_eq!(incomplete[0].id, swap.id);
+        // reconcile() returns swaps that had missing events replayed.
+        // With no transaction intents, there are no missing events, so it returns empty.
+        let reconciled = engine.reconcile().unwrap();
+        assert_eq!(reconciled.len(), 0);
+    }
+
+    #[test]
+    fn test_reconcile_detects_broadcast_but_unrecorded() {
+        let protocol = BtcXmrAdapter::new();
+        let swap_repo = InMemorySwapRepository::new();
+        let event_repo = InMemoryEventRepository::new();
+        let tx_repo = InMemoryTransactionIntentRepository::new();
+        let recovery = DeterministicRecoveryEngine::new();
+        let mut bitcoin_chain = MockBitcoinChain::new();
+        let monero_chain = MockMoneroChain::new();
+
+        // Register a transaction on the mock Bitcoin chain
+        bitcoin_chain.register_transaction(
+            "btc-funding-txid".to_string(),
+            opendex_types::Satoshis(100_000),
+            1,
+        );
+
+        let engine = TestEngine::new(
+            protocol, swap_repo, event_repo, tx_repo, recovery,
+            bitcoin_chain, monero_chain,
+        );
+
+        let swap = Swap::new(
+            SwapId(uuid::Uuid::new_v4()),
+            TradeId(uuid::Uuid::new_v4()),
+            ParticipantId(uuid::Uuid::new_v4()),
+            ParticipantId(uuid::Uuid::new_v4()),
+            Satoshis(100_000_000),
+            Piconero(100_000_000_000_000),
+            ProtocolVersion::btc_xmr_v1(),
+        );
+
+        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine.transition(swap.id, SwapState::Negotiating).unwrap();
+        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine.transition(swap.id, SwapState::Funding).unwrap();
+
+        // Record a transaction intent with the registered txid
+        let intent = opendex_protocol_types::TransactionIntent {
+            swap_id: swap.id,
+            tx_type: TransactionType::BtcFunding,
+            chain: Asset::Btc,
+            txid: "btc-funding-txid".to_string(),
+        };
+        engine.record_tx_intent(&intent).unwrap();
+
+        // Reconcile should detect the broadcast and replay the event
+        let reconciled = engine.reconcile().unwrap();
+        assert_eq!(reconciled.len(), 1);
+        assert_eq!(reconciled[0].id, swap.id);
+
+        // Verify the event was recorded by reconstructing from events
+        let reconstructed = engine.reconstruct_from_events(swap.id).unwrap();
+        // The swap should still be in Funding state (reconcile doesn't change state)
+        assert_eq!(reconstructed, Some(SwapState::Funding));
+    }
+
+    #[test]
+    fn test_reconcile_skips_empty_txid() {
+        let (engine, swap) = create_test_engine();
+        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine.transition(swap.id, SwapState::Negotiating).unwrap();
+        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine.transition(swap.id, SwapState::Funding).unwrap();
+
+        // Record an intent with empty txid (not yet broadcast)
+        let intent = opendex_protocol_types::TransactionIntent {
+            swap_id: swap.id,
+            tx_type: TransactionType::BtcFunding,
+            chain: Asset::Btc,
+            txid: String::new(),
+        };
+        engine.record_tx_intent(&intent).unwrap();
+
+        // Reconcile should skip it
+        let reconciled = engine.reconcile().unwrap();
+        assert_eq!(reconciled.len(), 0);
+    }
+
+    #[test]
+    fn test_reconcile_skips_missing_transaction() {
+        let (engine, swap) = create_test_engine();
+        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine.transition(swap.id, SwapState::Negotiating).unwrap();
+        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine.transition(swap.id, SwapState::Funding).unwrap();
+
+        // Record an intent with a txid that doesn't exist on-chain
+        let intent = opendex_protocol_types::TransactionIntent {
+            swap_id: swap.id,
+            tx_type: TransactionType::BtcFunding,
+            chain: Asset::Btc,
+            txid: "nonexistent-txid".to_string(),
+        };
+        engine.record_tx_intent(&intent).unwrap();
+
+        // Reconcile should find nothing
+        let reconciled = engine.reconcile().unwrap();
+        assert_eq!(reconciled.len(), 0);
+    }
+
+    #[test]
+    fn test_reconcile_does_not_double_process() {
+        let protocol = BtcXmrAdapter::new();
+        let swap_repo = InMemorySwapRepository::new();
+        let event_repo = InMemoryEventRepository::new();
+        let tx_repo = InMemoryTransactionIntentRepository::new();
+        let recovery = DeterministicRecoveryEngine::new();
+        let mut bitcoin_chain = MockBitcoinChain::new();
+        let monero_chain = MockMoneroChain::new();
+
+        bitcoin_chain.register_transaction(
+            "btc-funding-txid".to_string(),
+            opendex_types::Satoshis(100_000),
+            1,
+        );
+
+        let engine = TestEngine::new(
+            protocol, swap_repo, event_repo, tx_repo, recovery,
+            bitcoin_chain, monero_chain,
+        );
+
+        let swap = Swap::new(
+            SwapId(uuid::Uuid::new_v4()),
+            TradeId(uuid::Uuid::new_v4()),
+            ParticipantId(uuid::Uuid::new_v4()),
+            ParticipantId(uuid::Uuid::new_v4()),
+            Satoshis(100_000_000),
+            Piconero(100_000_000_000_000),
+            ProtocolVersion::btc_xmr_v1(),
+        );
+
+        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine.transition(swap.id, SwapState::Negotiating).unwrap();
+        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine.transition(swap.id, SwapState::Funding).unwrap();
+
+        let intent = opendex_protocol_types::TransactionIntent {
+            swap_id: swap.id,
+            tx_type: TransactionType::BtcFunding,
+            chain: Asset::Btc,
+            txid: "btc-funding-txid".to_string(),
+        };
+        engine.record_tx_intent(&intent).unwrap();
+
+        // First reconcile: should replay the event
+        let reconciled1 = engine.reconcile().unwrap();
+        assert_eq!(reconciled1.len(), 1);
+
+        // Second reconcile: should NOT replay again
+        let reconciled2 = engine.reconcile().unwrap();
+        assert_eq!(reconciled2.len(), 0);
     }
 
     #[test]
@@ -614,7 +886,12 @@ mod tests {
         let event_repo_a = InMemoryEventRepository::new();
         let tx_repo_a = InMemoryTransactionIntentRepository::new();
         let recovery_a = DeterministicRecoveryEngine::new();
-        let mut engine_a = TestEngine::new(protocol_a, swap_repo_a, event_repo_a, tx_repo_a, recovery_a);
+        let bitcoin_chain_a = MockBitcoinChain::new();
+        let monero_chain_a = MockMoneroChain::new();
+        let mut engine_a = TestEngine::new(
+            protocol_a, swap_repo_a, event_repo_a, tx_repo_a, recovery_a,
+            bitcoin_chain_a, monero_chain_a,
+        );
 
         engine_a.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
 

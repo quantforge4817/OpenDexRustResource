@@ -12,6 +12,7 @@ fn defaults_are_correct() {
         action,
         CliAction::Run(p2p_node::cli::CliArgs {
             port: 4001,
+            listen_address: "127.0.0.1".to_string(),
             peer: None,
             new_identity: false,
             gui: false,
@@ -33,6 +34,7 @@ fn parses_port() {
         action,
         CliAction::Run(p2p_node::cli::CliArgs {
             port: 5000,
+            listen_address: "127.0.0.1".to_string(),
             peer: None,
             new_identity: false,
             gui: false,
@@ -90,6 +92,7 @@ fn parses_all_options() {
         action,
         CliAction::Run(p2p_node::cli::CliArgs {
             port: 5000,
+            listen_address: "127.0.0.1".to_string(),
             peer: Some("/ip4/127.0.0.1/tcp/4001/p2p/test".to_string()),
             new_identity: true,
             gui: false,

@@ -7,6 +7,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliArgs {
     pub port: u16,
+    /// Listen address for the node (default: 127.0.0.1)
+    pub listen_address: String,
     pub peer: Option<String>,
     pub new_identity: bool,
     pub gui: bool,
@@ -34,6 +36,7 @@ impl Default for CliArgs {
     fn default() -> Self {
         Self {
             port: 4001,
+            listen_address: "127.0.0.1".to_string(),
             peer: None,
             new_identity: false,
             gui: false,
@@ -57,6 +60,7 @@ USAGE:
 
 OPTIONS:
     --port <PORT>          Listening TCP port [default: 4001]
+    --listen-address <IP>  Listen address [default: 127.0.0.1]
     --peer <MULTIADDR>     Dial a peer on startup
     --new-identity         Generate a new identity instead of loading the saved one
     --gui                  Launch the GUI application
@@ -103,6 +107,14 @@ pub fn parse_args(args: &[String]) -> Result<CliAction> {
                 if config.port == 0 {
                     bail!("port must be between 1 and 65535");
                 }
+            }
+
+            "--listen-address" => {
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("--listen-address requires an IP address"))?;
+                config.listen_address = value.clone();
             }
 
             "--peer" => {

@@ -1,12 +1,14 @@
 # OpenDEX Escrow Design Specification
 
-## Version: 1.0
-## Date: 2026-10-02
-## Status: Phase 1 (Core Escrow) implemented — 2026-10-03
+## Version: 2.0
+## Date: 2026-10-02 (Updated 2026-10-12)
+## Status: Phase 1 (Core Escrow) implemented — 2026-10-03 | Bitcoin multisig escrow implemented — 2026-10-12
 
 **Phase 1 status:** 🟢 COMPLETE — The three-state balance model, escrow operations, and state machine integration are implemented and tested. See `audit/DEV_LOG.md` for implementation details.
 
-**Phases 2–4 status:** 🟡 PENDING — Dispute resolution, timeouts, and arbitration remain future work.
+**Bitcoin multisig escrow:** 🟢 COMPLETE — 2-of-2 P2WSH multisig implemented in `crates/fiat/src/multisig.rs` with co-signing flow, key zeroization, and real testnet addresses.
+
+**Phases 2–4 status:** 🟡 PENDING — Dispute resolution, timeouts, and arbitration remain future work for the legacy fiat escrow path.
 
 ---
 
@@ -558,3 +560,61 @@ A future milestone could unify both paths under the `SettlementProtocol` trait, 
 - Unified transport layer for both paths
 
 Until then, the two paths coexist independently, following the Hybrid approach (Option C).
+
+---
+
+## 17. Bitcoin 2-of-2 Multisig Escrow — Implemented 2026-10-12
+
+The fiat settlement subsystem (`crates/fiat`) now includes a complete Bitcoin 2-of-2 multisig escrow implementation, replacing the original ledger-based escrow design with on-chain cryptographic locking.
+
+### Implementation Details
+
+**Module:** `crates/fiat/src/multisig.rs` (~800 lines, 13 tests)
+
+**Key components:**
+
+- **EscrowKeyPair** — secp256k1 key pair generation and serialization with `Zeroize` on drop
+- **RedemptionScript** — `OP_2 <pub1> <pub2> OP_2 OP_CHECKMULTISIG` witness script with P2WSH address derivation
+- **PartialSignature** — DER-encoded ECDSA signatures with JSON serialization for P2P exchange
+- **MultisigEscrow** — Full escrow context with state machine (AwaitingDeposit → Deposited → MakerSigned → ReadyToBroadcast → Broadcast)
+- **MultisigManager** — Multi-trade escrow management with maker/taker co-signing flow
+
+### Co-Signing Flow
+
+The 2-of-2 multisig escrow follows the OpenDex model where **no central company controls the Bitcoin**:
+
+1. **Trade created** — Maker and taker each generate their half of the 2-of-2 multisig key pair
+2. **Redemption script** — Combined into P2WSH witness script, producing a testnet escrow address (`tb1q...`)
+3. **Seller deposits BTC** — Sends to the 2-of-2 multisig escrow address
+4. **Security deposits** — Both parties lock refundable security bonds
+5. **Fiat payment** — Buyer sends bank transfer directly to seller (OpenDex never handles fiat)
+6. **Seller confirms** — Seller signs the payout transaction
+7. **Both sign** — Maker and taker co-sign the payout transaction via P2P signature exchange
+8. **BTC released** — Buyer receives BTC, both parties get their security deposits back
+
+### Integration with Crypto Wallet
+
+**Module:** `crates/fiat/src/crypto_wallet.rs` (~500 lines, 12 tests)
+
+The `BtcWalletAdapter` now uses real 2-of-2 P2WSH multisig via `MultisigManager` instead of stub hash strings. Methods include:
+
+- `reserve_escrow()` — Returns real testnet P2WSH addresses
+- `record_deposit()` — Records the deposit transaction
+- `maker_sign_payout()` — Maker's partial signature
+- `taker_sign_and_finalize()` — Taker's signature and transaction finalization
+- `create_return_tx()` — Return transaction for escrow cancellation
+
+### Monero Wallet with MultisigMode
+
+The `XmrWalletAdapter` uses a trait-based interface with `MultisigMode` enum:
+
+- **Simulated** — Stub operations for testing
+- **NativeMonero** — RPC-based, requires running daemon
+
+### Security Properties
+
+- **No company custody** — Bitcoin locked by cryptography (multisig), not by a custodian
+- **Key zeroization** — Secret keys wiped from memory when dropped
+- **Co-signing required** — Both parties must sign the payout transaction
+- **Security deposits** — Financial incentives for honest behavior
+- **Dispute resolution** — Evidence collection and arbitration system

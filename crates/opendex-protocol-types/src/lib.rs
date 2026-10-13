@@ -100,6 +100,8 @@ pub struct TransactionIntent {
     pub swap_id: SwapId,
     pub tx_type: TransactionType,
     pub chain: Asset,
+    /// Transaction ID after broadcast; empty string if not yet broadcast.
+    pub txid: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -116,6 +116,7 @@ mod tests {
             swap_id,
             tx_type: TransactionType::BtcFunding,
             chain: Asset::Btc,
+            txid: "test-txid".to_string(),
         };
         repo.create(&intent).unwrap();
         let found = repo.find(swap_id).unwrap();
@@ -132,12 +133,14 @@ mod tests {
             swap_id,
             tx_type: TransactionType::BtcFunding,
             chain: Asset::Btc,
+            txid: "btc-txid".to_string(),
         }).unwrap();
 
         repo.create(&TransactionIntent {
             swap_id,
             tx_type: TransactionType::XmrFunding,
             chain: Asset::Xmr,
+            txid: "xmr-txid".to_string(),
         }).unwrap();
 
         let found = repo.find(swap_id).unwrap();
@@ -161,6 +164,7 @@ mod tests {
             swap_id,
             tx_type: TransactionType::BtcFunding,
             chain: Asset::Btc,
+            txid: "btc-txid".to_string(),
         }).unwrap();
 
         let found = repo.find(swap_id).unwrap();
@@ -178,6 +182,7 @@ mod tests {
                 swap_id,
                 tx_type: TransactionType::BtcRedemption,
                 chain: Asset::Btc,
+                txid: "btc-redemption-txid".to_string(),
             }).unwrap();
         }
 

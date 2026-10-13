@@ -8,4 +8,3 @@ rust-version = "1.85"
 [dependencies]
 opendex-types = { path = "../opendex-types" }
 opendex-errors = { path = "../opendex-errors" }
-opendex-protocol-types = { path = "../opendex-protocol-types" }

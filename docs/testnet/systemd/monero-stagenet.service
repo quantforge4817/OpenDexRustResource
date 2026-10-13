@@ -1,0 +1,24 @@
+[Unit]
+Description=Monero Stagenet Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=monero
+Group=monero
+ExecStart=/usr/local/bin/monerod \
+  --stagenet \
+  --data-dir /home/monero/.bitmonero/stagenet \
+  --rpc-bind-port 18082 \
+  --p2p-bind-port 18089 \
+  --non-interactive \
+  --confirm-external-bind \
+  --rpc-access-control-origins *
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=monero-stagenet
+
+[Install]
+WantedBy=multi-user.target

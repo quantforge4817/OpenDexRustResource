@@ -1,0 +1,7 @@
+# Ignore test artifacts — keep only the structure and scripts
+logs/*.log
+logs/*.txt
+reports/*.md
+reports/*.json
+snapshots/*
+!*.gitkeep

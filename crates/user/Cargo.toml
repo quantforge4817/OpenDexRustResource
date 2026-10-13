@@ -1,0 +1,21 @@
+[package]
+name = "opendex-user"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+description = "User accounts, authentication, and reputation system for OpenDex P2P trading"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+opendex-types = { path = "../opendex-types" }
+argon2 = "0.5"
+getrandom = "0.2"
+hmac = "0.12"
+sha2 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+password-hash = "0.5"
+
+[dev-dependencies]

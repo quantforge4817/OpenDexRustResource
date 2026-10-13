@@ -9,8 +9,6 @@ rust-version = "1.85"
 opendex-types = { path = "../opendex-types" }
 opendex-errors = { path = "../opendex-errors" }
 opendex-protocol-types = { path = "../opendex-protocol-types" }
-opendex-protocol = { path = "../opendex-protocol" }
-opendex-btc-xmr = { path = "../opendex-btc-xmr" }
 opendex-bitcoin = { path = "../opendex-bitcoin" }
 opendex-monero = { path = "../opendex-monero" }
 opendex-events = { path = "../opendex-events" }
@@ -26,3 +24,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["sync", "rt", "macros"] }
+opendex-btc-xmr = { path = "../opendex-btc-xmr" }

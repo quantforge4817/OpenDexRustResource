@@ -45,12 +45,8 @@ mod persistence;
 
 mod exchange;
 
-// GUI modules
+// GUI bridge — stays in p2p-node because it references OrderBook, TradeBook, etc.
 mod gui_bridge;
-mod gui_model;
-mod gui_app;
-mod gui_style;
-mod gui_view;
 mod wallet_client;
 mod btc_wallet_client;
 mod p2p_escrow;
@@ -216,7 +212,7 @@ async fn main() -> Result<()> {
         .subscribe(&topic)
         .map_err(|e| anyhow::anyhow!("Failed to subscribe to gossipsub topic: {}", e))?;
 
-    let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", port).parse()?;
+    let listen_addr: Multiaddr = format!("/ip4/{}/tcp/{}", cli.listen_address, port).parse()?;
 
     swarm.listen_on(listen_addr.clone())?;
 
@@ -305,29 +301,15 @@ async fn main() -> Result<()> {
     };
 
     if gui_mode {
-        // Launch GUI mode
-        tracing::info!("Starting GUI mode");
-        let (cmd_tx, cmd_rx) = flume::unbounded();
-        let (update_tx, update_rx) = flume::unbounded();
-
-        // Spawn the node event loop
-        tokio::spawn(async move {
-            run_node_loop(
-                swarm,
-                topic,
-                local_peer_id,
-                order_book,
-                trade_book,
-                balance_book,
-                pending_trade_states,
-                p2p_offer_book,
-                cmd_rx,
-                update_tx,
-            ).await;
-        });
-
-        // Launch the GUI application
-        gui_app::run_gui(cmd_tx, update_rx, local_peer_id.to_string(), listen_addr.to_string()).await;
+        tracing::warn!(
+            "GUI mode is no longer supported via p2p-node.\n\
+             Please use the standalone desktop application instead:\n\
+             \n\
+             cargo run -p desktop-gui\n\
+             \n\
+             Falling back to CLI mode."
+        );
+        // Fall through to CLI mode below
     } else {
         // CLI mode
         let stdin = io::BufReader::new(io::stdin());

@@ -25,6 +25,24 @@ members = [
     # Milestone 3: P2P transport, peer discovery, messaging
     "crates/opendex-transport",
     "crates/opendex-chain",
+
+    # Regulatory compliance: DAO governance interface
+    "crates/opendex-dao",
+
+    # Regulatory compliance: Fee & treasury subsystem
+    "crates/opendex-fee-treasury",
+
+    # Web portal: informational site with download links
+    "crates/web-frontend",
+
+    # Desktop GUI: native desktop application
+    "crates/desktop-gui",
+
+    # Milestone 6: Fiat settlement subsystem
+    "crates/fiat",
+
+    # User accounts, authentication, and reputation
+    "crates/user",
 ]
 
 [workspace.dependencies]
@@ -36,14 +54,3 @@ anyhow = "1"
 tracing = "0.1"
 
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-libp2p = { version = "0.57",
-features = [
-    "tcp",
-    "tokio",
-    "noise",
-    "yamux",
-    "kad",
-    "gossipsub",
-    "identify"
-]}

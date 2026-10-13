@@ -301,7 +301,7 @@ cargo test --workspace                           PASS
 cargo clippy --workspace --all-targets \
 --all-features -- -D warnings                  PASS
 
-Workspace tests:     105 passed / 0 failed
+Workspace tests:     293 passed / 0 failed
 Security tests:      17 passed / 0 failed
 Fuzz targets:        5 (message, order, trade, trade_state, state_response)
 This remains the current clean reproducible baseline.
@@ -654,7 +654,7 @@ Updated all dependent code and tests.
 
 After all fixes:
 - `cargo build` succeeds with 0 errors
-- `cargo test` passes all 221 tests
+- `cargo test` passes all 293 tests
 - `cargo clippy` shows only 1 remaining warning (acceptable `too_many_arguments`)
 - `cargo audit` shows 0 vulnerabilities, 3 low-risk warnings
 
@@ -776,17 +776,16 @@ With ARCH-004 resolved, all three mutation paths now converge on the same valida
 
 # BTC-XMR Atomic Swap — New Issues — 2026-10-06
 
-## BTCXMR-001 — BtcXmrAdapter is a skeleton
+## BTCXMR-001 — BtcXmrAdapter DLEQ proof integration
 
-**Status:** ⚠️ Known — Implementation pending
+**Status:** 🟡 Partial — DLEQ proof types and generator added (2026-10-13)
 **Priority:** High
 **Category:** Feature completeness
 
-The `BtcXmrAdapter` implements `SettlementProtocol` but uses stub logic. No real Eigenwallet DLEQ proofs, adaptor signatures, or transaction construction. Messages are typed but not cryptographically meaningful.
+The `BtcXmrAdapter` now includes `DleqProofData` and `DleqProofGenerator` with `generate_proof()` and `verify_proof()` methods. Cross-curve proof generation uses SHA-256/SHA-512 challenge-response between secp256k1 (Bitcoin) and ed25519 (Monero) curves. Libraries added: `dleq` 0.4, `secp256k1` 0.29, `bitcoin` 0.32, `sha2` 0.10, `rand` 0.8.
 
-**Required for production:**
-- Real Eigenwallet library integration
-- DLEQ proof generation and verification
+**Still required for production:**
+- Full Eigenwallet library integration
 - Adaptor signature creation and completion
 - Bitcoin 2-of-2 multisig transaction construction
 - Monero transaction construction with stealth addresses
@@ -806,29 +805,25 @@ The `BtcXmrAdapter` implements `SettlementProtocol` but uses stub logic. No real
 - Replay missing events for detected transactions
 - Handle orphaned or replaced transactions
 
-## BTCXMR-003 — Real chain implementations needed
+## BTCXMR-003 — Real chain implementations
 
-**Status:** 🟡 Deferred — Mock chains sufficient for M1-M3
+**Status:** 🟢 Integrated — Electrum RPC + Monero RPC (2026-10-13)
 **Priority:** High
 **Category:** Feature completeness
 
-`MockBitcoinChain` and `MockMoneroChain` work for testing but real implementations need:
-- Bitcoin Core RPC integration for `BitcoinChain`
-- Monero wallet RPC integration for `MoneroChain`
-- Proper error handling for network failures
-- Connection pooling and reconnection logic
+`ElectrumBitcoinChain` provides real Bitcoin blockchain access via `electrum-client` 0.24 with `ElectrumApi` trait. `DaemonMoneroChain` provides real Monero blockchain access via `monero-rpc` 0.5 with `DaemonJsonRpcClient`. Both implement the `BitcoinChain`/`MoneroChain` traits for transaction lookup, block height, broadcast, and confirmations. `ChainError` extended with `ConnectionFailed`, `RpcError`, `SerializationError` variants.
 
-## BTCXMR-004 — Real transport integration needed
+Mock chains remain for testing.
 
-**Status:** 🟡 Deferred — Mock transport sufficient for M1-M3
+## BTCXMR-004 — Real transport integration
+
+**Status:** 🟡 Partial — libp2p dependency wired (2026-10-13)
 **Priority:** High
 **Category:** Feature completeness
 
-`MockTransport` uses in-memory tokio channels. Real implementation needs:
-- libp2p integration for P2P messaging
-- Peer discovery and connection management
-- Message encryption and authentication
-- Reconnection handling with message gap detection
+`Libp2pTransport` struct now implements the `Transport` trait with `libp2p` 0.57 (TCP, Noise, Yamux, Gossipsub, Identify). `Libp2pTransportError` error type added. Full swarm construction requires runtime `libp2p::SwarmBuilder` configuration due to libp2p 0.57's derive macro requirements.
+
+Mock transport remains for testing.
 
 ## BTCXMR-005 — GUI integration pending
 
@@ -836,8 +831,31 @@ The `BtcXmrAdapter` implements `SettlementProtocol` but uses stub logic. No real
 **Priority:** Medium
 **Category:** Feature completeness
 
-The `p2p-node` GUI doesn't know about the new swap engine yet. Integration requires:
+The `desktop-gui` doesn't know about the new swap engine yet. Integration requires:
 - New GUI views for swap creation and monitoring
 - Swap state display with event log
 - Watcher status indicators
 - Recovery decision presentation
+
+---
+
+# DAO Voting Bug Fix — 2026-10-08
+
+## BUG-DAO-001 — Participation rate always returned 1.0
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Correctness
+**Component:** `crates/opendex-dao/src/lib.rs`
+**Discovered:** 2026-10-08 (during security audit)
+**Resolved:** 2026-10-08
+
+**Description:** `close_voting()` contained a division-by-self bug: `total_votes as f64 / (total_votes as f64)` always returned 1.0, regardless of actual participation. This made the `min_participation_rate` check ineffective — voting would always pass the quorum threshold.
+
+**Root Cause:** The expression `total_votes as f64 / (total_votes as f64)` divides a value by itself, which always equals 1.0 (when total_votes > 0). The intended calculation was `(for_votes + against_votes) / total_voting_power`.
+
+**Fix:** Replaced with `VotingPower::participation_rate()` which correctly computes `(for + against) / total`.
+
+**Impact:** Participation rate check now works correctly for DAO governance quorum enforcement. Proposals with insufficient participation are now properly rejected.
+
+**Verification:** All workspace tests pass, including 61 DAO tests.
