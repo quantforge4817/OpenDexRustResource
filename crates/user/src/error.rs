@@ -35,6 +35,8 @@ pub enum UserError {
     InvalidRating,
     /// Password hashing failed.
     PasswordHashError(String),
+    /// Rate limit exceeded.
+    RateLimited,
 }
 
 impl fmt::Display for UserError {
@@ -55,6 +57,7 @@ impl fmt::Display for UserError {
             UserError::SelfReview => write!(f, "cannot review yourself"),
             UserError::InvalidRating => write!(f, "rating must be between 1 and 5"),
             UserError::PasswordHashError(msg) => write!(f, "password hashing failed: {}", msg),
+            UserError::RateLimited => write!(f, "rate limit exceeded, please try again later"),
         }
     }
 }

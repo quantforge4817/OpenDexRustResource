@@ -31,11 +31,32 @@ if [[ ! -f /etc/os-release ]]; then
 fi
 
 . /etc/os-release
-if [[ "$ID" != "ubuntu" ]] || [[ "$VERSION_ID" != "24.04" ]]; then
-    warn "This script is designed for Ubuntu 24.04 LTS. Detected: $ID $VERSION_ID"
-    read -p "Continue anyway? (y/N) " -r
-    [[ "$REPLY" =~ ^[Yy]$ ]] || exit 1
-fi
+# Support Ubuntu 24.04 and Debian 11+
+case "$ID" in
+    ubuntu)
+        if [[ "$VERSION_ID" == "24.04" ]]; then
+            info "Detected Ubuntu 24.04 LTS."
+        else
+            warn "This script is tested on Ubuntu 24.04 LTS. Detected: $ID $VERSION_ID"
+            read -p "Continue anyway? (y/N) " -r
+            [[ "$REPLY" =~ ^[Yy]$ ]] || exit 1
+        fi
+        ;;
+    debian)
+        if [[ "$VERSION_ID" =~ ^1[1-9]\.|^2[0-9]\.|^13\. ]]; then
+            info "Detected Debian $VERSION_ID (supported)."
+        else
+            warn "This script is tested on Debian 11+. Detected: $ID $VERSION_ID"
+            read -p "Continue anyway? (y/N) " -r
+            [[ "$REPLY" =~ ^[Yy]$ ]] || exit 1
+        fi
+        ;;
+    *)
+        warn "This script is designed for Ubuntu 24.04 or Debian 11+. Detected: $ID $VERSION_ID"
+        read -p "Continue anyway? (y/N) " -r
+        [[ "$REPLY" =~ ^[Yy]$ ]] || exit 1
+        ;;
+esac
 
 info "=== OpenDex Testnet VPS Setup ==="
 
@@ -46,6 +67,13 @@ apt-get upgrade -y
 
 # --- Install required packages ---
 info "Installing required packages..."
+
+# Detect SSL library package name (Debian 11 uses libssl1.1, Debian 12+ and Ubuntu use libssl3)
+SSL_PKG="libssl3"
+if [[ "$ID" == "debian" ]] && [[ "$VERSION_ID" =~ ^1[1-9]\. ]]; then
+    SSL_PKG="libssl1.1"
+fi
+
 apt-get install -y \
     nginx \
     certbot \
@@ -57,7 +85,7 @@ apt-get install -y \
     git \
     build-essential \
     pkg-config \
-    libssl3 \
+    "$SSL_PKG" \
     unzip \
     jq
 
@@ -95,20 +123,20 @@ ufw default deny incoming
 ufw default allow outgoing
 
 # SSH
-ufw allow 22/tcp comment "SSH"
+ufw allow 22/tcp
 
 # Web
-ufw allow 80/tcp comment "HTTP"
-ufw allow 443/tcp comment "HTTPS"
+ufw allow 80/tcp
+ufw allow 443/tcp
 
 # P2P node ports
-ufw allow 4001:4003/tcp comment "OpenDex P2P nodes"
+ufw allow 4001:4003/tcp
 
 # Monero stagenet
-ufw allow 18089/tcp comment "Monero stagenet P2P"
+ufw allow 18089/tcp
 
 # Bitcoin testnet
-ufw allow 18333/tcp comment "Bitcoin testnet P2P"
+ufw allow 18333/tcp
 
 # Enable UFW
 ufw --force enable

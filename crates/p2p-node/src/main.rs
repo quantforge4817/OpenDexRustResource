@@ -193,7 +193,15 @@ async fn main() -> Result<()> {
     init_audit_logging(&node_dir)?;
 
     let id_keys = if args.iter().any(|arg| arg == "--new-identity") {
-        identity::Keypair::generate_ed25519()
+        let key = identity::Keypair::generate_ed25519();
+        let bytes = key.to_protobuf_encoding()?;
+        let path = identity_path(&port);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        persistence::write_bytes(&path, &bytes)?;
+        tracing::info!(path = %path.display(), "New identity generated and saved");
+        key
     } else {
         load_or_create_identity(&port)?
     };
@@ -539,6 +547,7 @@ async fn handle_gui_command(
                 sender: local_peer_id.to_string(),
                 payload: serde_json::to_string(&order).unwrap_or_default(),
                 timestamp: chrono::Utc::now().timestamp() as u64,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             if let Err(e) = crate::network::publish_message(swarm, topic, &order_message) {
@@ -568,6 +577,7 @@ async fn handle_gui_command(
                                 sender: local_peer_id.to_string(),
                                 payload: serde_json::to_string(&trade).unwrap_or_default(),
                                 timestamp,
+                                schema_version: protocol::message::SCHEMA_VERSION,
                             };
                             let _ = crate::network::publish_message(swarm, topic, &message);
                             let _ = update_tx.send(GuiUpdate::TradeAdded(trade));
@@ -607,6 +617,7 @@ async fn handle_gui_command(
                         sender: local_peer_id.to_string(),
                         payload: serde_json::to_string(&cancelled).unwrap_or_default(),
                         timestamp: chrono::Utc::now().timestamp() as u64,
+                        schema_version: protocol::message::SCHEMA_VERSION,
                     };
                     let _ = crate::network::publish_message(swarm, topic, &message);
                 }
@@ -724,6 +735,7 @@ async fn handle_gui_command(
                 sender: local_peer_id.to_string(),
                 payload: serde_json::to_string(&change).unwrap_or_default(),
                 timestamp,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
             let _ = crate::network::publish_message(swarm, topic, &message);
             let _ = update_tx.send(GuiUpdate::TradeStateChanged { trade_id, state });

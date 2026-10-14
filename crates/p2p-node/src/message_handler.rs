@@ -80,6 +80,7 @@ pub fn handle_state_request(
         sender: local_peer_id.to_string(),
         payload: serde_json::to_string(&state)?,
         timestamp: chrono::Utc::now().timestamp() as u64,
+        schema_version: protocol::message::SCHEMA_VERSION,
     };
 
     publish_message(swarm, topic, &message)?;
@@ -163,6 +164,7 @@ pub fn handle_order_created(
                     sender: local_peer_id.to_string(),
                     payload: serde_json::to_string(&trade)?,
                     timestamp: chrono::Utc::now().timestamp() as u64,
+                    schema_version: protocol::message::SCHEMA_VERSION,
                 };
 
                 publish_message(swarm, topic, &trade_message)?;
@@ -557,16 +559,39 @@ pub fn handle_gossipsub_message(
         }
     };
 
-    let authenticated_sender = authenticated_peer_id.to_string();
-
-    if !is_authenticated_sender(&msg.sender, authenticated_peer_id) {
+    // H10/M22: Validate schema version
+    if msg.schema_version > protocol::message::MAX_SCHEMA_VERSION {
         tracing::warn!(
-            claimed = %msg.sender,
-            authenticated = %authenticated_sender,
-            "Rejecting message: sender identity mismatch"
+            version = msg.schema_version,
+            max_supported = protocol::message::MAX_SCHEMA_VERSION,
+            "Rejecting message with unsupported schema version"
         );
         return Ok(());
     }
+
+    // H10/M22: Validate message timestamp freshness (reject stale messages)
+    const MAX_MESSAGE_AGE_SECS: u64 = 30;
+    let now = chrono::Utc::now().timestamp() as u64;
+    if now >= msg.timestamp && (now - msg.timestamp) > MAX_MESSAGE_AGE_SECS {
+        tracing::warn!(
+            age_secs = now - msg.timestamp,
+            max_age = MAX_MESSAGE_AGE_SECS,
+            "Rejecting stale message"
+        );
+        return Ok(());
+    } else if msg.timestamp > now && (msg.timestamp - now) > MAX_MESSAGE_AGE_SECS {
+        tracing::warn!(
+            future_secs = msg.timestamp - now,
+            max_age = MAX_MESSAGE_AGE_SECS,
+            "Rejecting message from the future"
+        );
+        return Ok(());
+    }
+
+    // Use the network-authenticated peer ID as the authoritative sender identity.
+    // The msg.sender field is untrusted payload data and must not be used for
+    // authorization — an attacker could forge any sender identity.
+    let authenticated_sender = authenticated_peer_id.to_string();
 
     tracing::debug!("Received OpenDEX message");
     tracing::trace!("{:?}", msg);
@@ -852,6 +877,7 @@ pub fn handle_swarm_event(
                         sender: ctx.local_peer_id.to_string(),
                         payload: "{}".to_string(),
                         timestamp: chrono::Utc::now().timestamp() as u64,
+                        schema_version: protocol::message::SCHEMA_VERSION,
                     };
 
                     publish_message(ctx.swarm, ctx.topic, &request)?;

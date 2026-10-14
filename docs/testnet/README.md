@@ -26,17 +26,39 @@ The testnet deploys:
 │  ┌──────────────┐  ┌──────────────────────────┐ │
 │  │ Monero        │  │  Bitcoin                 │ │
 │  │ Stagenet      │  │  Testnet                 │ │
-│  │ :18080/:18082 │  │  :18332                  │ │
+│  │ :18080/:18083 │  │  :18332                  │ │
 │  └──────────────┘  └──────────────────────────┘ │
 └─────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
 
-- **VPS**: Ubuntu 24.04 LTS, minimum 8GB RAM, 50GB disk
+- **VPS/Home PC**: Ubuntu 24.04 LTS or Debian 11+, minimum 8GB RAM, 12+ CPU cores recommended
+- **Disk space**: 100+ GB free for blockchain data (Monero stagenet + Bitcoin testnet)
+  - **Recommended**: Use a separate `/data` partition (NVMe preferred) for blockchain storage
+  - Blockchain data is stored in `/data/monero-stagenet/` and `/data/bitcoin-testnet/`
+  - If no `/data` partition exists, the scripts will use `/home/<user>/.bitmonero/` and `/home/<user>/.bitcoin/` instead
 - **Domain** (optional): For HTTPS via Let's Encrypt
 - **SSH access** with sudo privileges
 - **Rust toolchain**: Will be auto-installed if missing
+
+### Debian 11 Notes
+
+Debian 11 is fully supported. The scripts automatically detect your OS and adjust package names accordingly. However, pre-built Monero and Bitcoin binaries may have glibc compatibility issues on older Debian versions. If this occurs:
+
+- **Monero**: Install via `sudo apt-get install monero` or compile from source
+- **Bitcoin**: Install via `sudo apt-get install bitcoin-d` or compile from source
+
+The wallet setup script will detect binary failures and provide clear instructions.
+
+### Home Computer Setup
+
+Running on a home computer (e.g., laptop) is supported. Key considerations:
+
+- **Power management**: Disable sleep/hibernate for 24/7 operation
+- **Network**: Home internet may have dynamic IP (use DDNS) and asymmetric bandwidth
+- **Ports**: ISP may block ports 80/443; use 8080/8443 as alternatives
+- **Resources**: Your machine should have at least 8GB RAM and 100GB free disk space
 
 ## Quick Start
 
@@ -82,7 +104,7 @@ sudo bash docs/testnet/setup-nodes.sh [repo-path]
 | Test Node 1 | 4002 | P2P test node 1 |
 | Test Node 2 | 4003 | P2P test node 2 |
 | Monero P2P | 18089 | Monero stagenet P2P |
-| Monero RPC | 18082 | Monero wallet RPC |
+| Monero RPC | 18083 | Monero wallet RPC |
 | Bitcoin RPC | 18332 | Bitcoin testnet RPC |
 | Bitcoin P2P | 18333 | Bitcoin testnet P2P |
 
@@ -197,10 +219,12 @@ journalctl -u opendex-bootstrap -f
 #### Wallet RPCs
 
 ```bash
-curl -X POST http://127.0.0.1:18082/json_rpc \
+# Monero wallet RPC (port 18083, requires /json_rpc path)
+curl -X POST http://127.0.0.1:18083/json_rpc \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"0","method":"get_version"}'
+  -d '{"jsonrpc":"2.0","id":"0","method":"get_height","params":{}}'
 
+# Bitcoin testnet RPC
 bitcoin-cli -testnet getblockcount
 ```
 
@@ -327,9 +351,26 @@ For regulatory compliance information, see:
 - `audit/AUDIT.md` — Security audit report
 - `audit/ESCROW_DESIGN.md` — Escrow mechanism design
 
+## Deployment Status
+
+**Last verified:** 2026-10-14
+
+- **Health check:** 16/16 passed
+- **E2E tests:** 10/10 passed
+- **Node stability:** All 3 nodes running stably
+- **Wallet RPCs:** Monero stagenet ✓, Bitcoin testnet ✓
+
 ## Risks & Limitations
 
 - **Blockchain sync time**: Monero stagenet and Bitcoin testnet require initial sync (10-60 minutes)
-- **Resource usage**: All services on one VPS require ~8GB RAM minimum
+- **Resource usage**: All services on one machine require ~8GB RAM minimum
+- **Storage**: Blockchain data stored on `/data` partition (~100-150GB total with pruning enabled)
+  - Monero stagenet: ~20-40GB with `prune-blockchain=1`
+  - Bitcoin testnet: ~550MB with `prune=550`
 - **Testnet only**: This is for testing purposes — not for production use
-- **Single VPS**: All nodes run on localhost; for multi-VPS, use `--listen-address 0.0.0.0`
+- **Single machine**: All nodes run on localhost; for multi-VPS, use `--listen-address 0.0.0.0`
+
+## Known Issues
+
+- **Monero wallet RPC path**: The Monero wallet RPC requires the `/json_rpc` path (e.g., `http://127.0.0.1:18083/json_rpc`). Requests to the root path will fail with 404.
+- **Node restart order**: Restart services in dependency order: wallet daemons first, then bootstrap node (with 2s delay), then test nodes, then nginx.

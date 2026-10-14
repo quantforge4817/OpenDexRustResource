@@ -24,7 +24,8 @@ struct JsonRpcRequest<T: Serialize> {
     jsonrpc: String,
     id: String,
     method: String,
-    params: T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<T>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,6 +51,12 @@ struct JsonRpcError {
 struct GetBalanceResponse {
     balance: u64,
     unlocked_balance: u64,
+    #[serde(default)]
+    blocks_to_unlock: u64,
+    #[serde(default)]
+    multisig_import_needed: bool,
+    #[serde(default)]
+    time_to_unlock: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,14 +194,14 @@ impl MoneroWalletClient {
         &self,
         method: &str,
     ) -> Result<T> {
-        self.call::<(), T>(method, ()).await
+        self.call::<(), T>(method, None).await
     }
 
     /// Execute a JSON-RPC call with typed params.
     async fn call<P: Serialize, T: serde::de::DeserializeOwned>(
         &self,
         method: &str,
-        params: P,
+        params: Option<P>,
     ) -> Result<T> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -203,10 +210,13 @@ impl MoneroWalletClient {
             params,
         };
 
+        let body = serde_json::to_string(&request).context("Failed to serialize RPC request")?;
+
         let mut builder = self
             .http
             .post(&self.config.rpc_url)
-            .json(&request);
+            .header("Content-Type", "application/json")
+            .body(body);
 
         // Attach basic auth if configured
         if let (Some(user), Some(pass)) = (&self.config.username, &self.config.password) {
@@ -216,9 +226,14 @@ impl MoneroWalletClient {
         let response = builder
             .send()
             .await
-            .context("Failed to send RPC request")?
-            .json::<JsonRpcResponse<T>>()
+            .context("Failed to send RPC request")?;
+
+        let response_text = response
+            .text()
             .await
+            .context("Failed to read RPC response")?;
+
+        let response: JsonRpcResponse<T> = serde_json::from_str(&response_text)
             .context("Failed to parse RPC response")?;
 
         if let Some(err) = response.error {
@@ -232,17 +247,18 @@ impl MoneroWalletClient {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Connect to the Monero wallet RPC service by testing with get_balance.
+    /// Connect to the Monero wallet RPC service by testing with get_height.
+    /// Uses get_height instead of get_balance because it works without a loaded wallet.
     pub async fn connect(&mut self) -> Result<()> {
         tracing::info!(
             url = %self.config.rpc_url,
             "Connecting to Monero wallet RPC"
         );
 
-        match self.get_balance(0).await {
-            Ok(_) => {
+        match self.get_height().await {
+            Ok(height) => {
                 self.state = WalletState::Connected;
-                tracing::info!("Successfully connected to Monero wallet RPC");
+                tracing::info!(block_height = height, "Successfully connected to Monero wallet RPC");
                 Ok(())
             }
             Err(e) => {
@@ -288,10 +304,10 @@ impl MoneroWalletClient {
         let resp: CreateSubaddressResponse = self
             .call(
                 "create_subaddress",
-                Params {
+                Some(Params {
                     account_index,
                     label,
-                },
+                }),
             )
             .await?;
         Ok(resp.address)
@@ -307,7 +323,7 @@ impl MoneroWalletClient {
         }
 
         let resp: GetBalanceResponse =
-            self.call("get_balance", Params { account_index }).await?;
+            self.call("get_balance", Some(Params { account_index })).await?;
         Ok((resp.balance, resp.unlocked_balance))
     }
 
@@ -354,7 +370,7 @@ impl MoneroWalletClient {
         let resp: TransferResponse = self
             .call(
                 "transfer",
-                Params {
+                Some(Params {
                     destinations: vec![TransferDestination {
                         address: destination.to_string(),
                         amount: amount_piconero,
@@ -362,7 +378,7 @@ impl MoneroWalletClient {
                     mixin: 0,
                     payment_id,
                     get_tx_key: Some(true),
-                },
+                }),
             )
             .await
             .context("Monero transfer failed")?;
@@ -389,9 +405,9 @@ impl MoneroWalletClient {
         let resp: GetPaymentsResponse = self
             .call(
                 "get_payments",
-                Params {
+                Some(Params {
                     payment_ids: vec![payment_id.to_string()],
-                },
+                }),
             )
             .await
             .context("Failed to query payments")?;
@@ -417,10 +433,10 @@ impl MoneroWalletClient {
         let resp: GetBulkPaymentsResponse = self
             .call(
                 "get_bulk_payments",
-                Params {
+                Some(Params {
                     payment_ids,
                     min_block_height: _min_block_height,
-                },
+                }),
             )
             .await
             .context("Failed to query bulk payments")?;
@@ -445,11 +461,11 @@ impl MoneroWalletClient {
         let resp: CheckTxKeyResponse = self
             .call(
                 "check_tx_key",
-                Params {
+                Some(Params {
                     tx_id: tx_hash.to_string(),
                     address: address.to_string(),
                     tx_key: None,
-                },
+                }),
             )
             .await
             .context("Failed to check transaction")?;

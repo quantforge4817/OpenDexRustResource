@@ -1,0 +1,25 @@
+[Unit]
+Description=Monero Wallet RPC (Stagenet)
+After=monero-stagenet.service
+Requires=monero-stagenet.service
+
+[Service]
+Type=simple
+User=monero
+Group=monero
+ExecStart=__MONERO_WALLET_RPC_PATH__ \
+  --stagenet \
+  --daemon-address 127.0.0.1:18082 \
+  --rpc-bind-port 18083 \
+  --rpc-access-control-origins * \
+  --non-interactive \
+  --disable-rpc-login \
+  --password "" \
+  --wallet-file /data/monero-stagenet/wallets/opendex-stagenet-wallet
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1504,3 +1504,61 @@ Previously blocked actions are now unblocked by integrating real external librar
 - Unsafe code — **0 `unsafe` blocks** across all 23 crates
 - Hardcoded secrets — **0 found**
 - Unused dependencies — **0** (all previously unused deps wired into production code)
+
+---
+
+# Testnet Deployment — 2026-10-14
+
+## Milestone: First Full Testnet Deployment and Verification
+
+**Date:** 14 October 2026
+
+**Status:** 🟢 GREEN
+
+The complete testnet environment was deployed and verified for the first time with real blockchain RPC services. This is the first integration test of the full system, revealing 8 bugs that were only discoverable by running with real Monero and Bitcoin daemons.
+
+### Testnet Architecture
+
+The testnet deploys on a single VPS:
+
+- **3 P2P nodes** — 1 bootstrap + 2 test nodes running as systemd services
+- **Monero stagenet** — Wallet daemon + wallet-RPC for on-chain XMR operations
+- **Bitcoin testnet** — Bitcoin daemon for on-chain BTC operations
+- **Web portal** — Static informational site served via Nginx
+
+### Bugs Fixed During Deployment
+
+8 bugs were discovered and resolved:
+
+- **BUG-TN-001 (High):** Stale snapshot crash loop in `sync.rs` — changed `anyhow::bail!` to `return Ok(())`
+- **BUG-TN-002 (High):** Monero wallet RPC requires `/json_rpc` path — fixed systemd services and config
+- **BUG-TN-003 (Medium):** Monero `GetBalanceResponse` missing fields — added `blocks_to_unlock`, `multisig_import_needed`, `time_to_unlock`
+- **BUG-TN-004 (Medium):** Bitcoin `getblockcount` returns plain integer — fixed deserialization
+- **BUG-TN-005 (Medium):** JSON-RPC `params` serialized as `null` — changed to `Option<T>` with `skip_serializing_if`
+- **BUG-TN-006 (Medium):** GossipSub forwarder identity mismatch — removed strict forwarder check in mesh mode
+- **BUG-TN-007 (Low):** E2E test script bugs — fixed PeerId grep, Monero port, method names
+- **BUG-TN-008 (Low):** Monero RPC port mismatch in config — changed 18082 to 18083
+
+### Verification Results
+
+- **Health check:** 16/16 passed (all services, ports, RPCs, web portal)
+- **E2E tests:** 10/10 passed (P2P connectivity, wallet RPCs, web portal, node data)
+- **Node stability:** All 3 nodes running stably for 10+ minutes without crashes
+- **Wallet RPCs:** Monero stagenet (height 2228842) ✓, Bitcoin testnet (block 5158824) ✓
+- **Web portal:** HTTP 200 ✓
+- **Identity mismatches:** 0 warnings in node logs
+
+### Key Insight
+
+Integration testing with real blockchain RPC services is essential. These bugs would not have been caught by unit tests with mock RPC clients. The testnet deployment scripts (`docs/testnet/`) provide a repeatable verification process.
+
+### Files Modified
+
+- `crates/p2p-node/src/sync.rs` — Stale snapshot handling
+- `crates/p2p-node/src/wallet_client.rs` — Monero RPC client fixes
+- `crates/p2p-node/src/btc_wallet_client.rs` — Bitcoin RPC client fixes
+- `crates/p2p-node/src/message_handler.rs` — GossipSub identity handling
+- `docs/testnet/systemd/*.service` — Monero `/json_rpc` path
+- `docs/testnet/testnet-config.env` — Monero port fix
+- `docs/testnet/test-results/verification/e2e-test.sh` — Test script fixes
+- `docs/testnet/test-results/verification/health-check.sh` — Health check fixes

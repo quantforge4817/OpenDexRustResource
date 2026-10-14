@@ -23,7 +23,8 @@ struct JsonRpcRequest<T: Serialize> {
     jsonrpc: String,
     id: String,
     method: String,
-    params: T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<T>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -214,14 +215,14 @@ impl BitcoinWalletClient {
         &self,
         method: &str,
     ) -> Result<T> {
-        self.call::<(), T>(method, ()).await
+        self.call::<(), T>(method, None).await
     }
 
     /// Execute a JSON-RPC call with typed params.
     async fn call<P: Serialize, T: serde::de::DeserializeOwned>(
         &self,
         method: &str,
-        params: P,
+        params: Option<P>,
     ) -> Result<T> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -257,17 +258,18 @@ impl BitcoinWalletClient {
     // Public API
     // -----------------------------------------------------------------------
 
-    /// Connect to the Bitcoin wallet RPC service by testing with getbalance.
+    /// Connect to the Bitcoin wallet RPC service by testing with getblockcount.
+    /// Uses getblockcount instead of getbalance because it works without a loaded wallet.
     pub async fn connect(&mut self) -> Result<()> {
         tracing::info!(
             url = %self.config.rpc_url,
             "Connecting to Bitcoin wallet RPC"
         );
 
-        match self.get_balance().await {
-            Ok(_) => {
+        match self.get_block_count().await {
+            Ok(height) => {
                 self.state = BitcoinWalletState::Connected;
-                tracing::info!("Successfully connected to Bitcoin wallet RPC");
+                tracing::info!(block_height = height, "Successfully connected to Bitcoin wallet RPC");
                 Ok(())
             }
             Err(e) => {
@@ -309,9 +311,10 @@ impl BitcoinWalletClient {
     }
 
     /// Get the current blockchain block count.
+    /// Bitcoin's getblockcount returns a plain integer, not an object.
     pub async fn get_block_count(&self) -> Result<u64> {
-        let resp: GetBlockCountResponse = self.call_no_params("getblockcount").await?;
-        Ok(resp.height)
+        let count: u64 = self.call_no_params("getblockcount").await?;
+        Ok(count)
     }
 
     /// Generate a new Bitcoin address for receiving payments.
@@ -332,10 +335,10 @@ impl BitcoinWalletClient {
         let resp: GetNewAddressResponse = self
             .call(
                 "getnewaddress",
-                Params {
+                Some(Params {
                     label,
                     address_type: Some("bech34".to_string()),
-                },
+                }),
             )
             .await?;
         Ok(resp.address)
@@ -382,7 +385,7 @@ impl BitcoinWalletClient {
         let resp: SendToAddressResponse = self
             .call(
                 "sendtoaddress",
-                Params {
+                Some(Params {
                     address: destination.to_string(),
                     amount: amount_btc,
                     comment,
@@ -391,7 +394,7 @@ impl BitcoinWalletClient {
                     replaceable: Some(true),
                     conf_target: Some(6),
                     estimate_mode: Some("economical".to_string()),
-                },
+                }),
             )
             .await
             .context("Bitcoin transfer failed")?;
@@ -441,10 +444,10 @@ impl BitcoinWalletClient {
         let resp: GetReceivedByAddressResponse = self
             .call(
                 "getreceivedbyaddress",
-                Params {
+                Some(Params {
                     address: address.to_string(),
                     minconf: min_confirmations,
-                },
+                }),
             )
             .await?;
         Ok(resp.amount)
@@ -474,10 +477,10 @@ impl BitcoinWalletClient {
         let resp: GetTransactionResponse = self
             .call(
                 "gettransaction",
-                Params {
+                Some(Params {
                     txid: txid.to_string(),
                     include_watchonly: Some(true),
-                },
+                }),
             )
             .await?;
         Ok(resp)
@@ -512,7 +515,7 @@ impl BitcoinWalletClient {
         }
 
         let resp: ListUnspentResponse = self
-            .call("listunspent", Params { minconf: min_confirmations })
+            .call("listunspent", Some(Params { minconf: min_confirmations }))
             .await?;
         Ok(resp.entries)
     }

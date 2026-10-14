@@ -387,6 +387,7 @@ impl MultisigEscrow {
         vout: u32,
         amount: u64,
         taker_address: &str,
+        miner_fee_sats: u64,
     ) -> Result<Transaction, SettlementError> {
         let deposit_txid = bitcoin::Txid::from_str(deposit_txid_hex)
             .map_err(|e| SettlementError::MultisigError(format!("Invalid txid: {}", e)))?;
@@ -398,6 +399,16 @@ impl MultisigEscrow {
             .map_err(|_| SettlementError::MultisigError("Address not valid for network".to_string()))?;
 
         let amount = Amount::from_sat(amount);
+        let fee = Amount::from_sat(miner_fee_sats);
+
+        // Ensure the fee doesn't exceed the total amount
+        if fee > amount {
+            return Err(SettlementError::MultisigError(
+                format!("Miner fee ({}) exceeds escrow amount ({})", miner_fee_sats, amount),
+            ));
+        }
+
+        let taker_value = amount - fee;
 
         let tx = Transaction {
             version: bitcoin::transaction::Version(2),
@@ -412,7 +423,7 @@ impl MultisigEscrow {
                 witness: Witness::new(),
             }],
             output: vec![TxOut {
-                value: amount,
+                value: taker_value,
                 script_pubkey: taker_addr.script_pubkey(),
             }],
         };
@@ -520,11 +531,12 @@ impl MultisigManager {
         maker_key: EscrowKeyPair,
         taker_key: EscrowKeyPair,
         network: Network,
-    ) -> &MultisigEscrow {
+    ) -> Result<&MultisigEscrow, SettlementError> {
         let escrow = MultisigEscrow::new(trade_id, &maker_key, &taker_key, network);
         self.keys.insert(trade_id, (maker_key, taker_key));
-        self.escrows.insert(trade_id, escrow);
-        self.escrows.get(&trade_id).unwrap()
+        let _ = self.escrows.insert(trade_id, escrow);
+        Ok(self.escrows.get(&trade_id)
+            .ok_or_else(|| SettlementError::MultisigError("Escrow setup failed".to_string()))?)
     }
 
     pub fn get_escrow(&self, trade_id: Uuid) -> Option<&MultisigEscrow> {
@@ -564,10 +576,11 @@ impl MultisigManager {
         let escrow = self.get_escrow(trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
-        let tx = escrow.create_payout_tx(deposit_txid, vout, amount, taker_address)?;
+        let tx = escrow.create_payout_tx(deposit_txid, vout, amount, taker_address, 2000)?;
         let partial_sig = escrow.sign_payout(&tx, maker_key, "maker".to_string(), amount)?;
 
-        let escrow_mut = self.escrows.get_mut(&trade_id).unwrap();
+        let escrow_mut = self.escrows.get_mut(&trade_id)
+            .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.payout_tx_hex = Some(MultisigEscrow::tx_to_hex(&tx));
         escrow_mut.maker_partial_sig = Some(partial_sig.clone());
         escrow_mut.state = MultisigEscrowState::MakerSigned;
@@ -598,7 +611,8 @@ impl MultisigManager {
 
         let partial_sig = escrow.sign_payout(&tx, taker_key, "taker".to_string(), amount)?;
 
-        let escrow_mut = self.escrows.get_mut(&trade_id).unwrap();
+        let escrow_mut = self.escrows.get_mut(&trade_id)
+            .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.taker_partial_sig = Some(partial_sig.clone());
 
         Ok(partial_sig)
@@ -645,10 +659,11 @@ impl MultisigManager {
         let escrow = self.get_escrow(trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
-        let tx = escrow.create_payout_tx(deposit_txid, vout, amount, maker_address)?;
+        let tx = escrow.create_payout_tx(deposit_txid, vout, amount, maker_address, 2000)?;
         let tx_hex = MultisigEscrow::tx_to_hex(&tx);
 
-        let escrow_mut = self.escrows.get_mut(&trade_id).unwrap();
+        let escrow_mut = self.escrows.get_mut(&trade_id)
+            .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.return_tx_hex = Some(tx_hex.clone());
 
         Ok(tx_hex)
@@ -704,7 +719,7 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        let escrow = manager.setup_escrow(trade_id, maker, taker, test_network());
+        let escrow = manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
         assert_eq!(escrow.trade_id, trade_id);
         assert!(matches!(escrow.state, MultisigEscrowState::AwaitingDeposit));
         assert!(escrow.deposit_address_str().starts_with("tb1q"));
@@ -716,7 +731,7 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        manager.setup_escrow(trade_id, maker, taker, test_network());
+        manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
         manager.record_deposit(
             trade_id,
             "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
@@ -742,7 +757,7 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        manager.setup_escrow(trade_id, maker, taker, test_network());
+        manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
         assert!(matches!(
             manager.get_escrow(trade_id).unwrap().state,
             MultisigEscrowState::AwaitingDeposit
@@ -804,10 +819,12 @@ mod tests {
             0,
             100_000_000,
             &taker_addr,
+            2000,
         ).unwrap();
         assert_eq!(tx.input.len(), 1);
         assert_eq!(tx.output.len(), 1);
-        assert_eq!(tx.output[0].value.to_sat(), 100_000_000);
+        // Taker receives amount minus miner fee
+        assert_eq!(tx.output[0].value.to_sat(), 100_000_000 - 2000);
     }
 
     #[test]
@@ -819,7 +836,7 @@ mod tests {
         let deposit_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
         let amount = 100_000_000u64;
 
-        manager.setup_escrow(trade_id, maker.clone(), taker.clone(), test_network());
+        manager.setup_escrow(trade_id, maker.clone(), taker.clone(), test_network()).unwrap();
         manager.record_deposit(trade_id, deposit_txid.to_string(), 0, amount).unwrap();
 
         // Use the escrow's own deposit address as payout target
@@ -836,5 +853,70 @@ mod tests {
 
         let escrow = manager.get_escrow(trade_id).unwrap();
         assert!(matches!(escrow.state, MultisigEscrowState::ReadyToBroadcast));
+    }
+
+    #[test]
+    fn miner_fee_deducted_from_payout() {
+        let maker = EscrowKeyPair::new();
+        let taker = EscrowKeyPair::new();
+        let trade_id = Uuid::new_v4();
+        let escrow = MultisigEscrow::new(trade_id, &maker, &taker, Network::Testnet);
+        let taker_addr = escrow.deposit_address_str();
+        let tx = escrow.create_payout_tx(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            0,
+            100_000_000,
+            &taker_addr,
+            5000,
+        ).unwrap();
+        // Taker receives amount minus miner fee
+        assert_eq!(tx.output[0].value.to_sat(), 100_000_000 - 5000);
+    }
+
+    #[test]
+    fn miner_fee_exceeds_amount_rejected() {
+        let maker = EscrowKeyPair::new();
+        let taker = EscrowKeyPair::new();
+        let trade_id = Uuid::new_v4();
+        let escrow = MultisigEscrow::new(trade_id, &maker, &taker, Network::Testnet);
+        let taker_addr = escrow.deposit_address_str();
+        let result = escrow.create_payout_tx(
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            0,
+            1000,
+            &taker_addr,
+            2000,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Miner fee"));
+    }
+
+    #[test]
+    fn missing_escrow_returns_error() {
+        let mut manager = MultisigManager::new();
+        let non_existent = Uuid::new_v4();
+        let result = manager.maker_sign_payout(
+            non_existent,
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            0,
+            100_000_000,
+            "tb1qtest",
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn missing_escrow_return_tx_returns_error() {
+        let mut manager = MultisigManager::new();
+        let non_existent = Uuid::new_v4();
+        let result = manager.create_return_tx(
+            non_existent,
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+            0,
+            100_000_000,
+            "tb1qtest",
+        );
+        assert!(result.is_err());
     }
 }

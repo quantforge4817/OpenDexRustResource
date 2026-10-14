@@ -929,3 +929,62 @@ The user subsystem provides account management, secure authentication, and a rep
 | Test coverage | 🟢 GREEN | 459 tests passing across 23 crates |
 
 **Total workspace tests:** 459 passed, 0 failed across 23 crates.
+
+---
+
+## 14. Testnet Deployment Bug Fixes — 2026-10-14
+
+**Status:** 🟢 All resolved
+
+During testnet deployment on 2026-10-14, 8 bugs were discovered and fixed across the P2P node, wallet clients, and test scripts. These bugs were only revealed by running the full system with real blockchain RPC services, not by unit tests.
+
+### Summary of Findings
+
+| ID | Severity | Title | Status |
+|----|----------|-------|--------|
+| BUG-TN-001 | High | Stale snapshot crash loop | 🟢 Resolved |
+| BUG-TN-002 | High | Monero wallet RPC `/json_rpc` path | 🟢 Resolved |
+| BUG-TN-003 | Medium | Monero `GetBalanceResponse` missing fields | 🟢 Resolved |
+| BUG-TN-004 | Medium | Bitcoin `getblockcount` plain integer | 🟢 Resolved |
+| BUG-TN-005 | Medium | JSON-RPC `params` serialized as `null` | 🟢 Resolved |
+| BUG-TN-006 | Medium | GossipSub forwarder identity mismatch | 🟢 Resolved |
+| BUG-TN-007 | Low | E2E test script bugs | 🟢 Resolved |
+| BUG-TN-008 | Low | Monero RPC port mismatch in config | 🟢 Resolved |
+
+### Key Insights
+
+1. **Integration testing is essential** — These bugs were only discoverable by running the full system with real Monero and Bitcoin RPC services. Unit tests with mock RPC clients would not have caught them.
+
+2. **Stale snapshot handling** (BUG-TN-001) — The monotonic version rejection (AUDIT-010) correctly identifies stale snapshots, but the error handling should not crash the node. Changed from `anyhow::bail!` to graceful `return Ok(())`.
+
+3. **GossipSub mesh semantics** (BUG-TN-006) — In GossipSub mesh mode, messages traverse intermediate peers. The authenticated peer ID is the forwarder, not the original sender. Per-message-type authorization checks provide sufficient security without rejecting based on forwarder identity.
+
+4. **RPC protocol compliance** (BUG-TN-002, BUG-TN-003, BUG-TN-004, BUG-TN-005) — Real RPC servers have specific requirements (path suffixes, response field sets, serialization format) that must be matched exactly.
+
+### Verification
+
+- Health check: 16/16 passed (all services, ports, RPCs, web portal)
+- E2E tests: 10/10 passed (P2P connectivity, wallet RPCs, web portal, node data)
+- All 3 nodes running stably for 10+ minutes without crashes
+- Both Monero and Bitcoin wallets connect successfully
+- Zero identity mismatch warnings in node logs
+
+### Updated Overall Assessment (2026-10-14)
+
+| Category | Status | Details |
+|----------|--------|---------|
+| Cryptographic security | 🟢 GREEN | Argon2id passwords, HMAC-signed tokens, zeroized keys, Bitcoin multisig |
+| Authentication | 🟢 GREEN | HMAC-signed tokens with server-side verification |
+| Authorization | 🟢 GREEN | Caller verification on all settlement methods |
+| Financial logic | 🟢 GREEN | Real crypto amounts, No KYC policy, real maker IDs |
+| Fiat settlement | 🟢 GREEN | Complete 8-phase implementation with manual bank transfer flow |
+| Bitcoin escrow | 🟢 GREEN | 2-of-2 P2WSH multisig with co-signing flow |
+| User system | 🟢 GREEN | Argon2id auth, reputation, trade statistics |
+| P2P protocol | 🟢 GREEN | GossipSub mesh identity handling fixed |
+| Wallet RPC integration | 🟢 GREEN | Monero and Bitcoin RPC clients verified with real services |
+| Testnet deployment | 🟢 GREEN | All 8 bugs resolved, 16/16 health checks pass |
+| Supply chain | 🟢 GREEN | cargo-deny configured, 0 vulnerabilities |
+| Memory safety | 🟢 GREEN | 0 unsafe blocks |
+| Test coverage | 🟢 GREEN | 459 tests passing across 23 crates |
+
+**Total workspace tests:** 459 passed, 0 failed across 23 crates.

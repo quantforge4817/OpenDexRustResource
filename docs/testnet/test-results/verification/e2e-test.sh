@@ -91,7 +91,7 @@ info "Testing order book synchronization..."
 log ""
 
 # Get bootstrap node's peer ID
-BOOTSTRAP_PEER_ID=$(journalctl -u opendex-bootstrap --no-pager -n 50 | grep -oP 'PeerId: \K[A-Za-z0-9]+' | head -1)
+BOOTSTRAP_PEER_ID=$(journalctl -u opendex-bootstrap --no-pager -n 50 | grep -oP 'peer_id=\K[A-Za-z0-9]+' | head -1)
 if [[ -n "$BOOTSTRAP_PEER_ID" ]]; then
     pass "Bootstrap PeerId: $BOOTSTRAP_PEER_ID" | tee -a "$LOG_FILE"
     ((PASS++)) || true
@@ -106,8 +106,8 @@ info "Testing wallet RPC connectivity..."
 log ""
 
 # Monero wallet RPC
-MONERO_RESPONSE=$(curl -s --max-time 5 http://127.0.0.1:18082/json_rpc \
-    -d '{"jsonrpc":"2.0","id":"e2e-test","method":"getheight","params":{}}' \
+MONERO_RESPONSE=$(curl -s --max-time 5 http://127.0.0.1:18083/json_rpc \
+    -d '{"jsonrpc":"2.0","id":"e2e-test","method":"get_height","params":{}}' \
     -H 'Content-Type: application/json' 2>/dev/null || echo "")
 if echo "$MONERO_RESPONSE" | grep -q '"result"'; then
     MONERO_HEIGHT=$(echo "$MONERO_RESPONSE" | jq -r '.result.height // "unknown"' 2>/dev/null || echo "unknown")
@@ -180,8 +180,8 @@ goto_report() {
         echo "|----------|--------|"
         echo "| Systemd services | $(journalctl -u opendex-bootstrap --no-pager -n 1 -q && echo '✅' || echo '❌') |"
         echo "| P2P connectivity | $(journalctl -u opendex-testnode1 --no-pager -n 50 2>/dev/null | grep -q 'Connected' && echo '✅' || echo '⚠️') |"
-        echo "| Wallet RPCs | $(curl -s --max-time 2 http://127.0.0.1:18082/json_rpc &>/dev/null && echo '✅' || echo '❌') |"
-        echo "| Web portal | (curl -s --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null | grep -qE '200\|301' && echo '✅' || echo '❌') |"
+        echo "| Wallet RPCs | $(curl -s --max-time 2 http://127.0.0.1:18083/json_rpc &>/dev/null && echo '✅' || echo '❌') |"
+        echo "| Web portal | $(curl -s --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null | grep -qE '200|301' && echo '✅' || echo '❌') |"
         echo ""
         echo "## Raw Log"
         echo ""

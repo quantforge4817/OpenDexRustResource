@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Errors specific to fiat operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FiatError {
     /// Payment not found by the adapter.
     PaymentNotFound,
@@ -66,7 +66,7 @@ impl std::fmt::Display for FiatError {
 impl std::error::Error for FiatError {}
 
 /// Errors from the settlement engine.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SettlementError {
     /// Underlying fiat error.
     Fiat(FiatError),
@@ -80,6 +80,8 @@ pub enum SettlementError {
     MultisigError(String),
     /// Caller is not authorized to perform this operation.
     Unauthorized,
+    /// Rate limit exceeded.
+    RateLimited,
 }
 
 impl std::fmt::Display for SettlementError {
@@ -93,6 +95,7 @@ impl std::fmt::Display for SettlementError {
             }
             SettlementError::MultisigError(msg) => write!(f, "multisig error: {}", msg),
             SettlementError::Unauthorized => write!(f, "unauthorized: caller not permitted"),
+            SettlementError::RateLimited => write!(f, "rate limit exceeded, please try again later"),
         }
     }
 }

@@ -13,6 +13,30 @@ use crate::error::SettlementError;
 use crate::multisig::{EscrowKeyPair, MultisigManager, PartialSignature};
 use crate::settlement_engine::CryptoWallet;
 
+/// Panic-safe RwLock read access with lock poisoning recovery.
+macro_rules! rlock_read {
+    ($lock:expr) => {
+        $lock.read().unwrap_or_else(|poisoned| {
+            tracing::warn!(
+                "Recovered from poisoned RwLock (read) — another thread panicked while holding the lock"
+            );
+            poisoned.into_inner()
+        })
+    };
+}
+
+/// Panic-safe RwLock write access with lock poisoning recovery.
+macro_rules! rlock_write {
+    ($lock:expr) => {
+        $lock.write().unwrap_or_else(|poisoned| {
+            tracing::warn!(
+                "Recovered from poisoned RwLock (write) — another thread panicked while holding the lock"
+            );
+            poisoned.into_inner()
+        })
+    };
+}
+
 // ─── Monero Multisig Mode ───────────────────────────────────────────────────
 
 /// Distinguishes simulated Monero multisig from real native Monero multisig.
@@ -165,7 +189,7 @@ impl SimulatedXmrWallet {
 
     /// Get the escrow state for a trade.
     pub fn get_escrow_state(&self, trade_id: TradeId) -> Option<XmrEscrowState> {
-        self.escrow.read().unwrap().get(&trade_id.0).cloned()
+        rlock_read!(&self.escrow).get(&trade_id.0).cloned()
     }
 }
 
@@ -229,7 +253,7 @@ impl CryptoWallet for SimulatedXmrWallet {
             amount,
         };
 
-        self.escrow.write().unwrap().insert(trade_id.0, state);
+        rlock_write!(&self.escrow).insert(trade_id.0, state);
 
         Ok(tx_hash)
     }
@@ -284,12 +308,12 @@ impl NativeXmrWallet {
 
     /// Get the escrow state for a trade.
     pub fn get_escrow_state(&self, trade_id: TradeId) -> Option<XmrEscrowState> {
-        self.escrow.read().unwrap().get(&trade_id.0).cloned()
+        rlock_read!(&self.escrow).get(&trade_id.0).cloned()
     }
 
     /// Check if the wallet is connected.
     pub fn is_connected(&self) -> bool {
-        self.wallet_info.read().unwrap().is_some()
+        rlock_read!(&self.wallet_info).is_some()
     }
 }
 
@@ -309,12 +333,12 @@ impl XmrWalletAdapterTrait for NativeXmrWallet {
             unlocked: true,
             multisig_mode: MultisigMode::NativeMonero,
         };
-        *self.wallet_info.write().unwrap() = Some(info.clone());
+        *rlock_write!(&self.wallet_info) = Some(info.clone());
         Ok(info)
     }
 
     async fn get_address(&self) -> Result<String, WalletError> {
-        let info = self.wallet_info.read().unwrap();
+        let info = rlock_read!(&self.wallet_info);
         match info.as_ref() {
             Some(w) => Ok(w.address.clone()),
             None => Err(WalletError::ConnectionFailed(
@@ -372,7 +396,7 @@ impl CryptoWallet for NativeXmrWallet {
             amount,
         };
 
-        self.escrow.write().unwrap().insert(trade_id.0, state);
+        rlock_write!(&self.escrow).insert(trade_id.0, state);
 
         Ok(tx_hash)
     }
@@ -467,17 +491,17 @@ impl BtcWalletAdapter {
 
     /// Get the escrow state for a trade.
     pub fn get_escrow_state(&self, trade_id: TradeId) -> Option<BtcEscrowState> {
-        self.escrow.read().unwrap().get(&trade_id.0).cloned()
+        rlock_read!(&self.escrow).get(&trade_id.0).cloned()
     }
 
     /// Get the multisig deposit address for a trade.
     pub fn get_deposit_address(&self, trade_id: TradeId) -> Option<String> {
-        self.escrow.read().unwrap().get(&trade_id.0).map(|s| s.escrow_address.clone())
+        rlock_read!(&self.escrow).get(&trade_id.0).map(|s| s.escrow_address.clone())
     }
 
     /// Get the witness script hex for a trade.
     pub fn get_witness_script_hex(&self, trade_id: TradeId) -> Option<String> {
-        self.escrow.read().unwrap().get(&trade_id.0).map(|s| s.witness_script_hex.clone())
+        rlock_read!(&self.escrow).get(&trade_id.0).map(|s| s.witness_script_hex.clone())
     }
 
     /// Record that the maker has deposited funds to the multisig address.
@@ -488,11 +512,11 @@ impl BtcWalletAdapter {
         vout: u32,
         amount: u64,
     ) -> Result<(), SettlementError> {
-        self.multisig_manager.write().unwrap()
+        rlock_write!(&self.multisig_manager)
             .record_deposit(trade_id.0, deposit_txid.clone(), vout, amount)
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
-        if let Some(state) = self.escrow.write().unwrap().get_mut(&trade_id.0) {
+        if let Some(state) = rlock_write!(&self.escrow).get_mut(&trade_id.0) {
             state.deposit_txid = deposit_txid;
             state.deposit_vout = vout;
             state.amount = amount;
@@ -509,7 +533,7 @@ impl BtcWalletAdapter {
         taker_address: &str,
     ) -> Result<String, SettlementError> {
         let (amount, deposit_txid, vout) = {
-            let escrow = self.escrow.read().unwrap();
+            let escrow = rlock_read!(&self.escrow);
             let state = escrow.get(&trade_id.0)
                 .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
@@ -521,7 +545,7 @@ impl BtcWalletAdapter {
             ));
         }
 
-        let partial_sig = self.multisig_manager.write().unwrap()
+        let partial_sig = rlock_write!(&self.multisig_manager)
             .maker_sign_payout(trade_id.0, &deposit_txid, vout, amount, taker_address)
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
@@ -540,7 +564,7 @@ impl BtcWalletAdapter {
             .map_err(|e| SettlementError::CryptoWalletError(format!("Invalid maker signature: {}", e)))?;
 
         let (amount, deposit_txid, vout) = {
-            let escrow = self.escrow.read().unwrap();
+            let escrow = rlock_read!(&self.escrow);
             let state = escrow.get(&trade_id.0)
                 .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
@@ -554,33 +578,33 @@ impl BtcWalletAdapter {
 
         // Store the maker's signature in the escrow
         {
-            let mut manager = self.multisig_manager.write().unwrap();
+            let mut manager = rlock_write!(&self.multisig_manager);
             let escrow = manager.get_escrow_mut(trade_id.0)
                 .ok_or_else(|| SettlementError::CryptoWalletError("Multisig escrow not found".to_string()))?;
             escrow.maker_partial_sig = Some(maker_sig);
         }
 
         // Taker signs
-        let taker_sig = self.multisig_manager.write().unwrap()
+        let taker_sig = rlock_write!(&self.multisig_manager)
             .taker_sign_payout(trade_id.0, &deposit_txid, vout, amount)
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
         // Store the taker's signature
         {
-            let mut manager = self.multisig_manager.write().unwrap();
+            let mut manager = rlock_write!(&self.multisig_manager);
             let escrow = manager.get_escrow_mut(trade_id.0)
                 .ok_or_else(|| SettlementError::CryptoWalletError("Multisig escrow not found".to_string()))?;
             escrow.taker_partial_sig = Some(taker_sig);
         }
 
         // Finalize: combine both signatures into a complete transaction
-        let final_tx_hex = self.multisig_manager.write().unwrap()
+        let final_tx_hex = rlock_write!(&self.multisig_manager)
             .finalize_payout(trade_id.0)
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
         // Store the final transaction hex
         {
-            let mut escrow = self.escrow.write().unwrap();
+            let mut escrow = rlock_write!(&self.escrow);
             if let Some(state) = escrow.get_mut(&trade_id.0) {
                 state.payout_tx_hex = Some(final_tx_hex.clone());
             }
@@ -596,7 +620,7 @@ impl BtcWalletAdapter {
         maker_return_address: &str,
     ) -> Result<String, SettlementError> {
         let (amount, deposit_txid, vout) = {
-            let escrow = self.escrow.read().unwrap();
+            let escrow = rlock_read!(&self.escrow);
             let state = escrow.get(&trade_id.0)
                 .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
@@ -608,12 +632,12 @@ impl BtcWalletAdapter {
             ));
         }
 
-        let tx_hex = self.multisig_manager.write().unwrap()
+        let tx_hex = rlock_write!(&self.multisig_manager)
             .create_return_tx(trade_id.0, &deposit_txid, vout, amount, maker_return_address)
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
         {
-            let mut escrow = self.escrow.write().unwrap();
+            let mut escrow = rlock_write!(&self.escrow);
             if let Some(state) = escrow.get_mut(&trade_id.0) {
                 state.return_tx_hex = Some(tx_hex.clone());
             }
@@ -642,13 +666,13 @@ impl CryptoWallet for BtcWalletAdapter {
         let taker_key = EscrowKeyPair::new();
 
         // Set up the multisig escrow
-        let mut manager = self.multisig_manager.write().unwrap();
+        let mut manager = rlock_write!(&self.multisig_manager);
         let escrow = manager.setup_escrow(
             trade_id.0,
             maker_key.clone(),
             taker_key.clone(),
             self.network,
-        );
+        )?;
 
         let deposit_address = escrow.deposit_address_str();
 
@@ -665,7 +689,7 @@ impl CryptoWallet for BtcWalletAdapter {
             return_tx_hex: None,
         };
 
-        self.escrow.write().unwrap().insert(trade_id.0, state);
+        rlock_write!(&self.escrow).insert(trade_id.0, state);
         drop(manager);
 
         // Return the deposit address so the maker can send BTC to it
@@ -685,7 +709,7 @@ impl CryptoWallet for BtcWalletAdapter {
         // This method returns the stored payout tx hex if available,
         // otherwise indicates that co-signing is required.
 
-        let guard = self.escrow.read().unwrap();
+        let guard = rlock_read!(&self.escrow);
         let escrow_state = guard.get(&trade_id.0)
             .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
 
@@ -712,7 +736,7 @@ impl CryptoWallet for BtcWalletAdapter {
         &self,
         trade_id: TradeId,
     ) -> Result<String, SettlementError> {
-        let guard = self.escrow.read().unwrap();
+        let guard = rlock_read!(&self.escrow);
         let escrow_state = guard.get(&trade_id.0)
             .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
 

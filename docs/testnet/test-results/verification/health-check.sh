@@ -55,14 +55,14 @@ info "Checking listening ports..."
 check "Bootstrap node port 4001" "ss -tlnp | grep -q ':4001 '"
 check "Test node 1 port 4002" "ss -tlnp | grep -q ':4002 '"
 check "Test node 2 port 4003" "ss -tlnp | grep -q ':4003 '"
-check "Monero RPC port 18082" "ss -tlnp | grep -q ':18082 '"
+check "Monero RPC port 18083" "ss -tlnp | grep -q ':18083 '"
 check "Bitcoin RPC port 18332" "ss -tlnp | grep -q ':18332 '"
 check "Nginx HTTP port 80" "ss -tlnp | grep -q ':80 '"
 echo ""
 
 # --- Wallet RPC checks ---
 info "Checking wallet RPC endpoints..."
-check "Monero wallet RPC responds" "curl -s --max-time 5 http://127.0.0.1:18082/json_rpc -d '{\"jsonrpc\":\"2.0\",\"id\":\"test\",\"method\":\"getbalance\",\"params\":{\"wallet_file\":\"test\"}}' -H 'Content-Type: application/json' 2>/dev/null | grep -q 'result\|error'"
+check "Monero wallet RPC responds" "curl -s --max-time 5 http://127.0.0.1:18083/json_rpc -d '{\"jsonrpc\":\"2.0\",\"id\":\"test\",\"method\":\"get_height\",\"params\":{}}' -H 'Content-Type: application/json' 2>/dev/null | grep -q 'result\|error'"
 check "Bitcoin RPC responds" "bitcoin-cli -testnet -rpcuser=opendex -rpcpassword=opendex_testnet getblockcount 2>/dev/null"
 echo ""
 

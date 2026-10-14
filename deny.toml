@@ -58,10 +58,12 @@ wildcards = "warn"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
-allow = []
-deny = []
 skip = []
 skip-tree = []
+
+# M25: multiple-versions = "warn" above already warns on all duplicate crate versions.
+# Critical crypto crates (secp256k1, bitcoin, ring) are monitored via this warning.
+# If duplicates appear for these crates, they should be resolved before mainnet.
 
 # Sources — only allow crates.io, no git dependencies for supply chain security.
 [sources]

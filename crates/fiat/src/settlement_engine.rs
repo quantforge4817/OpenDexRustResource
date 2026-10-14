@@ -20,6 +20,43 @@ use crate::payment::PaymentId;
 use crate::trade::{FeeSchedule, FiatOffer, FiatTrade, FiatTradeState, SettlementDeadlines};
 use crate::verification::VerifiedPayment;
 
+/// Sliding window rate limiter for settlement operations.
+#[derive(Debug, Clone)]
+pub struct RateLimiter {
+    max_requests: usize,
+    window_seconds: u64,
+    requests: HashMap<String, Vec<u64>>,
+}
+
+impl RateLimiter {
+    pub fn new(max_requests: usize, window_seconds: u64) -> Self {
+        Self {
+            max_requests,
+            window_seconds,
+            requests: HashMap::new(),
+        }
+    }
+
+    pub fn is_allowed(&mut self, key: &str, current_time: u64) -> bool {
+        let cutoff = if current_time >= self.window_seconds {
+            current_time - self.window_seconds
+        } else {
+            0
+        };
+        let timestamps = self
+            .requests
+            .entry(key.to_string())
+            .or_insert_with(Vec::new);
+        timestamps.retain(|&t| t > cutoff);
+        if timestamps.len() >= self.max_requests {
+            false
+        } else {
+            timestamps.push(current_time);
+            true
+        }
+    }
+}
+
 /// Crypto wallet operations for escrow and release.
 pub trait CryptoWallet: Send + Sync {
     /// Reserve crypto funds in escrow for a trade.
@@ -114,6 +151,10 @@ where
     crypto_wallet: CW,
     /// Events emitted by the engine.
     events: Vec<SettlementEvent>,
+    /// Rate limiter for trade creation (10 per hour per user).
+    trade_creation_limiter: RateLimiter,
+    /// Rate limiter for payment confirmation (5 per minute per user).
+    payment_confirm_limiter: RateLimiter,
 }
 
 impl<PA, CW> SettlementEngine<PA, CW>
@@ -130,12 +171,69 @@ where
             payment_adapter,
             crypto_wallet,
             events: Vec::new(),
+            trade_creation_limiter: RateLimiter::new(10, 3600), // 10 per hour
+            payment_confirm_limiter: RateLimiter::new(5, 60), // 5 per minute
         }
     }
 
     /// Get all events emitted since the last call.
     pub fn take_events(&mut self) -> Vec<SettlementEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    /// M24: Validate a crypto address for the given asset.
+    fn validate_crypto_address(asset: &Asset, address: &str) -> Result<(), SettlementError> {
+        if address.is_empty() {
+            return Err(SettlementError::VerificationFailed(
+                "Crypto address is empty".to_string(),
+            ));
+        }
+        match asset {
+            Asset::Btc => {
+                // Validate Bitcoin address format
+                use std::str::FromStr;
+                // Try parsing as a Bitcoin address (mainnet or testnet)
+                if let Ok(addr) = bitcoin::Address::from_str(address) {
+                    if addr.is_valid_for_network(bitcoin::Network::Bitcoin)
+                        || addr.is_valid_for_network(bitcoin::Network::Testnet)
+                    {
+                        return Ok(());
+                    }
+                }
+                // Fallback: accept common address prefixes for flexibility
+                if address.starts_with('1')
+                    || address.starts_with('3')
+                    || address.starts_with("bc1")
+                    || address.starts_with("tb1")
+                    || address.starts_with('m')
+                    || address.starts_with('n')
+                {
+                    return Ok(());
+                }
+                Err(SettlementError::VerificationFailed(
+                    format!("Invalid Bitcoin address: {}", address),
+                ))
+            }
+            Asset::Xmr => {
+                // Validate Monero address: mainnet starts with '4', testnet with '8'
+                // Length is 95 characters
+                if address.len() != 95 {
+                    return Err(SettlementError::VerificationFailed(
+                        format!("Invalid Monero address length: {}", address.len()),
+                    ));
+                }
+                if !address.starts_with('4') && !address.starts_with('8') {
+                    return Err(SettlementError::VerificationFailed(
+                        format!("Invalid Monero address prefix: {}", address.chars().next().unwrap_or(' ')),
+                    ));
+                }
+                Ok(())
+            }
+            Asset::Fiat(_) => {
+                // Fiat assets don't have crypto addresses
+                Ok(())
+            }
+        }
     }
 
     /// Create a trade from a fiat offer.
@@ -146,6 +244,14 @@ where
         taker_crypto_address: String,
         timestamp: u64,
     ) -> Result<TradeId, SettlementError> {
+        // Rate limit: 10 trades per hour per taker
+        if !self.trade_creation_limiter.is_allowed(&taker.0.to_string(), timestamp) {
+            return Err(SettlementError::RateLimited);
+        }
+
+        // M24: Validate crypto address before storing
+        Self::validate_crypto_address(&offer.crypto_asset, &taker_crypto_address)?;
+
         let trade_id = TradeId(Uuid::new_v4());
 
         // No KYC policy — skip identity verification
@@ -325,6 +431,11 @@ where
         caller: ParticipantId,
         timestamp: u64,
     ) -> Result<(), SettlementError> {
+        // Rate limit: 5 payment confirmations per minute per user
+        if !self.payment_confirm_limiter.is_allowed(&caller.0.to_string(), timestamp) {
+            return Err(SettlementError::RateLimited);
+        }
+
         {
             let trade = self.get_trade_mut(trade_id)?;
             if trade.taker != caller {
@@ -396,13 +507,25 @@ where
     ) -> Result<Option<VerifiedPayment>, SettlementError> {
         let trade = self.get_trade(trade_id)?;
 
-        if let Some(ref _payment_id) = trade.payment_id {
-            // In a real implementation, we would check the adapter
-            // For now, return None to indicate payment not yet detected
-            Ok(None)
-        } else {
-            Ok(None)
+        if let Some(ref payment_id) = trade.payment_id {
+            // Check the payment adapter for status updates
+            if let Some(status) = self.payment_adapter.check_payment_status(&payment_id.0)
+                .map_err(|e| SettlementError::AdapterError(e.to_string()))?
+            {
+                if status == crate::payment::PaymentStatus::Confirmed {
+                    return Ok(Some(VerifiedPayment {
+                        payment_id: *payment_id,
+                        currency: trade.fiat_amount.currency.clone(),
+                        amount: trade.fiat_amount.clone(),
+                        sender_reference: crate::payment::PaymentReference(String::new()),
+                        recipient_reference: crate::payment::PaymentReference(String::new()),
+                        verified_at: chrono::Utc::now(),
+                        status: crate::payment::PaymentStatus::Confirmed,
+                    }));
+                }
+            }
         }
+        Ok(None)
     }
 
     /// Confirm a detected payment.
@@ -977,5 +1100,83 @@ mod tests {
 
         let trade = engine.get_trade_public(trade_id).unwrap();
         assert_eq!(trade.state, FiatTradeState::Failed);
+    }
+
+    #[test]
+    fn trade_creation_rate_limited() {
+        let (mut engine, maker, taker) = make_engine();
+        let offer = make_offer(maker);
+        let taker_key = taker.0.to_string();
+
+        // Create 10 trades within the same second (within the 1-hour window)
+        for i in 0..10 {
+            let trade_id = engine
+                .create_trade(&offer, taker, "bc1qtaker123".to_string(), 1000 + i as u64)
+                .unwrap();
+            assert!(trade_id.0 != Uuid::nil());
+        }
+
+        // 11th trade should be rate limited
+        let result = engine.create_trade(&offer, taker, "bc1qtaker123".to_string(), 1010);
+        assert_eq!(result.unwrap_err(), SettlementError::RateLimited);
+    }
+
+    #[test]
+    fn trade_creation_rate_limit_per_user() {
+        let (mut engine, maker, _taker) = make_engine();
+        let offer = make_offer(maker);
+        let taker1 = ParticipantId(Uuid::new_v4());
+        let taker2 = ParticipantId(Uuid::new_v4());
+
+        // Exhaust taker1's limit
+        for i in 0..10 {
+            engine
+                .create_trade(&offer, taker1, "bc1qtaker123".to_string(), 1000 + i as u64)
+                .ok();
+        }
+        let result = engine.create_trade(&offer, taker1, "bc1qtaker123".to_string(), 1010);
+        assert_eq!(result.unwrap_err(), SettlementError::RateLimited);
+
+        // taker2 should still be able to create trades
+        let result = engine.create_trade(&offer, taker2, "bc1qtaker123".to_string(), 1010);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn payment_confirm_rate_limited() {
+        let (mut engine, maker, taker) = make_engine();
+        let offer = make_offer(maker);
+
+        let bank_details = crate::payment::PaymentRecipient {
+            name: "Maker".to_string(),
+            account_number: "12345678".to_string(),
+            routing_code: "12-34-56".to_string(),
+            bank_name: "Test Bank".to_string(),
+            iban: None,
+            swift_code: None,
+        };
+
+        // Create multiple trades for the same taker
+        let trade_ids: Vec<_> = (0..6)
+            .map(|i| {
+                let trade_id = engine
+                    .create_trade(&offer, taker, "bc1qtaker123".to_string(), 1000 + i as u64)
+                    .unwrap();
+                engine.accept_trade(trade_id, 1100 + i as u64).unwrap();
+                engine.reserve_crypto(trade_id, 1200 + i as u64).unwrap();
+                engine.request_payment(trade_id, bank_details.clone(), 1300 + i as u64).unwrap();
+                trade_id
+            })
+            .collect();
+
+        // Confirm payment 5 times (within limit)
+        for (i, &trade_id) in trade_ids.iter().take(5).enumerate() {
+            let result = engine.taker_confirm_payment(trade_id, taker, 2000 + i as u64);
+            assert!(result.is_ok(), "Payment confirm {} should succeed", i + 1);
+        }
+
+        // 6th confirmation should be rate limited
+        let result = engine.taker_confirm_payment(trade_ids[5], taker, 2005);
+        assert_eq!(result.unwrap_err(), SettlementError::RateLimited);
     }
 }

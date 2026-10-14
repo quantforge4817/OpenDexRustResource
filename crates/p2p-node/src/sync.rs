@@ -250,11 +250,7 @@ pub fn apply_snapshot(
             last_accepted_version = order_book.snapshot_version(),
             "Rejecting stale snapshot"
         );
-        anyhow::bail!(
-            "StateResponse version {} is not newer than last accepted version {}",
-            state.version,
-            order_book.snapshot_version()
-        );
+        return Ok(());
     }
 
     tracing::info!(

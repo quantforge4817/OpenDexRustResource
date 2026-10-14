@@ -37,6 +37,16 @@ pub trait PaymentAdapter: Send + Sync {
         &self,
         payment: &Self::Payment,
     ) -> Result<VerifiedPayment, Self::Error>;
+
+    /// Check payment status by payment ID (for automatic detection).
+    fn check_payment_status(
+        &self,
+        payment_id: &uuid::Uuid,
+    ) -> Result<Option<PaymentStatus>, Self::Error> {
+        // Default implementation: not supported
+        let _ = payment_id;
+        Ok(None)
+    }
 }
 
 // ─── Mock Payment Provider ──────────────────────────────────────────────────

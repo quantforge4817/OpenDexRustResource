@@ -18,6 +18,58 @@ type HmacSha256 = Hmac<Sha256>;
 use crate::error::UserError;
 use crate::user::{UserAccount, UserId, Username};
 
+/// Sliding window rate limiter.
+///
+/// Tracks request timestamps per key and enforces a maximum number of
+/// requests within a time window. Old entries are pruned on each check.
+#[derive(Debug, Clone)]
+pub struct RateLimiter {
+    /// Maximum number of requests allowed per window.
+    max_requests: usize,
+    /// Window duration in seconds.
+    window_seconds: u64,
+    /// Per-key request timestamps (Unix epoch seconds).
+    requests: HashMap<String, Vec<u64>>,
+}
+
+impl RateLimiter {
+    /// Create a new rate limiter.
+    pub fn new(max_requests: usize, window_seconds: u64) -> Self {
+        Self {
+            max_requests,
+            window_seconds,
+            requests: HashMap::new(),
+        }
+    }
+
+    /// Check whether a request from the given key is allowed.
+    ///
+    /// Returns `true` if the request is within the rate limit, `false` otherwise.
+    /// If allowed, the timestamp is recorded.
+    pub fn is_allowed(&mut self, key: &str, current_time: u64) -> bool {
+        let cutoff = if current_time >= self.window_seconds {
+            current_time - self.window_seconds
+        } else {
+            0
+        };
+
+        let timestamps = self
+            .requests
+            .entry(key.to_string())
+            .or_insert_with(Vec::new);
+
+        // Prune old entries outside the window
+        timestamps.retain(|&t| t > cutoff);
+
+        if timestamps.len() >= self.max_requests {
+            false
+        } else {
+            timestamps.push(current_time);
+            true
+        }
+    }
+}
+
 /// Authentication token returned after successful login.
 ///
 /// The token is an HMAC-SHA256 signed string containing:
@@ -137,6 +189,8 @@ pub struct AuthService {
     tokens: HashMap<String, AuthToken>,
     /// HMAC signing key for token integrity.
     signing_key: Vec<u8>,
+    /// Rate limiter for login attempts (5 per minute per username).
+    login_rate_limiter: RateLimiter,
 }
 
 impl AuthService {
@@ -149,6 +203,7 @@ impl AuthService {
             username_index: HashMap::new(),
             tokens: HashMap::new(),
             signing_key: key.to_vec(),
+            login_rate_limiter: RateLimiter::new(5, 60), // 5 attempts per minute
         }
     }
 
@@ -159,6 +214,7 @@ impl AuthService {
             username_index: HashMap::new(),
             tokens: HashMap::new(),
             signing_key: key,
+            login_rate_limiter: RateLimiter::new(5, 60), // 5 attempts per minute
         }
     }
 
@@ -207,6 +263,12 @@ impl AuthService {
         username: &str,
         password: &str,
     ) -> Result<LoginResult, UserError> {
+        // Rate limit check: 5 attempts per minute per username
+        let now = chrono::Utc::now().timestamp() as u64;
+        if !self.login_rate_limiter.is_allowed(username, now) {
+            return Err(UserError::RateLimited);
+        }
+
         let user_id = *self
             .username_index
             .get(username)
@@ -435,5 +497,80 @@ mod tests {
         auth.login("alice", "password123").unwrap();
         let user = auth.get_user_by_username("alice").unwrap();
         assert!(user.last_login.is_some());
+    }
+
+    #[test]
+    fn rate_limiter_allows_within_limit() {
+        let mut limiter = RateLimiter::new(3, 60);
+        assert!(limiter.is_allowed("user1", 1000));
+        assert!(limiter.is_allowed("user1", 1001));
+        assert!(limiter.is_allowed("user1", 1002));
+    }
+
+    #[test]
+    fn rate_limiter_blocks_over_limit() {
+        let mut limiter = RateLimiter::new(3, 60);
+        assert!(limiter.is_allowed("user1", 1000));
+        assert!(limiter.is_allowed("user1", 1001));
+        assert!(limiter.is_allowed("user1", 1002));
+        // 4th request should be blocked
+        assert!(!limiter.is_allowed("user1", 1003));
+    }
+
+    #[test]
+    fn rate_limiter_window_expiry() {
+        let mut limiter = RateLimiter::new(2, 60);
+        assert!(limiter.is_allowed("user1", 1000));
+        assert!(limiter.is_allowed("user1", 1001));
+        assert!(!limiter.is_allowed("user1", 1002));
+        // After window expires, should allow again
+        assert!(limiter.is_allowed("user1", 1061));
+    }
+
+    #[test]
+    fn rate_limiter_per_user_isolation() {
+        let mut limiter = RateLimiter::new(2, 60);
+        assert!(limiter.is_allowed("user1", 1000));
+        assert!(limiter.is_allowed("user1", 1001));
+        assert!(!limiter.is_allowed("user1", 1002));
+        // Different user should not be affected
+        assert!(limiter.is_allowed("user2", 1000));
+        assert!(limiter.is_allowed("user2", 1001));
+    }
+
+    #[test]
+    fn login_rate_limited_after_5_attempts() {
+        let mut auth = AuthService::new();
+        auth.register("alice".to_string(), "password123".to_string())
+            .unwrap();
+
+        // 5 successful logins should succeed
+        for _ in 0..5 {
+            let result = auth.login("alice", "password123");
+            assert!(result.is_ok(), "Login should succeed within limit");
+        }
+
+        // 6th attempt should be rate limited
+        let result = auth.login("alice", "password123");
+        assert_eq!(result.unwrap_err(), UserError::RateLimited);
+    }
+
+    #[test]
+    fn login_rate_limit_per_username() {
+        let mut auth = AuthService::new();
+        auth.register("alice".to_string(), "password123".to_string())
+            .unwrap();
+        auth.register("bob".to_string(), "password123".to_string())
+            .unwrap();
+
+        // Exhaust Alice's limit
+        for _ in 0..5 {
+            auth.login("alice", "password123").ok();
+        }
+        assert_eq!(auth.login("alice", "password123").unwrap_err(), UserError::RateLimited);
+
+        // Bob should still be able to login
+        let result = auth.login("bob", "password123");
+        assert!(result.is_ok());
     }
 }

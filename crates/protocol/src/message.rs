@@ -4,6 +4,11 @@ use uuid::Uuid;
 pub const PRICE_SCALE: u64 = 100_000_000;
 pub const AMOUNT_SCALE: u64 = 100_000_000;
 
+/// Current protocol schema version.
+pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum supported schema version (reject older/unsupported).
+pub const MAX_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum MessageType {
     PeerAnnouncement,
@@ -26,6 +31,9 @@ pub struct Message {
     pub sender: String,
     pub payload: String,
     pub timestamp: u64,
+    /// Protocol schema version for forward/backward compatibility.
+    /// Current version is 1.
+    pub schema_version: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]

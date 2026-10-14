@@ -46,17 +46,36 @@ fi
 info "=== OpenDex P2P Node Deployment ==="
 info "Repository: $REPO_PATH"
 
+# --- Ensure opendex user can write to the repository ---
+# The repo may be owned by another user; add opendex to that group or chown target/
+REPO_OWNER=$(stat -c '%U' "$REPO_PATH")
+if [[ "$REPO_OWNER" != "opendex" ]]; then
+    info "Repository owned by '$REPO_OWNER', ensuring opendex has write access..."
+    # Add opendex to the repo owner's group if it exists and opendex is not already a member
+    if ! id -nG opendex | grep -qw "$REPO_OWNER"; then
+        usermod -aG "$REPO_OWNER" opendex 2>/dev/null || true
+    fi
+    # Ensure target/ directory is group-writable
+    if [[ -d "$REPO_PATH/target" ]]; then
+        chmod -R g+rwX "$REPO_PATH/target"
+    fi
+    # Ensure the repo root is group-writable so target/ can be created if missing
+    chmod g+rwX "$REPO_PATH"
+    info "Write access granted for opendex user."
+fi
+
 # --- Check for Rust toolchain ---
-if ! command -v cargo &>/dev/null; then
-    info "Rust not found. Installing via rustup..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
+# Install Rust for the opendex user so cargo is available when building
+if ! sudo -u opendex command -v cargo &>/dev/null; then
+    info "Rust not found for opendex user. Installing via rustup..."
+    sudo -u opendex bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+    info "Rust installed for opendex user."
 fi
 
 # --- Build p2p-node binary ---
 info "Building p2p-node binary (release mode)..."
 cd "$REPO_PATH"
-sudo -u opendex cargo build --release -p p2p-node
+sudo -u opendex bash -c '. "$HOME/.cargo/env" && cargo build --release -p p2p-node'
 P2P_BINARY="$REPO_PATH/target/release/p2p-node"
 
 if [[ ! -f "$P2P_BINARY" ]]; then
@@ -67,34 +86,29 @@ info "Binary built: $P2P_BINARY"
 
 # --- Generate bootstrap identity ---
 info "Generating bootstrap node identity..."
-sudo -u opendex "$P2P_BINARY" --port 4001 --new-identity --help &
-BOOTSTRAP_PID=$!
-sleep 2
-kill $BOOTSTRAP_PID 2>/dev/null || true
-wait $BOOTSTRAP_PID 2>/dev/null || true
+PEER_ID_OUTPUT=$(sudo -u opendex timeout 5 "$P2P_BINARY" --port 4001 --new-identity 2>&1 || true)
 
 # Read the PeerId from the identity file
 IDENTITY_FILE="/home/opendex/.opendex/identity-4001.key"
 if [[ ! -f "$IDENTITY_FILE" ]]; then
     error "Bootstrap identity not created at $IDENTITY_FILE"
+    info "Output was: $PEER_ID_OUTPUT"
     exit 1
 fi
+info "Bootstrap identity created at $IDENTITY_FILE"
 
-# Extract PeerId by running the node briefly and capturing the log
-info "Extracting bootstrap PeerId..."
-PEER_ID_OUTPUT=$(sudo -u opendex timeout 3 "$P2P_BINARY" --port 4001 2>&1 || true)
-BOOTSTRAP_PEER_ID=$(echo "$PEER_ID_OUTPUT" | grep -oP 'Peer ID:\s*\K[1-9A-HJ-NP-Za-km-z]+' | head -1)
+# Extract PeerId from the node output
+BOOTSTRAP_PEER_ID=$(echo "$PEER_ID_OUTPUT" | grep -oP '1[1-9A-HJ-NP-Za-km-z]{50,}' | head -1)
 
 if [[ -z "$BOOTSTRAP_PEER_ID" ]]; then
-    # Fallback: try to extract from logs
-    PEER_ID_OUTPUT=$(sudo -u opendex timeout 5 "$P2P_BINARY" --port 4001 2>&1 || true)
-    BOOTSTRAP_PEER_ID=$(echo "$PEER_ID_OUTPUT" | grep -oP '12D3[1-9A-HJ-NP-Za-km-z]{50,}' | head -1)
+    # Fallback: try broader pattern
+    BOOTSTRAP_PEER_ID=$(echo "$PEER_ID_OUTPUT" | grep -oP 'Peer ID[=:]\s*\K[1-9A-HJ-NP-Za-km-z]+' | head -1)
 fi
 
 if [[ -z "$BOOTSTRAP_PEER_ID" ]]; then
-    error "Could not extract bootstrap PeerId. Please check the node logs."
+    error "Could not extract bootstrap PeerId from output."
+    info "Output was: $PEER_ID_OUTPUT"
     info "You can find it by running: sudo -u opendex $P2P_BINARY --port 4001"
-    info "Then look for 'PeerId' in the output."
     exit 1
 fi
 
@@ -108,15 +122,19 @@ sed -i "s/# BOOTSTRAP_PEER_ID=.*/BOOTSTRAP_PEER_ID=${BOOTSTRAP_PEER_ID}/" \
 # --- Configure systemd services ---
 info "Configuring systemd services..."
 
-# Bootstrap node
-cp "${SCRIPT_DIR}/systemd/opendex-bootstrap.service" /etc/systemd/system/
+# Replace placeholders in all service files: binary path and bootstrap PeerId
+P2P_BINARY_PATH="$REPO_PATH/target/release/p2p-node"
 
-# Test node 1 — replace placeholder with actual PeerId
-sed "s/__BOOTSTRAP_PEER_ID__/${BOOTSTRAP_PEER_ID}/g" \
+# Bootstrap node — replace binary path placeholder
+sed "s|__P2P_BINARY__|${P2P_BINARY_PATH}|g" \
+    "${SCRIPT_DIR}/systemd/opendex-bootstrap.service" > /etc/systemd/system/opendex-bootstrap.service
+
+# Test node 1 — replace binary path and bootstrap PeerId
+sed "s|__P2P_BINARY__|${P2P_BINARY_PATH}|g; s/__BOOTSTRAP_PEER_ID__/${BOOTSTRAP_PEER_ID}/g" \
     "${SCRIPT_DIR}/systemd/opendex-testnode1.service" > /etc/systemd/system/opendex-testnode1.service
 
-# Test node 2 — replace placeholder with actual PeerId
-sed "s/__BOOTSTRAP_PEER_ID__/${BOOTSTRAP_PEER_ID}/g" \
+# Test node 2 — replace binary path and bootstrap PeerId
+sed "s|__P2P_BINARY__|${P2P_BINARY_PATH}|g; s/__BOOTSTRAP_PEER_ID__/${BOOTSTRAP_PEER_ID}/g" \
     "${SCRIPT_DIR}/systemd/opendex-testnode2.service" > /etc/systemd/system/opendex-testnode2.service
 
 # Reload systemd

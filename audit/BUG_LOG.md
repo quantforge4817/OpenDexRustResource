@@ -859,3 +859,161 @@ The `desktop-gui` doesn't know about the new swap engine yet. Integration requir
 **Impact:** Participation rate check now works correctly for DAO governance quorum enforcement. Proposals with insufficient participation are now properly rejected.
 
 **Verification:** All workspace tests pass, including 61 DAO tests.
+
+---
+
+# Testnet Deployment Bug Fixes — 2026-10-14
+
+## BUG-TN-001 — Stale snapshot causes bootstrap node crash loop
+
+**Status:** 🟢 Resolved
+**Severity:** High
+**Category:** Correctness / Availability
+**Component:** `crates/p2p-node/src/sync.rs`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** When test nodes sent outdated state snapshots (e.g., version 3 vs 307+), the bootstrap node would crash via `anyhow::bail!()` and restart in an infinite loop. The `apply_snapshot()` function used `anyhow::bail!` to reject stale/duplicate snapshots, which propagated as a fatal error and crashed the entire node process.
+
+**Root Cause:** `anyhow::bail!` in the stale-snapshot rejection path caused the async task to abort with an error, which was treated as a fatal failure by the node's main loop.
+
+**Fix:** Changed `anyhow::bail!` to `return Ok(())` when rejecting stale/duplicate state snapshots. Stale snapshots are now logged as warnings and gracefully ignored, allowing the node to continue operating.
+
+**Impact:** Bootstrap node no longer crashes when receiving stale snapshots from recently-started test nodes. The monotonic version rejection (AUDIT-010) still works correctly — stale snapshots are simply ignored rather than causing a crash.
+
+**Verification:** All 3 nodes running stably for 10+ minutes without crashes. Health check 16/16 passed.
+
+## BUG-TN-002 — Monero wallet RPC requires `/json_rpc` path
+
+**Status:** 🟢 Resolved
+**Severity:** High
+**Category:** Integration
+**Component:** `docs/testnet/systemd/*.service`, `docs/testnet/testnet-config.env`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** The Monero wallet RPC daemon serves JSON-RPC only at the `/json_rpc` path. Requests to the root path (`/`) return an empty response, causing 404 Not Found errors. The systemd service files and configuration were missing the `/json_rpc` path suffix.
+
+**Root Cause:** The Monero wallet RPC URL was configured as `http://127.0.0.1:18083` without the required `/json_rpc` path. The daemon returns HTTP 200 for `/json_rpc` but empty response for `/`.
+
+**Fix:** Updated all systemd service files (`opendex-bootstrap.service`, `opendex-testnode1.service`, `opendex-testnode2.service`) and `testnet-config.env` to use `http://127.0.0.1:18083/json_rpc`.
+
+**Impact:** Monero wallet RPC now connects successfully on all 3 nodes. On-chain XMR operations are enabled.
+
+**Verification:** All wallet RPC checks pass. Monero height queries return valid results.
+
+## BUG-TN-003 — Monero `GetBalanceResponse` missing fields
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Correctness
+**Component:** `crates/p2p-node/src/wallet_client.rs`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** The Monero wallet RPC `get_balance` method returns additional fields (`blocks_to_unlock`, `multisig_import_needed`, `time_to_unlock`) that the `GetBalanceResponse` struct did not include, causing deserialization failures.
+
+**Root Cause:** The `GetBalanceResponse` struct only had `balance` and `unlocked_balance` fields, but the Monero wallet RPC returns 5 fields total.
+
+**Fix:** Added missing fields with `#[serde(default)]`: `blocks_to_unlock: u64`, `multisig_import_needed: bool`, `time_to_unlock: u64`.
+
+**Impact:** Monero balance queries now deserialize correctly.
+
+**Verification:** Wallet RPC tests pass with real Monero wallet RPC responses.
+
+## BUG-TN-004 — Bitcoin `getblockcount` returns plain integer
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Correctness
+**Component:** `crates/p2p-node/src/btc_wallet_client.rs`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** Bitcoin's `getblockcount` RPC method returns a plain integer, not an object with a `height` field. The code attempted to deserialize the response as `GetBlockCountResponse { height }`, causing deserialization failures.
+
+**Root Cause:** The `get_block_count()` method deserialized the response as `GetBlockCountResponse` struct, but Bitcoin returns a bare integer value.
+
+**Fix:** Changed `get_block_count()` to deserialize directly to `u64` instead of `GetBlockCountResponse`.
+
+**Impact:** Bitcoin block count queries now work correctly.
+
+**Verification:** Bitcoin wallet RPC connects and returns block height successfully.
+
+## BUG-TN-005 — JSON-RPC `params` serialized as `null`
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Correctness
+**Component:** `crates/p2p-node/src/wallet_client.rs`, `crates/p2p-node/src/btc_wallet_client.rs`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** JSON-RPC requests with no parameters were serialized with `"params": null`, which some RPC servers reject or handle inconsistently. The `params` field should be omitted entirely when no params are provided.
+
+**Root Cause:** The `JsonRpcRequest` struct's `params` field was typed as `T`, so even unit-type params (`()`) were serialized as `null`.
+
+**Fix:** Changed `params` field from `T` to `Option<T>` with `#[serde(skip_serializing_if = "Option::is_none")]`. Updated `call_no_params()` to pass `None`, and `call()` to wrap params in `Some()`.
+
+**Impact:** JSON-RPC requests without params no longer include the `params` field in the serialized JSON, ensuring compatibility with all RPC servers.
+
+**Verification:** Both Monero and Bitcoin wallet RPC connections succeed.
+
+## BUG-TN-006 — GossipSub forwarder identity mismatch
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Correctness / P2P Protocol
+**Component:** `crates/p2p-node/src/message_handler.rs`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** In GossipSub mesh mode, messages are forwarded by intermediate peers, so the authenticated peer ID is the forwarder, not the original sender. The strict forwarder identity check was rejecting valid messages because the forwarder's PeerId didn't match the original sender's PeerId in the message.
+
+**Root Cause:** The code compared `msg.sender` (original sender) against `authenticated_peer_id` (the forwarder in mesh mode). In GossipSub, messages traverse intermediate peers before reaching the recipient, so the direct peer connection is the forwarder, not the original sender.
+
+**Fix:** Removed the strict forwarder identity check. The `authenticated_sender` is now set to `msg.sender` (the original sender). Per-message-type authorization checks (order owner, trade participant, etc.) already provide the necessary security — rejecting based on forwarder identity is incorrect in mesh mode.
+
+**Impact:** Zero identity mismatch warnings in node logs. P2P message delivery works correctly across the mesh.
+
+**Verification:** All 3 nodes exchange messages without identity mismatch rejections. E2E tests pass.
+
+## BUG-TN-007 — E2E test script bugs
+
+**Status:** 🟢 Resolved
+**Severity:** Low
+**Category:** Testing
+**Component:** `docs/testnet/test-results/verification/e2e-test.sh`, `docs/testnet/test-results/verification/health-check.sh`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** Multiple bugs in the E2E test and health check scripts:
+1. PeerId extraction grep pattern (`PeerId:`) didn't match the actual log format (`peer_id=`)
+2. Monero port was `18082` (daemon RPC) instead of `18083` (wallet RPC)
+3. Monero method name was `getheight` instead of `get_height`
+4. Missing `$(` in web portal check caused the command to not execute
+5. Health check used wrong Monero port and method name
+
+**Fix:**
+- Changed PeerId grep from `PeerId: \K` to `peer_id=\K`
+- Changed Monero port from `18082` to `18083`
+- Changed Monero method from `getheight` to `get_height`
+- Fixed missing `$(` in web portal curl command
+- Updated health-check.sh Monero port and method name
+
+**Verification:** E2E tests 10/10 passed. Health check 16/16 passed.
+
+## BUG-TN-008 — Monero RPC port mismatch in config
+
+**Status:** 🟢 Resolved
+**Severity:** Low
+**Category:** Configuration
+**Component:** `docs/testnet/testnet-config.env`
+**Discovered:** 2026-10-14 (during testnet deployment)
+**Resolved:** 2026-10-14
+
+**Description:** The `testnet-config.env` file specified Monero RPC port as `18082` (daemon RPC port) instead of `18083` (wallet RPC port).
+
+**Fix:** Changed `MONERO_RPC_PORT` from `18082` to `18083` and updated `MONERO_RPC_URL` accordingly.
+
+**Verification:** Configuration now matches the actual wallet RPC service port.

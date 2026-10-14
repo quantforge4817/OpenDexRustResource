@@ -156,7 +156,8 @@ async fn two_nodes_connect_and_exchange_gossipsub_messages() {
         message_type: MessageType::OrderCreated,
         sender: peer_a.to_string(),
         payload: serde_json::to_string(&order).expect("serialize order"),
-        timestamp: 1,
+        timestamp: chrono::Utc::now().timestamp() as u64,
+        schema_version: protocol::message::SCHEMA_VERSION,
     };
 
     let encoded = serde_json::to_vec(&message).expect("serialize message");

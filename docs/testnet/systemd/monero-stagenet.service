@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=monero
 Group=monero
-ExecStart=/usr/local/bin/monerod \
+ExecStart=__MONEROD_PATH__ \
   --stagenet \
-  --data-dir /home/monero/.bitmonero/stagenet \
+  --data-dir /data/monero-stagenet \
   --rpc-bind-port 18082 \
   --p2p-bind-port 18089 \
   --non-interactive \

@@ -107,6 +107,7 @@ pub async fn handle_command(
                 sender: local_peer_id.to_string(),
                 payload: serde_json::to_string(&order)?,
                 timestamp: chrono::Utc::now().timestamp() as u64,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             match publish_message(swarm, topic, &order_message) {
@@ -152,6 +153,7 @@ pub async fn handle_command(
                         sender: local_peer_id.to_string(),
                         payload: serde_json::to_string(&trade)?,
                         timestamp,
+                        schema_version: protocol::message::SCHEMA_VERSION,
                     };
 
                     match publish_message(swarm, topic, &message) {
@@ -215,6 +217,7 @@ pub async fn handle_command(
                 sender: local_peer_id.to_string(),
                 payload: serde_json::to_string(&change)?,
                 timestamp,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             match publish_message(swarm, topic, &message) {
@@ -249,6 +252,7 @@ pub async fn handle_command(
                         sender: local_peer_id.to_string(),
                         payload: serde_json::to_string(&cancelled)?,
                         timestamp: chrono::Utc::now().timestamp() as u64,
+                        schema_version: protocol::message::SCHEMA_VERSION,
                     };
 
                     publish_message(swarm, topic, &message)?;
@@ -342,6 +346,7 @@ pub async fn handle_command(
                 sender: maker,
                 payload: serde_json::to_string(&offer)?,
                 timestamp: now,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             publish_message(swarm, topic, &message)?;
@@ -409,6 +414,7 @@ pub async fn handle_command(
                 sender: taker,
                 payload: serde_json::to_string(&trade)?,
                 timestamp: now,
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             publish_message(swarm, topic, &message)?;
@@ -493,6 +499,7 @@ pub async fn handle_command(
                     sender: local_peer_id.to_string(),
                     payload: serde_json::to_string(&change)?,
                     timestamp: now,
+                    schema_version: protocol::message::SCHEMA_VERSION,
                 };
 
                 publish_message(swarm, topic, &message)?;
@@ -514,6 +521,7 @@ pub async fn handle_command(
                     sender: local_peer_id.to_string(),
                     payload: serde_json::to_string(&cancelled)?,
                     timestamp: chrono::Utc::now().timestamp() as u64,
+                    schema_version: protocol::message::SCHEMA_VERSION,
                 };
 
                 publish_message(swarm, topic, &message)?;

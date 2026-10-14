@@ -1,16 +1,18 @@
 [Unit]
 Description=OpenDex Test Node 1
-After=network.target opendex-bootstrap.service
+After=network.target opendex-bootstrap.service monero-wallet-rpc.service
 
 [Service]
 Type=simple
 User=opendex
 Group=opendex
-ExecStart=/home/opendex/opendex/target/release/p2p-node \
+ExecStart=__P2P_BINARY__ \
   --port 4002 \
   --peer /ip4/127.0.0.1/tcp/4001/p2p/__BOOTSTRAP_PEER_ID__ \
-  --monero-rpc http://127.0.0.1:18082 \
-  --btc-rpc http://127.0.0.1:18332
+  --monero-rpc http://127.0.0.1:18083/json_rpc \
+  --btc-rpc http://127.0.0.1:18332 \
+  --btc-rpc-user opendex \
+  --btc-rpc-pass opendex_testnet
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

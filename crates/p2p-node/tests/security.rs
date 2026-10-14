@@ -89,7 +89,8 @@ fn test_message(message_type: MessageType, sender: &str, payload: String) -> Mes
         message_type,
         sender: sender.to_string(),
         payload,
-        timestamp: 1,
+        timestamp: chrono::Utc::now().timestamp() as u64,
+        schema_version: protocol::message::SCHEMA_VERSION,
     }
 }
 
@@ -772,5 +773,198 @@ async fn handler_rejects_forged_cancellation_trader_without_mutating_state() {
     assert!(
         order_book.is_order_active(&order_id),
         "forged cancellation must not remove another trader's order"
+    );
+}
+
+#[test]
+fn message_schema_version_constant() {
+    assert_eq!(protocol::message::SCHEMA_VERSION, 1);
+    assert_eq!(protocol::message::MAX_SCHEMA_VERSION, 1);
+}
+
+#[tokio::test]
+async fn handler_rejects_stale_message() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    // Create a message with a timestamp 60 seconds in the past
+    let stale_timestamp = chrono::Utc::now().timestamp() as u64 - 60;
+    let order = test_order(&authenticated_peer.to_string());
+    let message = Message {
+        message_type: MessageType::OrderCreated,
+        sender: authenticated_peer.to_string(),
+        payload: serde_json::to_string(&order).unwrap(),
+        timestamp: stale_timestamp,
+        schema_version: protocol::message::SCHEMA_VERSION,
+    };
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-stale-test");
+
+    let mut order_book = OrderBook::new(temp_path("stale-orders"));
+    let mut trade_book = TradeBook::new(temp_path("stale-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("stale-balances"));
+    let mut pending_trade_states = HashMap::new();
+    let mut p2p_offers = P2POfferBook::new();
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
+    };
+    handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    // Stale message should be silently rejected — order book unchanged
+    assert!(
+        order_book.active_orders().is_empty(),
+        "stale message must not add order"
+    );
+}
+
+#[tokio::test]
+async fn handler_rejects_future_message() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    // Create a message with a timestamp 60 seconds in the future
+    let future_timestamp = chrono::Utc::now().timestamp() as u64 + 60;
+    let order = test_order(&authenticated_peer.to_string());
+    let message = Message {
+        message_type: MessageType::OrderCreated,
+        sender: authenticated_peer.to_string(),
+        payload: serde_json::to_string(&order).unwrap(),
+        timestamp: future_timestamp,
+        schema_version: protocol::message::SCHEMA_VERSION,
+    };
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-future-test");
+
+    let mut order_book = OrderBook::new(temp_path("future-orders"));
+    let mut trade_book = TradeBook::new(temp_path("future-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("future-balances"));
+    let mut pending_trade_states = HashMap::new();
+    let mut p2p_offers = P2POfferBook::new();
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
+    };
+    handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    assert!(
+        order_book.active_orders().is_empty(),
+        "future message must not add order"
+    );
+}
+
+#[tokio::test]
+async fn handler_rejects_unsupported_schema_version() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    let order = test_order(&authenticated_peer.to_string());
+    let message = Message {
+        message_type: MessageType::OrderCreated,
+        sender: authenticated_peer.to_string(),
+        payload: serde_json::to_string(&order).unwrap(),
+        timestamp: chrono::Utc::now().timestamp() as u64,
+        schema_version: 99, // Unsupported version
+    };
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-schema-test");
+
+    let mut order_book = OrderBook::new(temp_path("schema-orders"));
+    let mut trade_book = TradeBook::new(temp_path("schema-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("schema-balances"));
+    let mut pending_trade_states = HashMap::new();
+    let mut p2p_offers = P2POfferBook::new();
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
+    };
+    handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    assert!(
+        order_book.active_orders().is_empty(),
+        "unsupported schema version must not add order"
+    );
+}
+
+#[tokio::test]
+async fn handler_accepts_fresh_message() {
+    let key = identity::Keypair::generate_ed25519();
+    let authenticated_peer = PeerId::from(key.public());
+
+    let order = test_order(&authenticated_peer.to_string());
+    let message = Message {
+        message_type: MessageType::OrderCreated,
+        sender: authenticated_peer.to_string(),
+        payload: serde_json::to_string(&order).unwrap(),
+        timestamp: chrono::Utc::now().timestamp() as u64,
+        schema_version: protocol::message::SCHEMA_VERSION,
+    };
+
+    let mut swarm = build_swarm(key).unwrap();
+    let topic = gossipsub::IdentTopic::new("opendex-fresh-test");
+
+    let mut order_book = OrderBook::new(temp_path("fresh-orders"));
+    let mut trade_book = TradeBook::new(temp_path("fresh-trades"));
+    let mut balance_book = BalanceBook::new(temp_path("fresh-balances"));
+    let mut pending_trade_states = HashMap::new();
+    let mut p2p_offers = P2POfferBook::new();
+    let mut ctx = HandlerContext {
+        swarm: &mut swarm,
+        topic: &topic,
+        local_peer_id: &authenticated_peer,
+        order_book: &mut order_book,
+        trade_book: &mut trade_book,
+        balance_book: &mut balance_book,
+        pending_trade_states: &mut pending_trade_states,
+        p2p_offer_book: &mut p2p_offers,
+    };
+    handle_gossipsub_message(
+        &serde_json::to_vec(&message).unwrap(),
+        &authenticated_peer,
+        &mut ctx,
+    )
+    .unwrap();
+
+    // Fresh message with valid schema should be accepted
+    let orders = order_book.active_orders();
+    assert!(
+        orders.iter().any(|o| o.id == order.id),
+        "fresh message with valid schema should add order"
     );
 }

@@ -3,7 +3,7 @@ OpenDEX Audit Checklist
 Audit type: Source-level security, correctness, accounting, and distributed-state review
 Project: OpenDEX
 Status: All code-level findings resolved
-Last updated: 2026-10-13 (verification re-run)
+Last updated: 2026-10-14 (testnet deployment verification)
 
 ## Project Overview
 
@@ -1029,6 +1029,15 @@ AUDIT-I04       Info      CLOSED / RESOLVED (cargo-deny)
 
 AUDIT-I05       Info      CLOSED / RESOLVED (Miri, 0 UB)
 
+BUG-TN-001      High      CLOSED / FIXED (stale snapshot crash)
+BUG-TN-002      High      CLOSED / FIXED (Monero /json_rpc path)
+BUG-TN-003      Medium    CLOSED / FIXED (GetBalanceResponse fields)
+BUG-TN-004      Medium    CLOSED / FIXED (getblockcount parsing)
+BUG-TN-005      Medium    CLOSED / FIXED (JSON-RPC params null)
+BUG-TN-006      Medium    CLOSED / FIXED (GossipSub identity)
+BUG-TN-007      Low       CLOSED / FIXED (E2E test scripts)
+BUG-TN-008      Low       CLOSED / FIXED (Monero port config)
+
 Previously identified security findings AUDIT-001, AUDIT-002, AUDIT-003, AUDIT-004, AUDIT-008, AUDIT-009, and SEC-002 are closed or verified as documented above.
 
 
@@ -1186,6 +1195,8 @@ Current conclusion:
 All code-level audit findings are resolved. OpenDEX is ready for independent external audit.
 
 **Re-verified 2026-10-13:** 459 tests pass, 0 compilation errors, 0 vulnerabilities, 0 unsafe code, 0 hardcoded secrets, 23 crates in the workspace. 136 compiler warnings (none security-related). 0 unused dependencies — all wired into production code.
+
+**Testnet deployment verified 2026-10-14:** Full 3-node testnet deployed with real Monero stagenet and Bitcoin testnet RPC services. 8 bugs discovered and fixed (BUG-TN-001 through BUG-TN-008). Health check 16/16 passed, E2E tests 10/10 passed. All nodes running stably.
 
 New subsystems added 2026-10-12:
 - Fiat settlement (opendex-fiat): 88 tests, Bitcoin 2-of-2 multisig escrow, manual bank transfer flow

@@ -81,14 +81,34 @@ pub struct GuiNodeConfig {
     pub monero_rpc_url: Option<String>,
     /// Optional Monero wallet RPC username.
     pub monero_rpc_user: Option<String>,
-    /// Optional Monero wallet RPC password.
+    /// Optional Monero wallet RPC password (zeroized on drop).
     pub monero_rpc_pass: Option<String>,
     /// Optional Bitcoin wallet RPC URL.
     pub btc_rpc_url: Option<String>,
     /// Optional Bitcoin wallet RPC username.
     pub btc_rpc_user: Option<String>,
-    /// Optional Bitcoin wallet RPC password.
+    /// Optional Bitcoin wallet RPC password (zeroized on drop).
     pub btc_rpc_pass: Option<String>,
+}
+
+impl Drop for GuiNodeConfig {
+    fn drop(&mut self) {
+        // M23: Zeroize sensitive password fields on drop
+        if let Some(ref mut pass) = self.monero_rpc_pass {
+            unsafe {
+                for byte in pass.as_bytes_mut() {
+                    *byte = 0;
+                }
+            }
+        }
+        if let Some(ref mut pass) = self.btc_rpc_pass {
+            unsafe {
+                for byte in pass.as_bytes_mut() {
+                    *byte = 0;
+                }
+            }
+        }
+    }
 }
 
 impl Default for GuiNodeConfig {
@@ -106,6 +126,9 @@ impl Default for GuiNodeConfig {
         }
     }
 }
+
+// Note: GuiNodeConfig derives Clone, but the Drop impl zeroizes passwords.
+// Cloning creates independent copies; each copy will zeroize its own passwords on drop.
 
 /// Result of initializing the node for GUI mode.
 pub struct GuiNodeHandle {
@@ -126,7 +149,7 @@ pub struct GuiNodeHandle {
 /// the channels the GUI should use to communicate with the node.
 ///
 /// The caller is responsible for launching the GUI with the returned channels.
-pub async fn run_with_gui(config: GuiNodeConfig) -> anyhow::Result<GuiNodeHandle> {
+pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHandle> {
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
@@ -190,9 +213,10 @@ pub async fn run_with_gui(config: GuiNodeConfig) -> anyhow::Result<GuiNodeHandle
         let wallet_config = wallet_client::MoneroWalletConfig {
             rpc_url: config
                 .monero_rpc_url
+                .take()
                 .unwrap_or_else(|| "http://127.0.0.1:18082".to_string()),
-            username: config.monero_rpc_user,
-            password: config.monero_rpc_pass,
+            username: config.monero_rpc_user.take(),
+            password: config.monero_rpc_pass.take(),
         };
         let mut wallet = wallet_client::MoneroWalletClient::new(wallet_config);
         match wallet.connect().await {
@@ -220,9 +244,10 @@ pub async fn run_with_gui(config: GuiNodeConfig) -> anyhow::Result<GuiNodeHandle
         let wallet_config = btc_wallet_client::BitcoinWalletConfig {
             rpc_url: config
                 .btc_rpc_url
+                .take()
                 .unwrap_or_else(|| "http://127.0.0.1:8332".to_string()),
-            username: config.btc_rpc_user,
-            password: config.btc_rpc_pass,
+            username: config.btc_rpc_user.take(),
+            password: config.btc_rpc_pass.take(),
             wallet_name: None,
         };
         let mut wallet = btc_wallet_client::BitcoinWalletClient::new(wallet_config);
@@ -395,6 +420,7 @@ async fn handle_gui_command_inner(
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                schema_version: protocol::message::SCHEMA_VERSION,
             };
 
             if let Err(e) = network::publish_message(swarm, topic, &order_message) {
@@ -436,6 +462,7 @@ async fn handle_gui_command_inner(
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs(),
+                        schema_version: protocol::message::SCHEMA_VERSION,
                     };
                     let _ = network::publish_message(swarm, topic, &message);
                 }
@@ -577,6 +604,8 @@ mod internal {
     }
 
     /// Initialize structured logging with file-based audit output.
+    /// L31: Sensitive fields (password, secret, token, key) should not be logged
+    /// using structured field names containing those keywords.
     pub fn init_audit_logging(node_dir: &PathBuf) -> anyhow::Result<()> {
         use tracing_subscriber::prelude::*;
         use std::fs;

@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=bitcoin
 Group=bitcoin
-ExecStart=/usr/local/bin/bitcoind \
+ExecStart=__BITCOIND_PATH__ \
   --testnet \
-  --datadir=/home/bitcoin/.bitcoin/testnet3 \
+  --datadir=/data/bitcoin-testnet \
   --rpcport=18332 \
   --server=1 \
   --rpcallowip=127.0.0.1 \
