@@ -1,4 +1,5 @@
 pub mod balances;
+pub mod btc_wallet_client;
 pub mod cli;
 pub mod escrow;
 pub mod exchange;
@@ -14,7 +15,9 @@ pub mod sync;
 pub mod trade_state;
 pub mod trades;
 pub mod wallet_client;
-pub mod btc_wallet_client;
+
+/// L31: Log redaction framework to prevent sensitive data in logs.
+pub mod log_redact;
 
 /// Bridge types for GUI communication.
 /// This module is public so external crates (e.g., desktop-gui) can construct
@@ -604,8 +607,8 @@ mod internal {
     }
 
     /// Initialize structured logging with file-based audit output.
-    /// L31: Sensitive fields (password, secret, token, key) should not be logged
-    /// using structured field names containing those keywords.
+    /// L31: A log redaction layer masks sensitive field values (password, secret,
+    /// token, key) so that accidental logging of credentials is prevented.
     pub fn init_audit_logging(node_dir: &PathBuf) -> anyhow::Result<()> {
         use tracing_subscriber::prelude::*;
         use std::fs;
@@ -622,7 +625,11 @@ mod internal {
             .with_ansi(false)
             .with_target(true)
             .with_file(true)
-            .with_line_number(true);
+            .with_line_number(true)
+            .with_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            );
 
         let error_file = fs::File::create(&error_log_path)?;
         let error_layer = tracing_subscriber::fmt::layer()

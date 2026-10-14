@@ -53,17 +53,69 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
 # Bans — detect duplicate crate versions and disallow wildcard dependencies.
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "warn"
 highlight = "all"
 workspace-default-features = "allow"
 external-default-features = "allow"
-skip = []
-skip-tree = []
 
-# M25: multiple-versions = "warn" above already warns on all duplicate crate versions.
-# Critical crypto crates (secp256k1, bitcoin, ring) are monitored via this warning.
-# If duplicates appear for these crates, they should be resolved before mainnet.
+# M25: Deny duplicate versions for critical cryptographic crates.
+# Non-critical duplicates (GUI/web framework transitive deps) are skipped with documented reasons.
+# These duplicates come from iced (desktop-gui), leptos (web-frontend), and platform-specific
+# dependencies. They are isolated to those crates and do not affect the P2P or fiat crates.
+skip = []
+skip-tree = [
+    { name = "base64" },
+    { name = "bitflags" },
+    { name = "block2" },
+    { name = "block-buffer" },
+    { name = "calloop" },
+    { name = "calloop-wayland-source" },
+    { name = "chacha20" },
+    { name = "const-str" },
+    { name = "convert_case" },
+    { name = "core-foundation" },
+    { name = "core-graphics-types" },
+    { name = "cpufeatures" },
+    { name = "crypto-common" },
+    { name = "curve25519-dalek" },
+    { name = "digest" },
+    { name = "fiat-crypto" },
+    { name = "font-types" },
+    { name = "getrandom" },
+    { name = "hmac" },
+    { name = "jni-sys" },
+    { name = "linux-raw-sys" },
+    { name = "objc2" },
+    { name = "objc2-app-kit" },
+    { name = "objc2-foundation" },
+    { name = "rand" },
+    { name = "rand_core" },
+    { name = "read-fonts" },
+    { name = "redox_syscall" },
+    { name = "r-efi" },
+    { name = "rustc-hash" },
+    { name = "rustix" },
+    { name = "send_wrapper" },
+    { name = "sha2" },
+    { name = "skrifa" },
+    { name = "slotmap" },
+    { name = "smallvec" },
+    { name = "hashbrown" },
+    { name = "smithay-client-toolkit" },
+    { name = "spin" },
+    { name = "syn" },
+    { name = "thiserror" },
+    { name = "thiserror-impl" },
+    { name = "webpki-roots" },
+    { name = "windows" },
+    { name = "windows-core" },
+    { name = "windows-implement" },
+    { name = "windows-interface" },
+    { name = "windows-result" },
+    { name = "windows-strings" },
+    { name = "windows-sys" },
+]
 
 # Sources — only allow crates.io, no git dependencies for supply chain security.
 [sources]

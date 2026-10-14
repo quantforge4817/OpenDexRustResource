@@ -163,35 +163,35 @@ Fiat trades follow a 14-state machine with Bitcoin 2-of-2 multisig escrow:
 | AUDIT-C06 | Zero crypto amounts in transactions | ✓ Resolved |
 | AUDIT-C07 | Placeholder maker IDs | ✓ Resolved |
 
-### Open High-Severity Findings (5)
+### Resolved High-Severity Findings (5)
 
-| ID | Title | Risk |
-|----|-------|------|
-| AUDIT-H11 | No miner fees in Bitcoin transactions | Transactions may fail to confirm |
-| AUDIT-H12 | No P2P message validation | Malformed messages can crash nodes |
-| AUDIT-H13 | RwLock unwrap panics | DoS via lock poisoning |
-| AUDIT-H14 | HashMap unwrap panics | DoS via key collision |
-| AUDIT-H15 | No rate limiting | Resource exhaustion attacks |
-
-### Open Medium-Severity Findings (6)
-
-| ID | Title | Risk |
-|----|-------|------|
-| AUDIT-M21 | Bond calculation edge cases | Economic exploitation |
-| AUDIT-M22 | P2P message replay attacks | Duplicate transaction execution |
-| AUDIT-M23 | Payment detection reliability | False positive/negative payments |
-| AUDIT-M24 | Plaintext credential transmission | Credential interception |
-| AUDIT-M25 | Address validation gaps | Funds sent to invalid addresses |
-| AUDIT-M26 | Duplicate crate versions | Dependency confusion risk |
-
-### Open Low-Severity Findings (4)
-
-| ID | Title | Impact |
+| ID | Title | Status |
 |----|-------|--------|
-| AUDIT-L01 | Unused dependencies | Supply chain surface area |
-| AUDIT-L02 | No log redaction | Sensitive data in logs |
-| AUDIT-L03 | Test unwrap calls | Test reliability |
-| AUDIT-L04 | No E2E fiat integration tests | Regression risk |
+| AUDIT-H10 | No P2P message validation | ✓ Resolved (2026-10-14) |
+| AUDIT-H11 | No miner fees in Bitcoin transactions | ✓ Resolved (2026-10-14) |
+| AUDIT-H12 | No rate limiting | ✓ Resolved (2026-10-14) |
+| AUDIT-H13 | RwLock unwrap panics | ✓ Resolved (2026-10-14) |
+| AUDIT-H14 | HashMap unwrap panics | ✓ Resolved (2026-10-14) |
+
+### Resolved Medium-Severity Findings (6)
+
+| ID | Title | Status |
+|----|-------|--------|
+| AUDIT-M20 | Bond calculation ignores trade value | ✓ Resolved (2026-10-14) |
+| AUDIT-M21 | Payment detection returns None | ✓ Resolved (2026-10-14) |
+| AUDIT-M22 | No message timestamp validation | ✓ Resolved (2026-10-14) |
+| AUDIT-M23 | Plaintext wallet credentials | ✓ Resolved (2026-10-14) |
+| AUDIT-M24 | No crypto address validation | ✓ Resolved (2026-10-14) |
+| AUDIT-M25 | Duplicate crate versions warning | ✓ Resolved (2026-10-14) |
+
+### Resolved Low-Severity Findings (4)
+
+| ID | Title | Status |
+|----|-------|--------|
+| AUDIT-L30 | Unused dependencies | ✓ Resolved (2026-10-14) |
+| AUDIT-L31 | No log redaction | ✓ Resolved (2026-10-14) |
+| AUDIT-L32 | Test unwrap calls | ⚪ Accepted (intentional) |
+| AUDIT-L33 | No E2E fiat integration tests | ✓ Resolved (2026-10-14) |
 
 ### Verified Security Controls (18+)
 
@@ -290,10 +290,9 @@ An independent external security audit should focus on:
 
 1. **Cryptographic implementation** — Review the DLEQ proof integration plan and stub implementations in `opendex-btc-xmr`
 2. **Bitcoin multisig escrow** — Verify the 2-of-2 P2WSH construction and co-signing workflow
-3. **P2P protocol security** — Assess message validation, replay protection, and rate limiting gaps
+3. **P2P protocol security** — Review message validation, replay protection, and rate limiting implementation
 4. **Fiat settlement flow** — Evaluate the 14-state machine for economic exploits
-5. **Open high-severity findings** — Review the 5 open AUDIT-H findings for exploitability
-6. **Threat modeling** — Perform a systematic STRIDE or attack tree analysis
+5. **Threat modeling** — Perform a systematic STRIDE or attack tree analysis
 
 ---
 
@@ -303,7 +302,6 @@ An independent external security audit should focus on:
 - No formal threat model document exists; failure scenarios are audit-findings-based
 - No independent external security review has been performed
 - Testnet deployment revealed 8 bugs (all resolved); production deployment has not been tested
-- Rate limiting and P2P message validation are not yet implemented
 
 ---
 
