@@ -13,7 +13,7 @@ We take the security of OpenDex seriously. If you discover a security vulnerabil
 ### Reporting Process
 
 1. **Do NOT** create a public GitHub issue for security vulnerabilities.
-2. Use GitHub's [Security Advisories](https://github.com/your-org/OpenDexRustSource/security/advisories/new) feature to report the vulnerability privately.
+2. Use GitHub's [Security Advisories](https://github.com/quantforge4817/OpenDexRustResource/security/advisories/new) feature to report the vulnerability privately.
 3. Alternatively, contact the maintainers directly through the repository's security email (if configured).
 
 ### What to Include

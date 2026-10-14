@@ -35,8 +35,8 @@ Every node maintains a replicated view of orders, trades, balances, and trade st
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/OpenDexRustSource.git
-cd OpenDexRustSource
+git clone https://github.com/quantforge4817/OpenDexRustResource.git
+cd OpenDexRustResource
 
 # Build the entire workspace
 cargo build --workspace
@@ -72,7 +72,7 @@ trunk serve --open
 ## 📦 Project Structure
 
 ```
-OpenDexRustSource/
+OpenDexRustResource/
 ├── Cargo.toml              # Workspace manifest (23 crates)
 ├── deny.toml               # cargo-deny configuration
 ├── crates/
@@ -216,7 +216,7 @@ OpenDex is experimental software under active development. Use at your own risk.
 
 **Built with ❤️ in Rust**
 
-[Report Bug](https://github.com/your-org/OpenDexRustSource/issues/new) · [Request Feature](https://github.com/your-org/OpenDexRustSource/issues/new) · [View Documentation](docs/)
+[Report Bug](https://github.com/quantforge4817/OpenDexRustResource/issues/new) · [Request Feature](https://github.com/quantforge4817/OpenDexRustResource/issues/new) · [View Documentation](docs/)
 
 </div>
 # OpenDexRustResource

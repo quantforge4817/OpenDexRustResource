@@ -30,4 +30,4 @@ What is the potential impact of this vulnerability?
 Describe any recommended mitigation or fix.
 
 ## Note
-For sensitive security issues, please consider using GitHub's [Security Advisories](https://github.com/your-org/OpenDexRustSource/security/advisories/new) feature instead of a public issue.
+For sensitive security issues, please consider using GitHub's [Security Advisories](https://github.com/quantforge4817/OpenDexRustResource/security/advisories/new) feature instead of a public issue.

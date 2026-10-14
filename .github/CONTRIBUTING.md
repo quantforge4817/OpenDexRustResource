@@ -10,7 +10,7 @@ By participating in this project, you are expected to uphold the standards of re
 
 ### Reporting Bugs
 
-If you find a bug, please [open an issue](https://github.com/your-org/OpenDexRustSource/issues/new/choose) using the **Bug Report** template. Include:
+If you find a bug, please [open an issue](https://github.com/quantforge4817/OpenDexRustResource/issues/new/choose) using the **Bug Report** template. Include:
 
 - A clear description of the bug
 - Steps to reproduce
@@ -20,7 +20,7 @@ If you find a bug, please [open an issue](https://github.com/your-org/OpenDexRus
 
 ### Suggesting Features
 
-We welcome feature suggestions! Please [open an issue](https://github.com/your-org/OpenDexRustSource/issues/new/choose) using the **Feature Request** template. Include:
+We welcome feature suggestions! Please [open an issue](https://github.com/quantforge4817/OpenDexRustResource/issues/new/choose) using the **Feature Request** template. Include:
 
 - The problem the feature would solve
 - Your proposed solution
@@ -29,7 +29,7 @@ We welcome feature suggestions! Please [open an issue](https://github.com/your-o
 
 ### Reporting Security Issues
 
-**Do not** create public issues for security vulnerabilities. Use GitHub's [Security Advisories](https://github.com/your-org/OpenDexRustSource/security/advisories/new) feature instead. See our [Security Policy](.github/SECURITY.md) for details.
+**Do not** create public issues for security vulnerabilities. Use GitHub's [Security Advisories](https://github.com/quantforge4817/OpenDexRustResource/security/advisories/new) feature instead. See our [Security Policy](.github/SECURITY.md) for details.
 
 ## Development Setup
 
@@ -44,8 +44,8 @@ We welcome feature suggestions! Please [open an issue](https://github.com/your-o
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/OpenDexRustSource.git
-cd OpenDexRustSource
+git clone https://github.com/quantforge4817/OpenDexRustResource.git
+cd OpenDexRustResource
 
 # Build the entire workspace
 cargo build --workspace
@@ -115,7 +115,7 @@ trunk serve --open
 ## Project Structure
 
 ```
-OpenDexRustSource/
+OpenDexRustResource/
 ├── crates/                 # Rust crates (23 total)
 │   ├── common/             # Shared domain types
 │   ├── protocol/           # Message types
@@ -155,7 +155,7 @@ Additional subsystems include DAO governance, fee/treasury management, user auth
 ## Getting Help
 
 - Check the [documentation](docs/) for guides and references
-- Search existing [issues](https://github.com/your-org/OpenDexRustSource/issues) for similar questions
+- Search existing [issues](https://github.com/quantforge4817/OpenDexRustResource/issues) for similar questions
 - Open a new issue for questions or discussion
 
 ## License
