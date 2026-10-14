@@ -4,8 +4,8 @@ This log records the development history of OpenDEX at a milestone and decision 
 The opening section establishes the project's architectural direction and development principles. Individual entries are intentionally concise and diary-like. Detailed bugs, security findings, and deferred technical issues are tracked separately so that this document remains readable as the project grows.
 The development log records what changed, why it changed, and the resulting checkpoint.
 Detailed issue tracking belongs in:
-• BUG_TRACKER.md — bugs, technical issues, regressions, and deferred fixes
-• SECURITY_LOG.md — security findings, threat-model concerns, mitigations, and audit preparation
+• bug_log.md — bugs, technical issues, regressions, and deferred fixes
+• security.md — security findings, threat-model concerns, mitigations, and audit preparation
 
 Development Principles
 Simplify first. Secure second. Audit third.
@@ -588,7 +588,7 @@ With all High and Medium code issues resolved, the foundation is now solid for c
 
 **Status:** 🟢 Phase 1 Complete — Core escrow implemented 2026-10-03
 
-The comprehensive escrow design specification has been documented in `audit/ESCROW_DESIGN.md`. Phase 1 (Core Escrow) is now implemented. This design addresses the most technically challenging aspects of P2P escrow:
+The comprehensive escrow design specification has been documented in `audit/escrow_design.md`. Phase 1 (Core Escrow) is now implemented. This design addresses the most technically challenging aspects of P2P escrow:
 
 - **Three-state balance model** — adds `escrowed` state alongside `available` and `locked` for clear fund provenance.
 - **State machine integration** — escrow fund movements triggered by existing trade state transitions, not separate messages.
@@ -1215,7 +1215,7 @@ ADMP v6 (Decentralisation, Non-Custody & Regulatory Boundary Specification) is n
 
 ### ADMP v5 Archival
 
-ADMP v5 has been archived at `audit/Archive/ADMP_v5.md`, superseded by ADMP v6 in `regulatory_compliance.md` Section 2.
+ADMP v5 has been archived at `audit/archive/admp_v5.md`, superseded by ADMP v6 in `regulatory_compliance.md` Section 2.
 
 ### Next Steps
 

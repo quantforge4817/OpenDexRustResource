@@ -1084,9 +1084,9 @@ Run the affected target again.
 Record the result in:
 
 ```
-audit/BUG_LOG.md
-audit/AUDIT_CHECKLIST.md
-audit/SECURITY_LOG.md
+audit/bug_log.md
+audit/audit_checklist.md
+audit/security.md
 ```
 
 Use whichever file corresponds to the project's existing audit process.

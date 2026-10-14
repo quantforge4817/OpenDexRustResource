@@ -52,7 +52,7 @@ bash docs/testnet/test-results/verification/health-check.sh \
 
 ## Compliance
 
-Test results support compliance documentation in `audit/Regulatory_Compliance/`. Key areas:
+Test results support compliance documentation in `audit/regulatory_compliance/`. Key areas:
 - **Audit trails** — Node logs show all order/trade operations.
 - **KYC/AML readiness** — Test that identity verification flows work.
 - **Data retention** — Verify persistence layer saves and reloads state.

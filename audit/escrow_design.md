@@ -4,7 +4,7 @@
 ## Date: 2026-10-02 (Updated 2026-10-12)
 ## Status: Phase 1 (Core Escrow) implemented — 2026-10-03 | Bitcoin multisig escrow implemented — 2026-10-12
 
-**Phase 1 status:** 🟢 COMPLETE — The three-state balance model, escrow operations, and state machine integration are implemented and tested. See `audit/DEV_LOG.md` for implementation details.
+**Phase 1 status:** 🟢 COMPLETE — The three-state balance model, escrow operations, and state machine integration are implemented and tested. See `audit/dev_log.md` for implementation details.
 
 **Bitcoin multisig escrow:** 🟢 COMPLETE — 2-of-2 P2WSH multisig implemented in `crates/fiat/src/multisig.rs` with co-signing flow, key zeroization, and real testnet addresses.
 

@@ -179,9 +179,19 @@ impl FiatTradeState {
             | (Confirming, Failed)
             | (CryptoReserved, Failed)
             | (PaymentRequested, Failed)
-            // Cancellation paths
+            | (MakerConfirmed, Failed)
+            | (CryptoRelease, Failed)
+            // Cancellation paths — both parties can cancel from any active state
             | (Created, Cancelled)
             | (Accepted, Cancelled)
+            | (CryptoReserved, Cancelled)
+            | (PaymentRequested, Cancelled)
+            | (PaymentSubmitted, Cancelled)
+            | (PaymentPending, Cancelled)
+            | (Detected, Cancelled)
+            | (Confirming, Cancelled)
+            | (MakerConfirmed, Cancelled)
+            | (Confirmed, Cancelled)
             // Dispute paths — can be opened from most active states
             | (Created, Disputed)
             | (Accepted, Disputed)
@@ -311,7 +321,10 @@ impl FiatTrade {
     /// Advance the trade to a new state.
     pub fn transition(&mut self, next: FiatTradeState, timestamp: u64) -> anyhow::Result<()> {
         if self.state == next {
-            return Ok(());
+            return Err(anyhow::anyhow!(
+                "trade already in state: {}",
+                self.state
+            ));
         }
 
         if !self.state.can_transition_to(&next) {

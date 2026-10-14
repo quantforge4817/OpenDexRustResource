@@ -48,12 +48,12 @@ Last updated: 2026-10-14 (testnet deployment verification)
 
 - `fuzz/FUZZ.md` — Fuzzing process guide
 - `fuzz/INFRASTRUCTURE.md` — Fuzzing setup reference
-- `audit/Archive/ADMP_v5.md` — Architecture doc v5 (archived, superseded by ADMP v6)
-- `audit/Regulatory_Compliance/regulatory_compliance.md` — ADMP v6 regulatory architecture (Section 2), compliance status tracker (Section 7), DAO & fee/treasury interface (Appendix B)
-- `audit/AUDIT_CHECKLIST.md` — This file (authoritative audit record)
-- `audit/BUG_LOG.md` — Bug tracker
-- `audit/SECURITY_LOG.md` — Security log
-- `audit/DEV_LOG.md` — Development milestone log
+- `audit/archive/admp_v5.md` — Architecture doc v5 (archived, superseded by ADMP v6)
+- `audit/regulatory_compliance/regulatory_compliance.md` — ADMP v6 regulatory architecture (Section 2), compliance status tracker (Section 7), DAO & fee/treasury interface (Appendix B)
+- `audit/audit_checklist.md` — This file (authoritative audit record)
+- `audit/bug_log.md` — Bug tracker
+- `audit/security.md` — Security policy, baseline, controls, and findings
+- `audit/dev_log.md` — Development milestone log
 
 ---
 
@@ -1157,23 +1157,23 @@ ARCH-003 — Command handler boundaries (deferred)
 
 The audit documentation has the following roles:
 
-audit/AUDIT_CHECKLIST.md
+audit/audit_checklist.md
 
 Single authoritative record: audit controls, verification areas, active findings, resolved findings, BTC-XMR findings, current audit priorities, and ADMP v6 status.
 
-audit/SECURITY_LOG.md
+audit/security.md
 
-Concise security posture and historical security record. Should not duplicate the full historical audit record — update only when security posture changes.
+Consolidated security policy, baseline, verified controls, audit findings, and historical security record.
 
-audit/BUG_LOG.md
+audit/bug_log.md
 
 Bug tracker for specific issues with resolution tracking.
 
-audit/DEV_LOG.md
+audit/dev_log.md
 
 Development milestone log with crate inventory and test counts.
 
-When finding status changes, update only AUDIT_CHECKLIST.md and SECURITY_LOG.md as necessary.
+When finding status changes, update only audit_checklist.md and security.md as necessary.
 
 
 14. Current Conclusion

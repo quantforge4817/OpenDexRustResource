@@ -97,7 +97,7 @@ OpenDexRustSource/
 | **Web Portal** | Leptos/WASM | Static informational site with download links and source browser |
 | **Testnet** | Ubuntu 24.04 VPS | 3 P2P nodes (1 bootstrap + 2 test), Monero stagenet, Bitcoin testnet |
 | **Security** | cargo-deny, Miri, cargo-fuzz | Dependency audit, UB detection, fuzzing (7 targets) |
-| **Regulatory** | MiCA, UK FCA | Comprehensive compliance analysis in `audit/Regulatory_Compliance/` |
+| **Regulatory** | MiCA, UK FCA | Comprehensive compliance analysis in `audit/regulatory_compliance/` |
 
 ### 3.3 Key Dependencies
 
@@ -144,7 +144,7 @@ OpenDexRustSource/
 | Critical issues (ARCH-001, ARCH-004) | 🟢 Resolved |
 | High-priority bugs (BUG-001, AUDIT-H01, AUDIT-H02) | 🟢 Resolved |
 | Deferred items (BUG-002, etc.) | 🟡 Documented |
-| Open issues | See `audit/BUG_LOG.md` |
+| Open issues | See `audit/bug_log.md` |
 
 ### 4.4 Testnet Infrastructure
 
@@ -185,8 +185,8 @@ OpenDexRustSource/
 
 **Deliverables**
 - Current-state assessment. (🟢 Partially complete — see Section 4)
-- Architecture and dependency diagrams. (🟢 Present in this document and `audit/Archive/ADMP_v5.md`)
-- Known issues and technical debt register. (🟢 `audit/BUG_LOG.md`)
+- Architecture and dependency diagrams. (🟢 Present in this document and `audit/archive/admp_v5.md`)
+- Known issues and technical debt register. (🟢 `audit/bug_log.md`)
 - Prioritised change backlog.
 - Agreed scope and release objectives.
 
@@ -350,7 +350,7 @@ OpenDexRustSource/
 **Current status:** Internal security audit is complete; external audit is pending.
 
 **Activities**
-- Conduct threat modelling and attack-surface analysis. (🟢 Partially complete — `audit/SECURITY_LOG.md`)
+- Conduct threat modelling and attack-surface analysis. (🟢 Partially complete — `audit/security.md`)
 - Perform source-code and dependency security reviews. (🟢 Complete)
 - Review authentication, authorisation and API exposure. (🟢 Complete)
 - Assess cryptographic operations, private-key handling and transaction signing.
@@ -362,8 +362,8 @@ OpenDexRustSource/
 - Establish a vulnerability disclosure and incident response process.
 
 **Deliverables**
-- Threat model and security risk register. (🟢 `audit/SECURITY_LOG.md`)
-- Security audit report. (🟢 `audit/AUDIT.md`)
+- Threat model and security risk register. (🟢 `audit/security.md`)
+- Security audit report. (🟢 `audit/audit.md`)
 - Remediation plan. (🟢 All code-level findings resolved)
 - **External audit report.**
 - Release security sign-off.
@@ -387,7 +387,7 @@ OpenDexRustSource/
 - **Obtain qualified legal or compliance advice on unresolved questions.**
 
 **Deliverables**
-- Regulatory applicability assessment. (🟢 `audit/Regulatory_Compliance/regulatory_compliance.md`)
+- Regulatory applicability assessment. (🟢 `audit/regulatory_compliance/regulatory_compliance.md`)
 - Compliance obligations register. (🟢 Present)
 - Privacy and data-handling assessment. (🟢 Present)
 - Required policy and disclosure documents. (🟢 Present in web portal)
@@ -491,7 +491,7 @@ OpenDexRustSource/
 **Deliverables**
 - Master test plan.
 - Test execution evidence.
-- Defect and retest register. (🟢 `audit/BUG_LOG.md`)
+- Defect and retest register. (🟢 `audit/bug_log.md`)
 - User acceptance report.
 
 **Exit criteria:** Mandatory tests pass, release-blocking defects are resolved, and the authorised owner accepts the results.
@@ -631,7 +631,7 @@ Progress should be reviewed weekly using a common dashboard.
 Recommended measures include:
 
 - Percentage of roadmap tasks completed.
-- Number of open defects by severity (tracked in `audit/BUG_LOG.md`).
+- Number of open defects by severity (tracked in `audit/bug_log.md`).
 - Percentage of mandatory tests passed (workspace test count: 289+).
 - Number of unresolved security findings by severity.
 - Percentage of changes with complete approval and test evidence.
@@ -677,7 +677,7 @@ The roadmap should remain a living document, updated as new defects, requirement
 
 1. Identify the technical lead and workstream owners.
 2. **Set up CI/CD pipeline** (GitHub Actions) with automated build, test, clippy, cargo-deny, and cargo-audit.
-3. Complete the prioritised change backlog from `audit/BUG_LOG.md` deferred items.
+3. Complete the prioritised change backlog from `audit/bug_log.md` deferred items.
 4. Set up or validate the testnet and staging environments using existing scripts.
 5. Create the master change register and defect backlog.
 6. Define mandatory testing and security gates.
@@ -701,14 +701,14 @@ The roadmap should remain a living document, updated as new defects, requirement
 
 | Document | Location |
 |----------|----------|
-| Security Audit | `audit/AUDIT.md` |
-| Security Log | `audit/SECURITY_LOG.md` |
-| Bug & Issue Tracker | `audit/BUG_LOG.md` |
-| Security Audit Checklist | `audit/AUDIT_CHECKLIST.md` |
-| Escrow Design | `audit/ESCROW_DESIGN.md` |
-| Regulatory Compliance (Master) | `audit/Regulatory_Compliance/regulatory_compliance.md` |
-| Architecture (ADMP v5, archived) | `audit/Archive/ADMP_v5.md` |
-| Development Log | `audit/DEV_LOG.md` |
+| Security Audit | `audit/audit.md` |
+| Security Log | `audit/security.md` |
+| Bug & Issue Tracker | `audit/bug_log.md` |
+| Security Audit Checklist | `audit/audit_checklist.md` |
+| Escrow Design | `audit/escrow_design.md` |
+| Regulatory Compliance (Master) | `audit/regulatory_compliance/regulatory_compliance.md` |
+| Architecture (ADMP v5, archived) | `audit/archive/admp_v5.md` |
+| Development Log | `audit/dev_log.md` |
 | Fuzzing Process | `fuzz/FUZZ.md` |
 | Fuzzing Infrastructure | `fuzz/INFRASTRUCTURE.md` |
 | Testnet Deployment | `docs/testnet/README.md` |

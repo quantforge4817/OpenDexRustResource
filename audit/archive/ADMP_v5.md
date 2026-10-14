@@ -1,4 +1,4 @@
-> **Archived 2026-10-08**: Superseded by ADMP v6 in `audit/Regulatory_Compliance/regulatory_compliance.md` Section 2.
+> **Archived 2026-10-08**: Superseded by ADMP v6 in `audit/regulatory_compliance/regulatory_compliance.md` Section 2.
 > This file is preserved for historical reference only.
 
 OpenDex Architecture — v5
@@ -1147,9 +1147,9 @@ Fuzzing process documentation is maintained in:
 
 The following design documents extend this architecture plan with implementation-specific details:
 
-- **Escrow Design Specification** (`audit/ESCROW_DESIGN.md`) — Comprehensive design for the P2P escrow feature, including the three-state balance model (available, locked, escrowed), state machine integration, cross-node consistency via dual-ledger reconciliation, dispute resolution protocols, timeout mechanisms, atomic escrow operations, and a four-phase implementation plan. The escrow design leverages the architectural patterns documented in this plan: deterministic trade IDs, idempotent operations, plan-then-commit atomicity, and the trade state machine transition matrix.
+- **Escrow Design Specification** (`audit/escrow_design.md`) — Comprehensive design for the P2P escrow feature, including the three-state balance model (available, locked, escrowed), state machine integration, cross-node consistency via dual-ledger reconciliation, dispute resolution protocols, timeout mechanisms, atomic escrow operations, and a four-phase implementation plan. The escrow design leverages the architectural patterns documented in this plan: deterministic trade IDs, idempotent operations, plan-then-commit atomicity, and the trade state machine transition matrix.
 - **Fuzzing Process Guide** (`fuzz/FUZZ.md`) — Fuzzing methodology, target specifications, crash triage workflow, and completion criteria for the receive-side deserialization boundary.
-- **BTC-XMR Financial Transaction Specifications** (`audit/BTC_XMR_financial_transaction/`) — Seven specification documents defining the BTC-XMR atomic swap architecture, including cryptographic adapter design, technical specifications, crate architecture interface, sequence diagrams, fiat-enabled protocol, and product/protocol technical design plan.
+- **BTC-XMR Financial Transaction Specifications** (`audit/btc_xmr_financial_transaction/`) — Seven specification documents defining the BTC-XMR atomic swap architecture, including cryptographic adapter design, technical specifications, crate architecture interface, sequence diagrams, fiat-enabled protocol, and product/protocol technical design plan.
 
 32. BTC-XMR Atomic Swap Architecture — 2026-10-06
 

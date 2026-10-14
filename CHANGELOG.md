@@ -61,7 +61,7 @@ All notable changes to the OpenDex project will be documented in this file.
 - 5 High-severity findings (AUDIT-H11 through AUDIT-H15)
 - 6 Medium-severity findings (AUDIT-M21 through AUDIT-M26)
 - 4 Low-severity findings (AUDIT-L01 through AUDIT-L04)
-- See `audit/AUDIT.md` and `audit/SECURITY_LOG.md` for details
+- See `audit/audit.md` and `audit/security.md` for details
 
 ### Security Notes
 - 2 `unsafe` blocks total, both for password zeroization in `p2p-node`

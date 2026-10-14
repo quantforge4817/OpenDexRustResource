@@ -331,7 +331,7 @@ The website must **not** be modified to:
 
 Full regulatory compliance documentation is available through the built-in source browser:
 
-- **Regulatory compliance master document**: `/source#audit/Regulatory_Compliance/regulatory_compliance.md`
+- **Regulatory compliance master document**: `/source#audit/regulatory_compliance/regulatory_compliance.md`
 - **Architecture specifications**: `/source#audit/`
 - **Security audit reports**: `/source#audit/`
 

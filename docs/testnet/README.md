@@ -347,9 +347,9 @@ docs/testnet/
 
 For regulatory compliance information, see:
 
-- `audit/Regulatory_Compliance/` — Compliance documentation
-- `audit/AUDIT.md` — Security audit report
-- `audit/ESCROW_DESIGN.md` — Escrow mechanism design
+- `audit/regulatory_compliance/` — Compliance documentation
+- `audit/audit.md` — Security audit report
+- `audit/escrow_design.md` — Escrow mechanism design
 
 ## Deployment Status
 

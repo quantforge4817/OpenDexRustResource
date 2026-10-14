@@ -30,7 +30,7 @@ The website is designed to be **informational only**. It does not:
 - Act as a Crypto-Asset Service Provider (CASP)
 - Create any argument that OpenDex operates as a financial service
 
-This design is consistent with the regulatory compliance architecture documented in `audit/Regulatory_Compliance/regulatory_compliance.md`.
+This design is consistent with the regulatory compliance architecture documented in `audit/regulatory_compliance/regulatory_compliance.md`.
 
 ### What's Included
 
@@ -146,7 +146,7 @@ See `crates/desktop-gui/README.md` for full documentation.
 
 ## Regulatory Compliance Requirements
 
-Based on the review of `audit/Regulatory_Compliance/regulatory_compliance.md` (EU MiCA and UK FCA regimes), the following compliance requirements have been implemented.
+Based on the review of `audit/regulatory_compliance/regulatory_compliance.md` (EU MiCA and UK FCA regimes), the following compliance requirements have been implemented.
 
 ### 1. Legal Disclaimer (Implemented)
 
@@ -227,7 +227,7 @@ Based on the review of `audit/Regulatory_Compliance/regulatory_compliance.md` (E
 
 ### 9. Source Browser — Compliance Docs Visibility (Implemented)
 
-**Implementation:** The source browser includes all audit documentation, including regulatory compliance documents at `/source#audit/Regulatory_Compliance/`.
+**Implementation:** The source browser includes all audit documentation, including regulatory compliance documents at `/source#audit/regulatory_compliance/`.
 
 ### 10. License Consistency (Implemented)
 
@@ -407,7 +407,7 @@ cd docs/deployment
 ### Regulatory Compliance Updates
 
 When regulatory requirements change:
-1. Review `audit/Regulatory_Compliance/regulatory_compliance.md` for updated guidance
+1. Review `audit/regulatory_compliance/regulatory_compliance.md` for updated guidance
 2. Update legal content in `src/legal.rs` as needed
 3. Have changes reviewed by qualified legal counsel
 4. Rebuild and redeploy the website
@@ -446,6 +446,6 @@ docs/deployment/
 
 ## References
 
-- Regulatory compliance documentation: `audit/Regulatory_Compliance/regulatory_compliance.md`
+- Regulatory compliance documentation: `audit/regulatory_compliance/regulatory_compliance.md`
 - Web frontend source: `crates/web-frontend/`
 - Web frontend README: `crates/web-frontend/README.md`

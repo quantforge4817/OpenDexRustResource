@@ -241,6 +241,14 @@ Status: 🟢 All code-level findings resolved
 
 All code-level findings are resolved as of 2026-10-14. The fiat settlement and user authentication subsystems have all critical, high, medium, and low findings resolved. Remaining open items include design decisions (AUDIT-M02) which are accepted.
 
+**Adversarial security hardening (2026-10-14):** 6 high-risk issues discovered and fixed through adversarial testing:
+- **ADVERSARIAL-H01**: No cancellation from CryptoReserved+ states — funds permanently locked (Fixed: added 8 cancellation paths)
+- **ADVERSARIAL-H02**: No MakerConfirmed timeout — trade hangs forever if maker never releases crypto (Fixed: added timeout check)
+- **ADVERSARIAL-H03**: Bond release fails on early cancellation — Required state cannot transition to Released (Fixed: added Required → Released transition)
+- **ADVERSARIAL-H04**: cancel_trade calls return_escrow even when crypto never reserved (Fixed: conditional escrow return)
+- **ADVERSARIAL-H05**: Same-state transitions silently accepted — double-confirm not rejected (Fixed: transition rejects same-state)
+- **ADVERSARIAL-H06**: No MakerConfirmed → Failed or CryptoRelease → Failed transitions (Fixed: added failure paths)
+
 Key remaining work:
 - BUG-001: Per-order balance reservations (deferred)
 

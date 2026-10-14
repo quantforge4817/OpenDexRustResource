@@ -150,6 +150,7 @@ impl BondState {
         matches!(
             (self, next),
             (Required, Locked)
+            | (Required, Released)
             | (Locked, Released)
             | (Locked, PartiallySlashed)
             | (Locked, Slashed)
@@ -199,7 +200,16 @@ mod tests {
     #[test]
     fn bond_invalid_transition() {
         let mut bond = make_bond();
-        // Cannot release without locking first
-        assert!(bond.release(2).is_err());
+        // Cannot slash without locking first
+        assert!(bond.slash("reason", "rule", 2).is_err());
+    }
+
+    #[test]
+    fn bond_release_from_required() {
+        // Early cancellation allows releasing bonds before they are locked
+        let mut bond = make_bond();
+        assert_eq!(bond.state, BondState::Required);
+        bond.release(2).unwrap();
+        assert_eq!(bond.state, BondState::Released);
     }
 }

@@ -173,7 +173,7 @@ The desktop GUI is rated **🟢 GREEN** under the OpenDex regulatory compliance 
 - No user data is collected or transmitted to third parties
 - All P2P communication is encrypted via libp2p
 
-See `audit/Regulatory_Compliance/regulatory_compliance.md` for the full compliance analysis.
+See `audit/regulatory_compliance/regulatory_compliance.md` for the full compliance analysis.
 
 ## License
 

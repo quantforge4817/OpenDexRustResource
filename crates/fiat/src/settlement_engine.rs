@@ -685,18 +685,30 @@ where
         caller: ParticipantId,
         timestamp: u64,
     ) -> Result<(), SettlementError> {
-        {
+        // Check whether crypto was reserved so we know if we need to return escrow
+        let crypto_reserved = {
             let trade = self.get_trade_mut(trade_id)?;
             if trade.maker != caller && trade.taker != caller {
                 return Err(SettlementError::Unauthorized);
             }
+            let was_reserved = trade.state == FiatTradeState::CryptoReserved
+                || trade.state == FiatTradeState::PaymentRequested
+                || trade.state == FiatTradeState::PaymentSubmitted
+                || trade.state == FiatTradeState::PaymentPending
+                || trade.state == FiatTradeState::Detected
+                || trade.state == FiatTradeState::Confirming
+                || trade.state == FiatTradeState::MakerConfirmed
+                || trade.state == FiatTradeState::Confirmed;
             trade.transition(FiatTradeState::Cancelled, timestamp)?;
+            was_reserved
+        };
+
+        // Only return crypto from escrow if it was actually reserved
+        if crypto_reserved {
+            self.crypto_wallet.return_escrow(trade_id)?;
         }
 
-        // Return crypto from escrow
-        self.crypto_wallet.return_escrow(trade_id)?;
-
-        // Release bonds
+        // Release bonds — works for both Required and Locked states
         if let Some((maker_bond, taker_bond)) = self.bonds.get_mut(&trade_id.0) {
             maker_bond.release(timestamp).map_err(|e| {
                 SettlementError::Fiat(FiatError::BondError(e.to_string()))
@@ -752,36 +764,43 @@ where
     /// Check for expired deadlines.
     pub fn check_deadlines(&mut self, current_time: u64) {
         // Collect trades that need to fail due to expired deadlines
-        let mut to_fail: Vec<(TradeId, FiatTradeState)> = Vec::new();
+        let mut to_fail: Vec<TradeId> = Vec::new();
 
         for (id, trade) in &self.trades {
             match trade.state {
                 FiatTradeState::PaymentPending
                     if current_time > trade.deadlines.payment_deadline =>
                 {
-                    to_fail.push((TradeId(*id), FiatTradeState::Failed));
+                    to_fail.push(TradeId(*id));
                 }
                 FiatTradeState::PaymentSubmitted
                     if current_time > trade.deadlines.payment_deadline =>
                 {
-                    to_fail.push((TradeId(*id), FiatTradeState::Failed));
+                    to_fail.push(TradeId(*id));
                 }
                 FiatTradeState::Confirming
                     if current_time > trade.deadlines.confirmation_deadline =>
                 {
-                    to_fail.push((TradeId(*id), FiatTradeState::Failed));
+                    to_fail.push(TradeId(*id));
+                }
+                // MakerConfirmed timeout: if maker confirms but never releases crypto,
+                // the trade must eventually fail to prevent permanent fund lockup
+                FiatTradeState::MakerConfirmed
+                    if current_time > trade.deadlines.confirmation_deadline =>
+                {
+                    to_fail.push(TradeId(*id));
                 }
                 _ => {}
             }
         }
 
         // Apply the failures
-        for (trade_id, state) in to_fail {
+        for trade_id in to_fail {
             if let Some(trade) = self.trades.get_mut(&trade_id.0) {
-                let _ = trade.transition(state.clone(), current_time);
+                let _ = trade.transition(FiatTradeState::Failed, current_time);
                 self.emit(SettlementEvent::TradeStateChanged {
                     trade_id,
-                    state,
+                    state: FiatTradeState::Failed,
                 });
             }
         }
