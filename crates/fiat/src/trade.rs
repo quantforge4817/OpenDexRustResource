@@ -114,7 +114,8 @@ pub struct SettlementDeadlines {
 /// - PaymentPending → Failed (timeout)
 /// - PaymentSubmitted → Failed (timeout)
 /// - Complete → ReversalDetected → Dispute
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, derive(kani::Arbitrary))]
 pub enum FiatTradeState {
     /// Trade created, awaiting acceptance.
     Created,

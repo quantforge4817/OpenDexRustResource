@@ -23,3 +23,10 @@ thiserror = "2"
 async-trait = "0.1"
 zeroize = { version = "1", features = ["derive"] }
 tracing = "0.1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "settlement"
+harness = false

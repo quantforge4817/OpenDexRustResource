@@ -17,3 +17,6 @@ pub use auth::*;
 pub use reputation::*;
 pub use stats::*;
 pub use error::*;
+
+#[cfg(kani)]
+mod auth_kani;

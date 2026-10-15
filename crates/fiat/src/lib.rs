@@ -60,6 +60,12 @@ pub mod multisig;
 #[cfg(test)]
 mod lifecycle_tests;
 
+#[cfg(kani)]
+mod bond_kani;
+
+#[cfg(kani)]
+mod trade_kani;
+
 // Re-export core types for convenience
 pub use payment::{
     FiatAmount, PaymentId, PaymentReference, PaymentInstructions,

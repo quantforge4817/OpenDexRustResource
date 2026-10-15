@@ -13,7 +13,8 @@ use opendex_types::{Asset, ParticipantId, TradeId};
 pub struct BondId(pub Uuid);
 
 /// State of a security bond.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, derive(kani::Arbitrary))]
 pub enum BondState {
     /// Bond is required but not yet locked.
     Required,

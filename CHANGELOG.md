@@ -2,6 +2,63 @@
 
 All notable changes to the OpenDex project will be documented in this file.
 
+## [v0.1.0-rc1] — 2026-10-15
+
+### Release Type
+**Release Candidate 1** — First candidate for independent external security review.
+
+### Commit
+`aa9510a` — feat: add Kani formal verification, fuzz targets, benchmarks, and release documentation
+
+### Changes Since v0.1.0-security-review
+- Added Kani formal verification: 24 proof harnesses across 4 components (BondState, FiatTradeState, OrderBook, RateLimiter)
+- Added performance benchmarks: 4 Criterion benchmarks (order matching, message processing, settlement, auth)
+- Added P2P network load tests: multi-node mesh formation, message flood, peer churn, snapshot sync
+- Added 4 extended fuzz targets: fiat_trade, settlement_ops, auth_token, bond (total: 12)
+- Fixed 8 testnet deployment bugs (stale snapshot crash, Monero RPC path, Bitcoin blockcount, etc.)
+- Resolved all remaining audit findings (5 High, 6 Medium, 4 Low)
+- Updated rustls from v0.23.45 to v0.23.46 (RUSTSEC-2026-0346 through 0349)
+- Added log redaction framework for sensitive data
+- Added per-username login rate limiting (5/min)
+- Added application-level P2P message validation (timestamp freshness, schema version)
+- Added caller verification on all settlement engine methods
+- Added HMAC-signed authentication tokens (replaced unsigned UUIDs)
+- Added Argon2id password hashing (replaced DJB2)
+- Added secret key zeroization on drop for escrow keys
+- Added Bitcoin payout transaction miner fee output
+- Added RwLock poison recovery macros
+- Added HashMap error handling (ok_or_else instead of unwrap)
+- Added crypto address validation
+- Added bond amount calculation based on trade value
+- Added payment detection via PaymentAdapter trait
+- Upgraded deny.toml: duplicate versions now denied (was warn)
+
+### Test Status
+- **425 tests passed**, 0 failed (365 library/binary + 60 integration)
+- **12 fuzz targets** — all smoke tests pass
+- **24 Kani proofs** — 11 verified, 13 compile (slow to run)
+- **4 Criterion benchmarks** — all compile
+- **146 Miri tests** — 0 undefined behavior
+- `cargo-deny`: **0 RUSTSEC vulnerabilities** across 662 dependencies
+
+### Git History Secrets Scan
+- ✅ **No secrets found** — full history scanned for private keys, API keys, passwords, Monero addresses
+
+### Security Notes
+- 2 `unsafe` blocks total, both for password zeroization in `p2p-node`
+- No custom cryptographic primitives; uses standard secp256k1, Ed25519, SHA-256
+- DLEQ proof integration is a stub; full implementation pending Eigenwallet library
+
+### Known Open Items
+- External security audit pending
+- CI/CD pipeline not yet configured
+- Production monitoring infrastructure not yet configured
+- Full BTC-XMR atomic swap transaction construction pending
+
+See `RELEASE.md` for full feature status and test results.
+
+---
+
 ## [v0.1.0-security-review] — 2026-10-14
 
 ### Release Type

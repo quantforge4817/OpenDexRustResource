@@ -48,3 +48,14 @@ flume = "0.11"
 protocol = { path = "../protocol" }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "order_matching"
+harness = false
+
+[[bench]]
+name = "message_processing"
+harness = false

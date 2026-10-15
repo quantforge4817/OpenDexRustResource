@@ -12,9 +12,19 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 serde_json = "1.0"
+uuid = { version = "1", features = ["v4"] }
 
 [dependencies.protocol]
 path = "../crates/protocol"
+
+[dependencies.opendex-fiat]
+path = "../crates/fiat"
+
+[dependencies.opendex-user]
+path = "../crates/user"
+
+[dependencies.opendex-types]
+path = "../crates/opendex-types"
 
 [[bin]]
 name = "message"
@@ -68,6 +78,34 @@ bench = false
 [[bin]]
 name = "p2p_trade_state"
 path = "fuzz_targets/p2p_trade_state.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fiat_trade"
+path = "fuzz_targets/fiat_trade.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "settlement_ops"
+path = "fuzz_targets/settlement_ops.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_token"
+path = "fuzz_targets/auth_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bond"
+path = "fuzz_targets/bond.rs"
 test = false
 doc = false
 bench = false

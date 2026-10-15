@@ -19,6 +19,9 @@ pub mod wallet_client;
 /// L31: Log redaction framework to prevent sensitive data in logs.
 pub mod log_redact;
 
+#[cfg(kani)]
+mod orderbook_kani;
+
 /// Bridge types for GUI communication.
 /// This module is public so external crates (e.g., desktop-gui) can construct
 /// the channels without depending on internal main.rs details.
