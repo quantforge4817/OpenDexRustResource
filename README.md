@@ -206,9 +206,11 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🔍 Seeking Independent Review
+## 🔍 Seeking Independent Review & Security Audit
 
-Contributions and critical feedback from Bitcoin, Monero, Rust, and cryptographic protocol developers are welcome. Please report suspected vulnerabilities **privately** using the repository's [security reporting instructions](.github/SECURITY.md) rather than publishing exploitable details immediately.
+Contributions and critical feedback from Bitcoin, Monero, Rust, and cryptographic protocol developers are welcome. We are actively seeking **independent security review** of the atomic swap protocol implementation, as well as general code review and testing.
+
+Please report suspected vulnerabilities **privately** using the repository's [security reporting instructions](.github/SECURITY.md) rather than publishing exploitable details immediately.
 
 The goal is to establish what works, identify weaknesses, and improve the design before any consideration of production deployment.
 
