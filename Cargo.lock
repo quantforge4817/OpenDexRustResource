@@ -5061,6 +5061,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "sha2 0.10.9",
+ "tracing",
  "uuid",
 ]
 
@@ -5144,14 +5145,22 @@ name = "p2p-node"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "argon2",
+ "bitcoin",
  "chrono",
  "criterion",
  "dirs",
  "flume",
  "futures",
+ "hmac 0.12.1",
  "libp2p",
+ "opendex-fiat",
+ "opendex-transport",
+ "opendex-types",
+ "opendex-user",
  "protocol",
  "reqwest",
+ "secp256k1",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -5159,6 +5168,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

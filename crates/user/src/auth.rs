@@ -22,6 +22,9 @@ use crate::user::{UserAccount, UserId, Username};
 ///
 /// Tracks request timestamps per key and enforces a maximum number of
 /// requests within a time window. Old entries are pruned on each check.
+/// To prevent unbounded memory growth (DoS vector), the number of tracked
+/// keys is capped; when the cap is reached, the key with the oldest last
+/// request time is evicted.
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
     /// Maximum number of requests allowed per window.
@@ -30,6 +33,8 @@ pub struct RateLimiter {
     window_seconds: u64,
     /// Per-key request timestamps (Unix epoch seconds).
     requests: HashMap<String, Vec<u64>>,
+    /// Maximum number of unique keys tracked; 0 means unlimited.
+    max_keys: usize,
 }
 
 impl RateLimiter {
@@ -39,6 +44,41 @@ impl RateLimiter {
             max_requests,
             window_seconds,
             requests: HashMap::new(),
+            max_keys: 0,
+        }
+    }
+
+    /// Create a new rate limiter with a maximum number of tracked keys.
+    ///
+    /// When the number of unique keys exceeds `max_keys`, the key with the
+    /// oldest last request timestamp is evicted to prevent unbounded memory
+    /// growth.
+    pub fn with_max_keys(max_requests: usize, window_seconds: u64, max_keys: usize) -> Self {
+        Self {
+            max_requests,
+            window_seconds,
+            requests: HashMap::new(),
+            max_keys,
+        }
+    }
+
+    /// Evict the key with the oldest last request timestamp.
+    fn evict_oldest_key(&mut self) {
+        if self.requests.is_empty() {
+            return;
+        }
+
+        let oldest_key = self
+            .requests
+            .iter()
+            .min_by_key(|(_, timestamps)| {
+                timestamps.last().copied().unwrap_or(u64::MAX)
+            })
+            .map(|(key, _)| key.clone());
+
+        if let Some(key) = oldest_key {
+            self.requests.remove(&key);
+            tracing::debug!(key = %key, "Evicted oldest rate limiter key");
         }
     }
 
@@ -52,6 +92,14 @@ impl RateLimiter {
         } else {
             0
         };
+
+        // Evict oldest key if we've reached the max key limit and this is a new key
+        if self.max_keys > 0
+            && !self.requests.contains_key(key)
+            && self.requests.len() >= self.max_keys
+        {
+            self.evict_oldest_key();
+        }
 
         let timestamps = self
             .requests
@@ -203,7 +251,7 @@ impl AuthService {
             username_index: HashMap::new(),
             tokens: HashMap::new(),
             signing_key: key.to_vec(),
-            login_rate_limiter: RateLimiter::new(5, 60), // 5 attempts per minute
+            login_rate_limiter: RateLimiter::with_max_keys(5, 60, 10_000), // 5 attempts/min, max 10k keys
         }
     }
 
@@ -214,7 +262,7 @@ impl AuthService {
             username_index: HashMap::new(),
             tokens: HashMap::new(),
             signing_key: key,
-            login_rate_limiter: RateLimiter::new(5, 60), // 5 attempts per minute
+            login_rate_limiter: RateLimiter::with_max_keys(5, 60, 10_000), // 5 attempts/min, max 10k keys
         }
     }
 

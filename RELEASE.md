@@ -112,10 +112,10 @@ Run with: `cargo fuzz run <target> -- -max_total_time=60`
 |-------|--------|--------|
 | `opendex-fiat` (bond_kani) | 6 | ✅ All pass |
 | `opendex-fiat` (trade_kani) | 5 | ✅ All pass |
-| `p2p-node` (orderbook_kani) | 9 | ✅ Compiles |
-| `opendex-user` (auth_kani) | 4 | ✅ Compiles |
+| `p2p-node` (orderbook_kani) | 9 | ❌ Disabled — state space explosion |
+| `opendex-user` (auth_kani) | 4 | ❌ Disabled — state space explosion |
 
-**Total Kani proof harnesses:** 24
+**Total Kani proof harnesses:** 24 (11 active, 13 disabled)
 
 Run with: `cargo kani --manifest-path crates/fiat/Cargo.toml`
 
@@ -125,6 +125,32 @@ Run with: `cargo kani --manifest-path crates/fiat/Cargo.toml`
 - **0 undefined behavior** detected
 
 Run with: `MIRIFLAGS="-Zmiri-disable-isolation" cargo miri test`
+
+### Penetration Testing Suite
+
+Complete penetration testing across all 7 attack surface phases:
+
+| Phase | Tests | Status |
+|-------|-------|--------|
+| Phase 1: Network Protocol Attacks | 24 | ✅ All pass |
+| Phase 2: Authentication Attacks | 21 | ✅ All pass |
+| Phase 2.5: Cryptography Attacks | 53 | ✅ All pass |
+| Phase 3: Financial Logic Attacks | 16 | ✅ All pass |
+| Phase 4: Data Integrity Attacks | 6 | ✅ All pass |
+| Phase 5: Fiat Integration Attacks | 6 | ✅ All pass |
+| Phase 6: Denial of Service | 3 | ✅ All pass |
+| Phase 7: Supply Chain | 4 | ✅ All pass |
+
+**Total pen tests:** 133 (all passing)
+
+Run with:
+```bash
+cargo test --test network_protocol_attacks
+cargo test --test authentication_attacks
+cargo test --test crypto_penetration_tests
+cargo test --test financial_logic_attacks
+cargo test --test remaining_phases
+```
 
 ### cargo-deny Supply Chain Check
 
@@ -166,7 +192,8 @@ No real private keys, API keys, passwords, or Monero addresses have been committ
 | cargo-deny | 🟢 GREEN | 662 deps, 0 issues |
 | Miri UB detection | 🟢 GREEN | 146 tests, 0 UB |
 | Fuzzing | 🟢 GREEN | 12 targets, smoke tests pass |
-| Kani proofs | 🟢 GREEN | 24 proofs, 11 verified |
+| Kani proofs | 🟡 YELLOW | 24 proofs, 11 verified, 13 disabled (state space explosion) |
+| Penetration testing | 🟢 GREEN | 133 tests across 7 phases, all pass |
 | Hardcoded secrets | 🟢 GREEN | 0 found |
 | `unsafe` blocks | 🟢 GREEN | 2 blocks (password zeroization only) |
 | External audit | 🟡 PENDING | Independent review requested |
@@ -223,7 +250,7 @@ cargo deny check
 - [x] Tag release candidate `v0.1.0-rc1`
 - [x] Record exact Git commit hash: `43e6118`
 - [x] Document implemented, experimental, and incomplete features
-- [x] Publish test results (425 tests, 12 fuzz targets, 24 Kani proofs)
+- [x] Publish test results (425 tests, 12 fuzz targets, 24 Kani proofs, 133 pen tests)
 - [x] Verify no secrets in Git history
 - [x] Update CHANGELOG.md
 - [ ] External security audit sign-off

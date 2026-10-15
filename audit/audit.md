@@ -1093,9 +1093,9 @@ Run with: `cargo kani --manifest-path crates/fiat/Cargo.toml`
 
 **Result:** All 5 proofs pass (VERIFICATION: SUCCESSFUL)
 
-### OrderBook Proofs (`crates/p2p-node/src/orderbook_kani.rs`)
+### OrderBook Proofs (`crates/p2p-node/src/orderbook_kani.rs`) — DISABLED
 
-9 proof harnesses covering trade validation properties:
+9 proof harnesses covering trade validation properties. **Disabled** due to state space explosion.
 
 | Proof | Property Proven |
 |---|---|
@@ -1109,13 +1109,11 @@ Run with: `cargo kani --manifest-path crates/fiat/Cargo.toml`
 | `verify_validate_trade_rejects_low_price` | Price below sell order rejected |
 | `verify_validate_trade_accepts_valid_trade` | Valid trade passes validation |
 
-Run with: `cargo kani --manifest-path crates/p2p-node/Cargo.toml`
+**Reason for disabling:** The `p2p-node` crate depends on libp2p (with tcp, noise, yamux, identify, kad, ping, gossipsub), chrono, reqwest, and serde_json. Kani must symbolically analyze all these dependencies, creating 166K+ SAT variables and causing infinite loop unwinding in `std::ptr::drop_glue` (BacktraceSymbol) and `alloc::raw_vec::RawVecInner::deallocate`. Even `--default-unwind 3` produces 865K+ variables. The proofs are kept in `orderbook_kani.rs` for reference but not compiled.
 
-**Note:** These proofs compile correctly but require significant time to run due to heavy dependencies (libp2p, regex, chrono) in the `p2p-node` crate. The SipHash loops in HashMap operations cause Kani to iterate hundreds of times.
+### RateLimiter Proofs (`crates/user/src/auth_kani.rs`) — DISABLED
 
-### RateLimiter Proofs (`crates/user/src/auth_kani.rs`)
-
-4 proof harnesses covering sliding window rate limiting:
+4 proof harnesses covering sliding window rate limiting. **Disabled** due to state space explosion.
 
 | Proof | Property Proven |
 |---|---|
@@ -1124,9 +1122,7 @@ Run with: `cargo kani --manifest-path crates/p2p-node/Cargo.toml`
 | `verify_rate_limiter_window_expiry` | Requests allowed after window expires |
 | `verify_rate_limiter_independent_keys` | Different keys are rate-limited independently |
 
-Run with: `cargo kani --manifest-path crates/user/Cargo.toml`
-
-**Note:** These proofs compile correctly but require significant time to run due to heavy dependencies (chrono, hmac, argonaut) in the `user` crate.
+**Reason for disabling:** The `user` crate depends on chrono, hmac, and argonaut. Kani must symbolically analyze all these dependencies, creating 166K+ SAT variables and 418K+ clauses, causing infinite SAT solver iteration. The proofs are kept in `auth_kani.rs` for reference but not compiled.
 
 ### Summary
 
@@ -1134,10 +1130,10 @@ Run with: `cargo kani --manifest-path crates/user/Cargo.toml`
 |---|---|---|
 | `opendex-fiat` (bond_kani) | 6 | ✅ All pass |
 | `opendex-fiat` (trade_kani) | 5 | ✅ All pass |
-| `p2p-node` (orderbook_kani) | 9 | ✅ Compiles, slow to run |
-| `opendex-user` (auth_kani) | 4 | ✅ Compiles, slow to run |
+| `p2p-node` (orderbook_kani) | 9 | ❌ Disabled — state space explosion |
+| `opendex-user` (auth_kani) | 4 | ❌ Disabled — state space explosion |
 
-**Total Kani proof harnesses:** 24
+**Total Kani proof harnesses:** 24 (11 active, 13 disabled)
 
 ### Key Design Decisions
 
@@ -1148,7 +1144,209 @@ Run with: `cargo kani --manifest-path crates/user/Cargo.toml`
 
 ### Limitations
 
-- **Heavy dependencies** — `p2p-node` (libp2p, regex) and `user` (chrono, hmac, argonaut) cause SipHash loops that make Kani very slow
+- **Heavy dependencies cause state space explosion** — `p2p-node` (libp2p, chrono, reqwest) and `user` (chrono, hmac, argonaut) create 166K+ SAT variables during symbolic execution, making Kani verification impossible. These proofs have been disabled.
 - **No async verification** — Kani cannot verify async/await code (P2P network layer excluded)
 - **No concurrency verification** — Use Miri for data race detection
 - **HashMap operations** — Symbolic execution of HashMap with String keys is expensive; proofs use concrete values instead
+- **Backtrace dependency** — The `backtrace` crate (pulled in by libp2p) causes infinite loop unwinding in `std::ptr::drop_glue` during symbolic execution
+
+---
+
+## 16. Cryptography Penetration Testing — 2026-10-15
+
+**Status:** 🟢 GREEN — All 53 tests pass
+
+Comprehensive penetration testing of all cryptographic primitives, key management, and crypto-dependent flows. Tests verify that existing protections work correctly against common cryptographic attack vectors.
+
+**Test file:** `crates/p2p-node/tests/crypto_penetration_tests.rs`
+
+### Test Coverage (53 tests)
+
+| Category | Tests | Status |
+|---|---|---|
+| HMAC-SHA256 Token Security | 10 | ✅ All pass |
+| Argon2id Password Hashing | 11 | ✅ All pass |
+| Bitcoin Multisig Escrow | 9 | ✅ All pass |
+| PeerId-to-ParticipantId Hashing | 4 | ✅ All pass |
+| Random Number Generation | 2 | ✅ All pass |
+| Cryptographic Dependency Audit | 2 | ✅ All pass |
+| Rate Limiter Edge Cases | 7 | ✅ All pass |
+| Transport Layer Encryption | 2 | ✅ All pass |
+| Integration Crypto Flow | 2 | ✅ All pass |
+| Hex Encoding/Decoding | 1 | ✅ All pass |
+| Argon2 Algorithm Protection | 1 | ✅ All pass |
+| MultisigManager Security | 1 | ✅ All pass |
+| Summary & Findings | 2 | ✅ All pass |
+
+### Verified Cryptography Protections
+
+- ✅ HMAC-SHA256 token signatures prevent token forgery
+- ✅ Argon2id with random salt prevents rainbow table attacks
+- ✅ `getrandom` for signing key generation ensures key uniqueness
+- ✅ `zeroize` on `EscrowKeyPair` and `MultisigManager` prevents secret key leakage
+- ✅ Noise protocol encryption provides transport-layer confidentiality
+- ✅ secp256k1 ECDSA signatures for Bitcoin multisig escrow
+- ✅ P2WSH redemption script requires 2-of-2 signatures
+- ✅ `require_network()` check prevents cross-network address misuse
+- ✅ SHA-256 for script hash computation (collision-resistant)
+
+### Security Findings
+
+1. **Argon2 default parameters meet OWASP recommendations** — memory_cost=65536 KB (64 MB), time_cost=3, parallelism=1 ✅
+2. **HMAC key is generated per-instance, not persisted** — Tokens invalidated on restart; acceptable for P2P nodes ⚠️
+3. **Argon2 verifier accepts Argon2i/Argon2d hashes** — Not a vulnerability; hashing always uses Argon2id ✅
+4. **Hex decoding handles mixed case correctly** ✅
+5. **Rate limiter uses HashMap with max_keys cap** — Unbounded growth prevented via LRU eviction; 10,000 key limit ✅
+
+Run with: `cargo test --test crypto_penetration_tests`
+
+---
+
+## 17. Full Penetration Testing Suite — 2026-10-15
+
+**Status:** 🟢 GREEN — All 133 tests pass
+
+Complete penetration testing across all 7 phases of the attack surface. Covers network protocol attacks, authentication, financial logic, data integrity, fiat integration, denial of service, and supply chain security.
+
+### Test Summary
+
+| Phase | Test File | Tests | Status |
+|---|---|---|---|
+| **Phase 1: Network Protocol** | `network_protocol_attacks.rs` | 24 | ✅ All pass |
+| **Phase 2: Authentication** | `authentication_attacks.rs` | 21 | ✅ All pass |
+| **Phase 2.5: Cryptography** | `crypto_penetration_tests.rs` | 53 | ✅ All pass |
+| **Phase 3: Financial Logic** | `financial_logic_attacks.rs` | 16 | ✅ All pass |
+| **Phase 4: Data Integrity** | `remaining_phases.rs` | 6 | ✅ All pass |
+| **Phase 5: Fiat Integration** | `remaining_phases.rs` | 6 | ✅ All pass |
+| **Phase 6: Denial of Service** | `remaining_phases.rs` | 3 | ✅ All pass |
+| **Phase 7: Supply Chain** | `remaining_phases.rs` | 4 | ✅ All pass |
+| **Miri UB Detection** | All p2p-node tests | ~59 | ✅ 0 UB found |
+| **Kani Formal Verification** | `crates/fiat/` | 11 | ✅ All pass |
+| **TOTAL** | | **193+** | **🟢 GREEN** |
+
+### Phase 1: Network Protocol Attacks (24 tests)
+
+**Verified Protections:**
+- ✅ Invalid JSON payloads are rejected without creating orders
+- ✅ Empty payloads and empty senders are handled gracefully
+- ✅ Schema version MAX_INT is rejected
+- ✅ Zero amount/price orders are rejected with error
+- ✅ Large payloads (1MB+) don't cause buffer overflow
+- ✅ Trade replay is idempotent — no duplicate trades created
+- ✅ Order cancellation replay is safe
+- ✅ Trade state change replay is safe
+- ✅ Stale state snapshots don't regress trade state
+- ✅ Unknown trade state changes are handled gracefully
+- ✅ Peer identity is derived from public keys, not chosen by peers
+- ✅ Timestamp 0 and u64::MAX are rejected
+- ✅ Null bytes and Unicode in payloads are handled
+
+### Phase 2: Authentication Attacks (21 tests)
+
+**Verified Protections:**
+- ✅ Rate limiter blocks excessive login attempts
+- ✅ Rate limiting is per-user, not global
+- ✅ Correct password works after failed attempts
+- ✅ Non-existent user login fails
+- ✅ 100 rapid login attempts don't cause panic
+- ✅ Expired tokens are rejected
+- ✅ Malformed/empty/truncated tokens are rejected
+- ✅ Cross-instance tokens are rejected (unique signing keys)
+- ✅ Modified user_id tokens are rejected
+- ✅ Modified expiration tokens are rejected (signature mismatch)
+- ✅ Multiple tokens per user work correctly
+- ✅ Token TTL is ~24 hours
+- ✅ Concurrent token validation doesn't panic
+- ✅ Duplicate registration is prevented
+- ✅ Unicode and long usernames are handled
+
+### Phase 3: Financial Logic Attacks (16 tests)
+
+**Verified Protections:**
+- ✅ Balance cannot go negative (lock > available fails)
+- ✅ Balance overflow protection (u64::MAX + 1 fails)
+- ✅ Locked balances cannot be re-locked
+- ✅ Escrowed balances cannot be unlocked from locked
+- ✅ Balance invariant holds: available + locked + escrowed = total
+- ✅ Zero balance operations don't panic
+- ✅ Invalid state transitions are rejected (Settled→Created, etc.)
+- ✅ Terminal states (Settled, Cancelled, Expired) have no outgoing transitions
+- ✅ Happy path transitions are valid
+- ✅ Disputed→Settled is valid for dispute resolution
+- ✅ Only allowed states can cancel (Created, Accepted, EscrowFunding, Disputed)
+- ✅ Double settlement/unlock is prevented
+- ✅ Settlement idempotency works correctly
+
+### Phase 4: Data Integrity (6 tests)
+
+**Verified Protections:**
+- ✅ Corrupted data doesn't crash the system
+- ✅ Empty files are handled gracefully
+- ✅ Concurrent file access (save/reload) preserves data
+- ✅ Conflicting state snapshots are handled
+- ✅ Stale state injection doesn't regress trade state
+
+### Phase 5: Fiat Integration (6 tests)
+
+**Verified Protections:**
+- ✅ Key generation produces unique keys
+- ✅ Invalid/empty/short hex key import fails
+- ✅ Zero key import is handled
+- ✅ Public key is accessible and valid (33-byte compressed)
+
+### Phase 6: Denial of Service (3 tests)
+
+**Verified Protections:**
+- ✅ 1000 orders in orderbook don't crash
+- ✅ 100 trades in tradebook don't crash
+- ✅ Rate limiter handles 1000 unique keys without panic
+- ✅ Rate limiter max_keys cap prevents unbounded memory growth
+
+### Phase 7: Supply Chain (4 tests)
+
+**Verified Protections:**
+- ✅ `deny.toml` exists for supply chain security
+- ✅ `Cargo.lock` exists for reproducible builds
+- ✅ No git dependencies in workspace
+- ✅ Crypto dependencies (hmac, sha2, secp256k1) are present
+
+### Miri Undefined Behavior Detection (~59 tests)
+
+**Result:** 0 undefined behavior found across all p2p-node tests.
+- Blocked by Miri limitations: filesystem operations, FFI (secp256k1), socket operations, crypto dependencies
+- All testable code paths pass clean
+
+### Kani Formal Verification (11 proofs)
+
+**Result:** All 11 proofs pass in `crates/fiat/` (bond + trade state machines).
+- p2p-node and user proofs disabled due to Kani dependency analysis limitations
+
+### Security Findings Summary
+
+| Finding | Severity | Status |
+|---|---|---|
+| Argon2 default params meet OWASP (64MB, 3 iterations) | Info | ✅ Verified |
+| HMAC key not persisted — tokens invalidated on restart | Low | ⚠️ Acceptable for P2P |
+| Rate limiter HashMap unbounded growth | Low | ✅ Fixed — max_keys cap with LRU eviction |
+| Argon2 verifier accepts Argon2i/Argon2d hashes | Info | ✅ Not a vulnerability |
+| Zero amount/price orders accepted by orderbook | Low | ✅ Fixed — rejected in Exchange::submit_order |
+| Trade state machine restricts cancellation correctly | Info | ✅ Verified |
+| Balance overflow protection works | Info | ✅ Verified |
+| No supply chain vulnerabilities found | Info | ✅ Verified |
+
+### Run Commands
+
+```bash
+# All pen tests
+cargo test --test network_protocol_attacks
+cargo test --test authentication_attacks
+cargo test --test crypto_penetration_tests
+cargo test --test financial_logic_attacks
+cargo test --test remaining_phases
+
+# Miri UB detection
+cargo +nightly miri test -p p2p-node
+
+# Kani formal verification
+cargo kani --manifest-path crates/fiat/Cargo.toml
+```

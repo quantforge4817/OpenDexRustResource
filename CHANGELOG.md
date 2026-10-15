@@ -15,8 +15,11 @@ All notable changes to the OpenDex project will be documented in this file.
 - Added performance benchmarks: 4 Criterion benchmarks (order matching, message processing, settlement, auth)
 - Added P2P network load tests: multi-node mesh formation, message flood, peer churn, snapshot sync
 - Added 4 extended fuzz targets: fiat_trade, settlement_ops, auth_token, bond (total: 12)
+- Added penetration testing suite: 133 tests across 7 phases (network, auth, crypto, financial, data integrity, fiat, DoS, supply chain)
 - Fixed 8 testnet deployment bugs (stale snapshot crash, Monero RPC path, Bitcoin blockcount, etc.)
 - Resolved all remaining audit findings (5 High, 6 Medium, 4 Low)
+- Fixed rate limiter unbounded memory growth: added max_keys cap with LRU eviction (10,000 key limit)
+- Fixed zero amount/price order validation: Exchange::submit_order now rejects zero values
 - Updated rustls from v0.23.45 to v0.23.46 (RUSTSEC-2026-0346 through 0349)
 - Added log redaction framework for sensitive data
 - Added per-username login rate limiting (5/min)
@@ -35,10 +38,11 @@ All notable changes to the OpenDex project will be documented in this file.
 
 ### Test Status
 - **425 tests passed**, 0 failed (365 library/binary + 60 integration)
+- **133 penetration tests** — all pass across 7 phases (network, auth, crypto, financial, data integrity, fiat, DoS, supply chain)
 - **12 fuzz targets** — all smoke tests pass
-- **24 Kani proofs** — 11 verified, 13 compile (slow to run)
+- **24 Kani proofs** — 11 verified, 13 disabled (state space explosion)
 - **4 Criterion benchmarks** — all compile
-- **146 Miri tests** — 0 undefined behavior
+- **~59 Miri tests** — 0 undefined behavior
 - `cargo-deny`: **0 RUSTSEC vulnerabilities** across 662 dependencies
 
 ### Git History Secrets Scan

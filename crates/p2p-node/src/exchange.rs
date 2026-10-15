@@ -131,6 +131,15 @@ impl<'a> Exchange<'a> {
             );
         }
 
+        // Reject orders with zero price or amount to prevent meaningless trades
+        if operation.order.price == 0 {
+            anyhow::bail!("order price must be greater than zero");
+        }
+
+        if operation.order.amount == 0 {
+            anyhow::bail!("order amount must be greater than zero");
+        }
+
         let order = operation.order;
 
         // Materialize the order and reconcile any remote trades that arrived

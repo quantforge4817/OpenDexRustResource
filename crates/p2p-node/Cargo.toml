@@ -52,6 +52,17 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 [dev-dependencies]
 criterion = "0.5"
 
+# Cryptography penetration test dependencies
+opendex-user = { path = "../user" }
+opendex-fiat = { path = "../fiat" }
+opendex-transport = { path = "../opendex-transport" }
+opendex-types = { path = "../opendex-types" }
+argon2 = "0.5"
+hmac = "0.12"
+secp256k1 = { version = "0.29", features = ["rand-std", "serde"] }
+zeroize = "1"
+bitcoin = { version = "0.32", features = ["rand-std", "ordered", "std"] }
+
 [[bench]]
 name = "order_matching"
 harness = false
