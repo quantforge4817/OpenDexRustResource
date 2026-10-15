@@ -1,7 +1,7 @@
 # OpenDex v0.1.0-rc1 — Release Candidate
 
 **Date:** 2026-10-15
-**Git Commit:** `aa9510a`
+**Git Commit:** `43e6118`
 **Tag:** `v0.1.0-rc1`
 
 ---
@@ -221,7 +221,7 @@ cargo deny check
 ## 8. Release Checklist
 
 - [x] Tag release candidate `v0.1.0-rc1`
-- [x] Record exact Git commit hash: `aa9510a`
+- [x] Record exact Git commit hash: `43e6118`
 - [x] Document implemented, experimental, and incomplete features
 - [x] Publish test results (425 tests, 12 fuzz targets, 24 Kani proofs)
 - [x] Verify no secrets in Git history

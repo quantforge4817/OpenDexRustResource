@@ -8,7 +8,7 @@ All notable changes to the OpenDex project will be documented in this file.
 **Release Candidate 1** — First candidate for independent external security review.
 
 ### Commit
-`aa9510a` — feat: add Kani formal verification, fuzz targets, benchmarks, and release documentation
+`43e6118` — feat: add Kani formal verification, fuzz targets, benchmarks, and release documentation
 
 ### Changes Since v0.1.0-security-review
 - Added Kani formal verification: 24 proof harnesses across 4 components (BondState, FiatTradeState, OrderBook, RateLimiter)
