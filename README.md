@@ -206,6 +206,33 @@ See the [LICENSE](LICENSE) file for details.
 
 ---
 
+## 🔍 Seeking Independent Review
+
+Contributions and critical feedback from Bitcoin, Monero, Rust, and cryptographic protocol developers are welcome. Please report suspected vulnerabilities **privately** using the repository's [security reporting instructions](.github/SECURITY.md) rather than publishing exploitable details immediately.
+
+The goal is to establish what works, identify weaknesses, and improve the design before any consideration of production deployment.
+
+### Review Focus Areas
+
+We are asking reviewers to focus first on:
+
+1. **Atomic-swap correctness** — Verify that the BTC ↔ XMR swap protocol guarantees atomicity under all conditions.
+2. **Refund safety** — Ensure that funds are always recoverable if a swap fails or a counterparty disappears.
+3. **Adaptor-signature assumptions** — Validate the cryptographic assumptions and their implementation.
+4. **Failure recovery** — Test that the system handles network partitions, node crashes, and unexpected state transitions gracefully.
+
+### Testing on Test Networks
+
+Developers are invited to test on **Bitcoin testnet** and **Monero stagenet only**. Before testing, please verify that the test setup cannot accidentally use mainnet funds. See [`docs/testnet/`](docs/testnet/) for the testnet deployment guide and configuration.
+
+**Do not use mainnet funds.** This project is not yet ready for production deployment.
+
+### Security Status
+
+> **Important:** Do not advertise or treat this exchange as safe or ready for trading until the relevant security work has been completed. Independent audit and thorough testing are required before any production use.
+
+---
+
 ## ⚠️ Disclaimer
 
 OpenDex is experimental software under active development. Use at your own risk. The developers are not liable for any losses incurred through the use of this software. Always verify smart contracts and cryptographic operations independently.
