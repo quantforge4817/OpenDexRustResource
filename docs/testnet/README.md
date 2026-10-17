@@ -9,9 +9,6 @@ The testnet deploys:
 - **P2P Protocol** — 3 nodes (1 bootstrap + 2 test) running as systemd services
 - **Wallet RPCs** — Monero stagenet wallet and Bitcoin testnet wallet for on-chain operations
 - **Web Frontend** (optional) — Static informational portal (Leptos/WASM) served via Nginx with HTTPS
-- **Matrix Server** (optional) — Self-hosted Conduit homeserver for community chat
-
-See also **[docs/matrix/](../matrix/README.md)** for the Matrix homeserver deployment guide.
 
 ## Phased Deployment
 

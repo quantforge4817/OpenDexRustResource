@@ -22,4 +22,4 @@ Have you considered any alternative solutions or features?
 Any other information, screenshots, or references that might help.
 
 ## Need Help?
-For discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)**.
+For discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:matrix.org)**.

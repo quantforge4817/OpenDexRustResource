@@ -82,9 +82,9 @@ See **[docs/deployment/DEPLOY.md](../../docs/deployment/DEPLOY.md)** for complet
 
 The site is fully static — no backend, no database, no runtime dependencies on the server.
 
-## Optional: Self-Hosted Matrix Server
+## Optional: Cloud-Hosted Matrix Server
 
-The OpenDex community chat can run on your own Matrix homeserver instead of relying on `matrix.org`. A complete deployment guide for a lightweight **Conduit** homeserver on a cheap cloud VPS (~$3.50–5/mo) is available at **[docs/matrix/](../../docs/matrix/)**. This gives you full data sovereignty, `@user:opendex.org` handles, and privacy alignment with the project's values.
+The OpenDex community chat can run on your own Matrix server deployed on a low-cost cloud VPS (~$3.50–5/mo) instead of relying on `matrix.org`. A complete deployment guide for a lightweight **Conduit** server is available at **[docs/matrix/](../../docs/matrix/)**. This gives you full data sovereignty, `@user:opendex.org` handles, and privacy alignment with the project's values.
 
 ```bash
 # Quick setup on your VPS

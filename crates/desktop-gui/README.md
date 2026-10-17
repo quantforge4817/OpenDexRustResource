@@ -179,7 +179,7 @@ See `audit/regulatory_compliance/regulatory_compliance.md` for the full complian
 
 Join the OpenDex community on **Matrix** to ask questions, discuss development, and get help:
 
-- **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)** — Community discussion and support
+- **[Matrix Chat](https://matrix.to/#/#opendex:matrix.org)** — Community discussion and support
 
 ## License
 

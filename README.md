@@ -113,7 +113,7 @@ OpenDexRustResource/
 ├── audit/                  # Security audit, compliance, bug log
 └── docs/                   # Documentation
     ├── deployment/         # Web portal deployment scripts
-    ├── matrix/             # Self-hosted Matrix homeserver deployment
+    ├── matrix/             # Cloud-hosted Matrix server deployment
     └── testnet/            # Testnet deployment scripts and results
 ```
 
@@ -164,7 +164,7 @@ Join the OpenDex community on **Matrix** to ask questions, discuss development, 
 
 - **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)** — Community discussion and support
 
-We also provide a self-hosted Matrix homeserver deployment guide for those who want to run their own instance. See **[docs/matrix/](docs/matrix/)** for details.
+We also provide a cloud-hosted Matrix server deployment guide for those who want to run their own instance on a low-cost VPS (~$3.50–5/mo). See **[docs/matrix/](docs/matrix/)** for details.
 
 ## 📖 Documentation
 
@@ -175,7 +175,7 @@ We also provide a self-hosted Matrix homeserver deployment guide for those who w
 - **[Testing](audit/testing.md)** — Testing strategy and coverage
 - **[Testnet](docs/testnet/README.md)** — Testnet deployment guide
 - **[Deployment](docs/deployment/README.md)** — Web portal deployment guide
-- **[Matrix Server](docs/matrix/README.md)** — Self-hosted Matrix homeserver setup
+- **[Matrix Server](docs/matrix/README.md)** — Cloud-hosted Matrix server setup
 
 ---
 

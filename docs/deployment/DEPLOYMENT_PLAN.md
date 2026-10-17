@@ -208,7 +208,7 @@ Based on the review of `audit/regulatory_compliance/regulatory_compliance.md` (E
 - Contact email for general inquiries
 - Separate email for security vulnerability reports
 - Link to the source browser for documentation
-- Link to the community Matrix chat at `#opendex:opendex.org`
+- Link to the community Matrix chat at `#opendex:matrix.org`
 
 ### 7. Compliance Reference in Deployment Guide (Implemented)
 

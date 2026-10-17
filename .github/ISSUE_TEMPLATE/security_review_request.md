@@ -41,4 +41,4 @@ Developers are invited to test on **Bitcoin testnet** and **Monero stagenet only
 2. Run the test suite: `cargo test --workspace`
 3. Set up a local testnet: see [`docs/testnet/`](docs/testnet/)
 4. Report findings via private security reports or discuss in issues/PRs
-5. Join the discussion on **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)**
+5. Join the discussion on **[Matrix Chat](https://matrix.to/#/#opendex:matrix.org)**

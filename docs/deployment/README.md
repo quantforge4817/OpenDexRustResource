@@ -12,11 +12,11 @@ This folder contains everything needed to build and deploy the OpenDex web porta
 | `deploy.sh` | Automated deployment script (builds, uploads, configures Nginx) |
 | `deploy/nginx.conf` | Nginx configuration for SPA routing, gzip, and security headers |
 
-## Optional: Matrix Homeserver
+## Optional: Matrix Server
 
-If you want to run a self-hosted Matrix homeserver for the OpenDex community chat (replacing `#opendex:matrix.org` with `#opendex:opendex.org`), see the dedicated guide:
+If you want to run a cloud-hosted Matrix server for the OpenDex community chat on a low-cost VPS (~$3.50–5/mo), see the dedicated guide:
 
-**[docs/matrix/README.md](../matrix/README.md)** — Complete deployment guide for a Conduit Matrix homeserver on a cloud VPS (~$3.50–5/mo).
+**[docs/matrix/README.md](../matrix/README.md)** — Complete deployment guide for a Conduit Matrix server on a cloud VPS.
 
 ## Quick Start
 
@@ -51,7 +51,5 @@ docs/deployment/
 └── deploy/
     └── nginx.conf     # Nginx config
 ```
-
-See also [`docs/matrix/`](../matrix/) for the self-hosted Matrix homeserver deployment assets.
 
 The built static files will appear in `docs/deployment/dist/` after running `build.sh`.

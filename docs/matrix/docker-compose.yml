@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  conduit:
+    image: matrixconduit/matrix-conduit:v0.6.0
+    container_name: conduit
+    restart: unless-stopped
+    ports:
+      - "6167:6167"  # Internal API port
+    volumes:
+      - ./conduit.toml:/data/conduit.toml:ro
+      - conduit-data:/data  # RocksDB data directory
+    environment:
+      - CONDUIT_CONFIG=/data/conduit.toml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6167/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  conduit-data:
+    driver: local

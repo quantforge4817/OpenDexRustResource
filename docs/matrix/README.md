@@ -1,280 +1,228 @@
-# OpenDex Matrix Server — Deployment Guide
+# OpenDex Matrix Server Deployment Guide
 
-This guide walks you through deploying a self-hosted **Conduit** Matrix homeserver on a cloud VPS for the OpenDex community chat.
+This guide walks you through deploying a **Conduit** Matrix server on a low-cost cloud VPS (~$3.50–5/mo) for the OpenDex community chat. This replaces reliance on `matrix.org` with an OpenDex-owned server (`#opendex:opendex.org`), providing full data sovereignty and custom `@user:opendex.org` handles.
 
-## Overview
+## Why Conduit?
 
-Conduit is a lightweight Matrix homeserver written in Rust. It runs as a single binary with an embedded RocksDB database, requiring minimal resources (~1 GB RAM). This guide deploys Conduit on a cheap cloud VPS (~$3.50–5/mo) so the OpenDex community chat moves from `#opendex:matrix.org` to `#opendex:opendex.org` on your own infrastructure.
+| Feature | Conduit | Synapse |
+|---------|---------|---------|
+| Language | Rust | Python |
+| RAM Usage | ~100–500 MB | 2–4 GB+ |
+| Min VPS Cost | ~$3.50/mo | ~$20/mo |
+| Performance | Excellent | Good |
+| Maintenance | Minimal | Moderate |
+
+Conduit is written in Rust, uses a fraction of the resources of Synapse, and is ideal for low-cost VPS deployment.
 
 ## Prerequisites
 
-- **VPS**: Ubuntu 24.04 LTS, 1 CPU, 1–2 GB RAM, 10–25 GB SSD
-- **Domain**: A domain or subdomain (e.g., `matrix.opendex.org`) pointing to your VPS IP
-- **SSH access** with sudo privileges
-- **Existing web portal** (optional): If co-locating with the OpenDex static portal, ensure 2 GB+ RAM
+1. **A cloud VPS** — Vultr ($3.50/mo), Host4Fun ($3/mo annual), or VPSMart ($4.50/mo)
+   - Ubuntu 24.04 LTS
+   - 1–2 GB RAM, 1 core, 10–25 GB SSD
+2. **A domain name** — e.g., `opendex.org` with DNS access
+3. **SSH access** to the VPS
+4. **Docker** — installed by the setup script
 
 ## Quick Start
 
-### One-Command Setup
-
 ```bash
 # SSH into your VPS
-ssh root@<your-vps-ip>
+ssh user@your-vps-ip
 
-# Clone the repository (if not already present)
-git clone <repo-url> /home/opendex/opendex
+# Clone the OpenDex repository (or copy just the docs/matrix folder)
+git clone https://github.com/OpenDex/OpenDexRustSource.git
+cd OpenDexRustSource/docs/matrix
 
-# Run the automated setup script
-sudo bash docs/matrix/setup-matrix.sh matrix.opendex.org
+# Run the automated setup script (replace with your domain)
+sudo bash setup-matrix.sh matrix.opendex.org
 ```
 
 The script will:
-1. Install Conduit from the official release
-2. Create a systemd service for auto-start
-3. Generate the Conduit configuration file
-4. Configure Nginx as a reverse proxy for federation traffic
-5. Set up HTTPS via Let's Encrypt (Certbot)
-6. Configure UFW firewall rules
+1. Install Docker and Docker Compose
+2. Configure the domain DNS (`.well-known` discovery)
+3. Set up Nginx as a reverse proxy
+4. Obtain HTTPS certificates via Certbot
+5. Generate the Conduit configuration
+6. Start the Conduit server
 
-### Manual Step-by-Step
+## Manual Setup
 
-#### 1. Install Conduit
+If you prefer manual control, follow these steps:
 
-```bash
-# Download the latest Conduit release
-CONDUIT_VERSION=$(curl -s https://api.github.com/repos/conduit-rms/conduit/releases/latest | grep tag_name | cut -d'"' -f4)
-wget "https://github.com/conduit-rms/conduit/releases/download/${CONDUIT_VERSION}/conduit-x86_64-unknown-linux-musl.tar.gz"
-
-# Extract and install
-tar xzf conduit-x86_64-unknown-linux-musl.tar.gz
-sudo mv conduit /usr/local/bin/
-sudo chmod +x /usr/local/bin/conduit
-
-# Verify installation
-conduit --version
-```
-
-#### 2. Create Conduit User and Directories
+### 1. Install Docker
 
 ```bash
-# Create a dedicated user for Conduit
-sudo useradd -r -s /bin/false -m -d /var/lib/conduit conduit
-
-# Create required directories
-sudo mkdir -p /var/lib/conduit
-sudo mkdir -p /etc/conduit
-sudo chown -R conduit:conduit /var/lib/conduit
-sudo chown -R conduit:conduit /etc/conduit
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
 ```
 
-#### 3. Configure Conduit
+### 2. Configure DNS
 
-Copy the configuration template and edit it:
+Add the following DNS records for your domain:
+
+| Type | Name | Value |
+|------|------|-------|
+| A | matrix.opendex.org | <your-vps-ip> |
+| TXT | _matrix._tcp.matrix.opendex.org | matrix://matrix.opendex.org |
+
+### 3. Set Up Nginx
 
 ```bash
-sudo cp docs/matrix/conduit.toml /etc/conduit/conduit.toml
-sudo nano /etc/conduit/conduit.toml
+sudo apt install nginx certbot python3-certbot-nginx
+sudo cp nginx-matrix.conf /etc/nginx/sites-available/matrix
+sudo ln -s /etc/nginx/sites-available/matrix /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl restart nginx
 ```
 
-Key settings to customize:
-- `server_name`: Set to your domain (e.g., `matrix.opendex.org`)
-- `registration_shared_secret`: Generate a strong random secret
-- `database_url`: RocksDB path (default is `/var/lib/conduit/db`)
-
-#### 4. Create Systemd Service
+### 4. Obtain HTTPS Certificate
 
 ```bash
-sudo nano /etc/systemd/system/conduit.service
-```
-
-Paste the following:
-
-```ini
-[Unit]
-Description=Conduit Matrix Homeserver
-After=network.target
-
-[Service]
-Type=simple
-User=conduit
-Group=conduit
-ExecStart=/usr/local/bin/conduit --config /etc/conduit/conduit.toml
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable conduit
-sudo systemctl start conduit
-sudo systemctl status conduit
-```
-
-#### 5. Configure Nginx Reverse Proxy
-
-Install Nginx if not already present:
-
-```bash
-sudo apt install -y nginx
-```
-
-Copy the Nginx configuration:
-
-```bash
-sudo cp docs/matrix/nginx-matrix.conf /etc/nginx/sites-available/matrix
-sudo ln -sf /etc/nginx/sites-available/matrix /etc/nginx/sites-enabled/matrix
-sudo rm -f /etc/nginx/sites-enabled/default
-```
-
-Edit the configuration to match your domain:
-
-```bash
-sudo nano /etc/nginx/sites-available/matrix
-```
-
-Test and reload:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-#### 6. Set Up HTTPS with Let's Encrypt
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-
-# Obtain and install the certificate
 sudo certbot --nginx -d matrix.opendex.org
-
-# Follow the prompts:
-# - Enter email address
-# - Agree to terms
-# - Choose to redirect HTTP to HTTPS (recommended)
-
-# Test auto-renewal
-sudo certbot renew --dry-run
 ```
 
-#### 7. Configure Firewall
+### 5. Configure Conduit
 
-```bash
-# Allow SSH, HTTP, HTTPS, and Matrix federation
-sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
-sudo ufw allow 8448/tcp  # Matrix federation
-sudo ufw enable
+Edit `conduit.toml` with your settings:
+
+```toml
+server_name = "opendex.org"
+# ... see conduit.toml for full configuration
 ```
 
-#### 8. Create Your First Admin User
+### 6. Start Conduit
 
 ```bash
-# Register the first user via the Conduit CLI
-conduit register --config /etc/conduit/conduit.toml --username admin --password <strong-password> --admin
+docker compose up -d
 ```
 
-#### 9. Create the OpenDex Community Room
-
-Using a Matrix client (e.g., Element):
-
-1. Log in with your admin account at `https://matrix.opendex.org`
-2. Create a new room named `#opendex:matrix.opendex.org`
-3. Set room visibility to public
-4. Configure room settings (name, topic, etc.)
-
-## Migration from Matrix.org
-
-To migrate from `#opendex:matrix.org` to your self-hosted room:
-
-1. **Announce the migration**: Post in the old room about the move
-2. **Create the new room**: On your Conduit server
-3. **Update all links**: The web frontend and documentation should point to the new room
-4. **Invite existing members**: Use the new room link `https://matrix.to/#/#opendex:matrix.opendex.org`
-5. **Federate with Matrix.org**: Conduit automatically federates, so users on matrix.org can join your room
-
-## Backup
-
-A backup script is provided at `docs/matrix/backup.sh`. Set up daily backups:
+### 7. Verify Installation
 
 ```bash
-# Make the script executable
-chmod +x docs/matrix/backup.sh
+# Check Conduit is running
+docker compose ps
 
-# Set up a daily cron job
+# Check the server is accessible
+curl -s https://matrix.opendex.org/.well-known/matrix/server | jq
+
+# Create an admin user
+curl -X POST http://localhost:6167/_matrix/client/r0/admin/register \
+  -u admin:your-password \
+  -d '{"username": "admin", "password": "your-password", "admin": true, "displayname": "Admin"}'
+```
+
+## Room Creation
+
+After creating an admin user, create the community room:
+
+```bash
+# Login to get an access token
+curl -X POST https://matrix.opendex.org/_matrix/client/v3/login \
+  -H "Content-Type: application/json" \
+  -d '{"type": "m.login.password", "user": "admin", "password": "your-password"}'
+
+# Create the room
+curl -X POST https://matrix.opendex.org/_matrix/client/v3/createRoom \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"room_alias_name": "opendex", "name": "OpenDex Community", "topic": "Official OpenDex community chat", "visibility": "public"}'
+```
+
+## Migration from matrix.org
+
+To migrate from `#opendex:matrix.org` to `#opendex:opendex.org`:
+
+1. **Announce the migration** in the old room well in advance
+2. **Create the new room** on your Conduit server
+3. **Update all links** in project documentation, website, and social media
+4. **Set up federation** — Conduit can federate with matrix.org, so users on both servers can communicate
+5. **Invite key members** to the new room
+6. **Archive the old room** after a transition period
+
+## File Structure
+
+| File | Purpose |
+|------|---------|
+| `README.md` | This deployment guide |
+| `docker-compose.yml` | Conduit container configuration |
+| `setup-matrix.sh` | Automated VPS setup script |
+| `conduit.toml` | Conduit configuration template |
+| `nginx-matrix.conf` | Nginx reverse proxy configuration |
+| `backup.sh` | Daily RocksDB backup script |
+
+## Daily Backups
+
+The included `backup.sh` script backs up the Conduit RocksDB database:
+
+```bash
+# Run manually
+sudo bash backup.sh
+
+# Or set up a cron job
 sudo crontab -e
-# Add this line for daily backups at 2 AM
-0 2 * * * /path/to/opendex/docs/matrix/backup.sh
+# Add: 0 2 * * * /path/to/backup.sh
 ```
 
-The script backs up the RocksDB database to a local directory and optionally uploads to remote storage (S3-compatible).
+Backups are stored in `/var/backups/conduit/` and can be synced to remote storage.
 
-## Monitoring
+## Security Checklist
 
-Check Conduit status:
-
-```bash
-sudo systemctl status conduit
-sudo journalctl -u conduit -f
-```
-
-Check disk usage:
-
-```bash
-du -sh /var/lib/conduit/
-```
+- [ ] Firewall configured (UFW) — allow only ports 22, 80, 443, 8448
+- [ ] HTTPS enabled with valid certificate
+- [ ] SSH key authentication only (disable password auth)
+- [ ] Regular system updates
+- [ ] Fail2ban for SSH protection
+- [ ] Conduit registration tokens secured
+- [ ] Daily backups configured and tested
+- [ ] Cloudflare proxy enabled (optional but recommended)
 
 ## Troubleshooting
 
-### Federation not working
-
-- Verify port 8448 is open: `sudo ufw status`
-- Check Nginx config: `sudo nginx -t`
-- Ensure your domain's DNS `_matrix` record points to your server
-- Test federation: `curl -v https://matrix.opendex.org:8448/.well-known/matrix/server`
-
-### HTTPS issues
-
-- Check Certbot logs: `sudo certbot certificates`
-- Verify Nginx SSL config: `sudo nano /etc/nginx/sites-available/matrix`
-- Test certificate: `curl -v https://matrix.opendex.org`
-
 ### Conduit won't start
 
-- Check logs: `sudo journalctl -u conduit -n 50`
-- Verify config: `conduit --config /etc/conduit/conduit.toml --check-config`
-- Check permissions: `sudo chown -R conduit:conduit /var/lib/conduit /etc/conduit`
-
-## Updating Conduit
-
 ```bash
-# Stop the service
-sudo systemctl stop conduit
+# Check logs
+docker compose logs conduit
 
-# Download the latest version
-CONDUIT_VERSION=$(curl -s https://api.github.com/repos/conduit-rms/conduit/releases/latest | grep tag_name | cut -d'"' -f4)
-wget "https://github.com/conduit-rms/conduit/releases/download/${CONDUIT_VERSION}/conduit-x86_64-unknown-linux-musl.tar.gz"
-tar xzf conduit-x86_64-unknown-linux-musl.tar.gz
-sudo mv conduit /usr/local/bin/
-
-# Restart
-sudo systemctl start conduit
-sudo systemctl status conduit
+# Verify config
+docker compose config
 ```
 
-## Configuration Reference
+### Federation issues
 
-See `conduit.toml` in this directory for a complete configuration template with comments explaining each setting.
+```bash
+# Check .well-known endpoint
+curl -s https://matrix.opendex.org/.well-known/matrix/server
 
-## Nginx Configuration Reference
+# Verify DNS
+dig _matrix._tcp.matrix.opendex.org TXT
+```
 
-See `nginx-matrix.conf` in this directory for the reverse proxy configuration that handles:
-- Matrix federation traffic on port 8448
-- Client-server API on port 443
-- WebSocket connections for real-time messaging
+### Certificate issues
+
+```bash
+# Renew certificate
+sudo certbot renew
+
+# Test renewal
+sudo certbot renew --dry-run
+```
+
+## Cost Breakdown
+
+| Item | Monthly Cost |
+|------|-------------|
+| VPS (1–2 GB RAM) | ~$3.50–5/mo |
+| Domain name | ~$10/year |
+| **Total** | **~$4.50–6/mo** |
+
+## Support
+
+For issues or questions:
+
+- **Conduit documentation**: https://conduit-rust.github.io/conduit/
+- **Conduit Matrix room**: #conduit:conduit-rust.net
+- **OpenDex community**: #opendex:opendex.org
+
+## License
+
+This deployment guide is part of the OpenDex project, licensed under MIT or Apache-2.0.

@@ -303,15 +303,15 @@ Then upload the contents of `dist/` to your hosting provider or web server.
 
 ## Optional: Matrix Server Deployment
 
-If you want to run a self-hosted Matrix homeserver for the OpenDex community chat (replacing `#opendex:matrix.org` with `#opendex:opendex.org`), see the dedicated guide:
+If you want to run a cloud-hosted Matrix server for the OpenDex community chat on a low-cost VPS (~$3.50–5/mo), see the dedicated guide:
 
-**[docs/matrix/README.md](../matrix/README.md)** — Complete deployment guide for a Conduit Matrix homeserver on a cloud VPS.
+**[docs/matrix/README.md](../matrix/README.md)** — Complete deployment guide for a Conduit Matrix server on a cloud VPS.
 
 ### Quick Start
 
 ```bash
-# SSH into your VPS (same VPS as the web portal, or a separate one)
-ssh root@<your-vps-ip>
+# On your VPS
+ssh youruser@<vps-ip>
 
 # Run the automated setup script
 sudo bash docs/matrix/setup-matrix.sh matrix.opendex.org
@@ -322,23 +322,21 @@ sudo bash docs/matrix/setup-matrix.sh matrix.opendex.org
 | File | Purpose |
 |------|---------|
 | `docs/matrix/README.md` | Full deployment guide |
+| `docs/matrix/docker-compose.yml` | Conduit container config |
 | `docs/matrix/setup-matrix.sh` | Automated setup script |
 | `docs/matrix/conduit.toml` | Conduit configuration template |
 | `docs/matrix/nginx-matrix.conf` | Nginx reverse proxy config |
 | `docs/matrix/backup.sh` | Daily RocksDB backup script |
 
-### Co-locating with the Web Portal
-
-If your VPS has **2 GB+ RAM**, you can run both the static web portal and the Matrix server on the same machine. The Matrix server (Conduit) uses ~1 GB RAM, leaving enough for Nginx and the static site.
-
-### VPS Requirements for Matrix
+### Server Requirements for Matrix
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
 | CPU | 1 core | 2 cores |
-| RAM | 1 GB (Matrix only) | 2 GB (Matrix + web portal) |
+| RAM | 1 GB (Conduit only) | 2 GB |
 | Disk | 10 GB SSD | 25 GB SSD |
-| Cost | ~$3.50–5/mo | ~$5–10/mo |
+| OS | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
+| Provider | Vultr $3.50/mo, Host4Fun $3/mo, VPSMart $4.50/mo | Any |
 
 ---
 

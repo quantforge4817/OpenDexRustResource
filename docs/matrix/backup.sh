@@ -1,138 +1,156 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
-# backup.sh — Daily RocksDB backup for Conduit Matrix homeserver
+# OpenDex Matrix Server Backup Script
+# Daily backup of Conduit RocksDB database
 #
-# Usage: ./backup.sh
-#
-# This script:
-# 1. Creates a snapshot of the RocksDB database
-# 2. Compresses the backup
-# 3. Optionally uploads to remote S3-compatible storage
-# 4. Cleans up old backups (keeps last 7 days locally)
-#
-# Set up as a cron job:
+# Usage: sudo bash backup.sh
+# Recommended: Run daily via cron at 2 AM
 #   0 2 * * * /path/to/backup.sh
 #
 
 set -euo pipefail
 
-# --- Configuration ---
-CONDUIT_DATA_DIR="/var/lib/conduit"
+# Configuration
 BACKUP_DIR="/var/backups/conduit"
-RETENTION_DAYS=7
+DOCKER_CONTAINER="conduit"
+DATA_VOLUME="docs-matrix_conduit-data"
+RETENTION_DAYS=7  # Keep backups for 7 days
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/conduit_backup_${TIMESTAMP}.tar.gz"
+BACKUP_NAME="conduit_backup_${TIMESTAMP}.tar.gz"
 
-# Optional: S3-compatible remote storage
-# Set these environment variables to enable remote backups:
-#   BACKUP_S3_BUCKET="my-backup-bucket"
-#   BACKUP_S3_KEY="your-access-key"
-#   BACKUP_S3_SECRET="your-secret-key"
-#   BACKUP_S3_ENDPOINT="https://s3.example.com" (optional, for non-AWS)
-REMOTE_BACKUP="${BACKUP_REMOTE:-false}"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-echo "============================================"
-echo " Conduit Matrix Backup"
-echo "============================================"
-echo "Timestamp: ${TIMESTAMP}"
-echo "Data dir:  ${CONDUIT_DATA_DIR}"
-echo "Backup:    ${BACKUP_FILE}"
-echo "--------------------------------------------"
-
-# --- Check root ---
-if [[ $EUID -ne 0 ]]; then
-  echo "ERROR: This script should be run as root (sudo)."
-  exit 1
-fi
-
-# --- Create backup directory ---
-mkdir -p "${BACKUP_DIR}"
-
-# --- Stop Conduit temporarily for consistent backup ---
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN} Conduit Database Backup${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Stopping Conduit for consistent backup..."
-if systemctl is-active --quiet conduit; then
-  systemctl stop conduit
-  echo "Conduit stopped."
+echo "Timestamp: $TIMESTAMP"
+echo "Backup directory: $BACKUP_DIR"
+echo "Retention: $RETENTION_DAYS days"
+echo ""
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
+# ========================================
+# Step 1: Stop Conduit container
+# ========================================
+echo -e "${GREEN}[1/4] Stopping Conduit container...${NC}"
+
+if docker ps --format '{{.Names}}' | grep -q "^${DOCKER_CONTAINER}$"; then
+    docker stop "$DOCKER_CONTAINER"
+    echo -e "${GREEN}✓ Container stopped${NC}"
 else
-  echo "Conduit is not running. Proceeding with backup..."
+    echo -e "${YELLOW}Warning: Container not running${NC}"
 fi
 
-# --- Create backup ---
-echo ""
-echo "Creating RocksDB backup..."
+# ========================================
+# Step 2: Backup the RocksDB data
+# ========================================
+echo -e "\n${GREEN}[2/4] Creating backup...${NC}"
 
-if [[ -d "${CONDUIT_DATA_DIR}/db" ]]; then
-  # Compress the entire data directory
-  tar czf "${BACKUP_FILE}" -C "${CONDUIT_DATA_DIR}" .
-  BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
-  echo "Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+# Create a temporary directory for the backup
+TEMP_DIR=$(mktemp -d)
+
+# Extract the volume data
+docker run --rm \
+    -v "${DATA_VOLUME}:/data:ro" \
+    -v "${TEMP_DIR}:/backup" \
+    alpine \
+    tar -czf "/backup/${BACKUP_NAME}" -C /data .
+
+# Move the backup to the backup directory
+mv "${TEMP_DIR}/${BACKUP_NAME}" "$BACKUP_DIR/"
+
+# Clean up temp directory
+rm -rf "$TEMP_DIR"
+
+# Verify the backup exists and has size
+if [ -f "$BACKUP_DIR/$BACKUP_NAME" ]; then
+    BACKUP_SIZE=$(du -h "$BACKUP_DIR/$BACKUP_NAME" | cut -f1)
+    echo -e "${GREEN}✓ Backup created: ${BACKUP_NAME} (${BACKUP_SIZE})${NC}"
 else
-  echo "WARNING: RocksDB directory not found at ${CONDUIT_DATA_DIR}/db"
-  echo "Backing up entire Conduit data directory..."
-  tar czf "${BACKUP_FILE}" -C "$(dirname ${CONDUIT_DATA_DIR})" "$(basename ${CONDUIT_DATA_DIR})"
-  BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
-  echo "Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    echo -e "${RED}✗ Backup failed: file not created${NC}"
+    docker start "$DOCKER_CONTAINER" 2>/dev/null || true
+    exit 1
 fi
 
-# --- Restart Conduit ---
-echo ""
-echo "Restarting Conduit..."
-systemctl start conduit
-if systemctl is-active --quiet conduit; then
-  echo "Conduit restarted successfully."
+# ========================================
+# Step 3: Restart Conduit container
+# ========================================
+echo -e "\n${GREEN}[3/4] Restarting Conduit container...${NC}"
+
+docker start "$DOCKER_CONTAINER" 2>/dev/null || {
+    echo -e "${YELLOW}Warning: Could not start container (was not running before)${NC}"
+}
+
+echo -e "${GREEN}✓ Container restarted${NC}"
+
+# ========================================
+# Step 4: Clean up old backups
+# ========================================
+echo -e "\n${GREEN}[4/4] Cleaning up old backups...${NC}"
+
+OLD_BACKUPS=$(find "$BACKUP_DIR" -name "conduit_backup_*.tar.gz" -mtime +${RETENTION_DAYS} -type f)
+if [ -n "$OLD_BACKUPS" ]; then
+    echo "$OLD_BACKUPS" | xargs rm -f
+    echo -e "${GREEN}✓ Old backups removed (older than $RETENTION_DAYS days)${NC}"
 else
-  echo "WARNING: Conduit failed to restart. Check logs:"
-  echo "  journalctl -u conduit -n 50"
+    echo "No old backups to remove."
 fi
 
-# --- Upload to remote storage (optional) ---
-if [[ "${REMOTE_BACKUP}" == "true" ]]; then
-  echo ""
-  echo "Uploading to remote storage..."
+# ========================================
+# Optional: Remote backup sync
+# ========================================
+# Uncomment and configure one of the following to sync backups to remote storage
 
-  if [[ -n "${BACKUP_S3_BUCKET:-}" ]] && [[ -n "${BACKUP_S3_KEY:-}" ]] && [[ -n "${BACKUP_S3_SECRET:-}" ]]; then
-    # Use AWS CLI if available
-    if command -v aws &> /dev/null; then
-      export AWS_ACCESS_KEY_ID="${BACKUP_S3_KEY}"
-      export AWS_SECRET_ACCESS_KEY="${BACKUP_S3_SECRET}"
+# Option 1: rsync to a remote server
+# echo -e "\n${GREEN}Syncing to remote storage...${NC}"
+# rsync -avz -e ssh "$BACKUP_DIR/$BACKUP_NAME" user@remote-server:/path/to/backups/
+# echo -e "${GREEN}✓ Remote sync complete${NC}"
 
-      if [[ -n "${BACKUP_S3_ENDPOINT:-}" ]]; then
-        aws --endpoint-url "${BACKUP_S3_ENDPOINT}" s3 cp "${BACKUP_FILE}" "s3://${BACKUP_S3_BUCKET}/$(basename ${BACKUP_FILE})"
-      else
-        aws s3 cp "${BACKUP_FILE}" "s3://${BACKUP_S3_BUCKET}/$(basename ${BACKUP_FILE})"
-      fi
-      echo "Uploaded to S3: ${BACKUP_S3_BUCKET}/$(basename ${BACKUP_FILE})"
-    elif command -v rclone &> /dev/null; then
-      # Use rclone as fallback
-      rclone copy "${BACKUP_FILE}" "remote:${BACKUP_S3_BUCKET}/"
-      echo "Uploaded via rclone."
-    else
-      echo "WARNING: No S3 client found (aws or rclone). Install one to enable remote backups."
-    fi
-  else
-    echo "WARNING: Remote backup enabled but S3 credentials not set."
-    echo "Set BACKUP_S3_BUCKET, BACKUP_S3_KEY, and BACKUP_S3_SECRET environment variables."
-  fi
-else
-  echo ""
-  echo "Remote backup disabled. Set BACKUP_REMOTE=true to enable."
-fi
+# Option 2: AWS S3
+# if command -v aws &> /dev/null; then
+#     echo -e "\n${GREEN}Uploading to S3...${NC}"
+#     aws s3 cp "$BACKUP_DIR/$BACKUP_NAME" s3://your-bucket-name/conduit-backups/
+#     echo -e "${GREEN}✓ S3 upload complete${NC}"
+# fi
 
-# --- Clean up old backups ---
+# Option 3: Rclone
+# if command -v rclone &> /dev/null; then
+#     echo -e "\n${GREEN}Uploading with rclone...${NC}"
+#     rclone copy "$BACKUP_DIR/$BACKUP_NAME" remote:bucket/conduit-backups/
+#     echo -e "${GREEN}✓ Rclone upload complete${NC}"
+# fi
+
+# ========================================
+# Backup Summary
+# ========================================
+echo -e "\n${GREEN}========================================${NC}"
+echo -e "${GREEN} Backup Complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Cleaning up backups older than ${RETENTION_DAYS} days..."
-find "${BACKUP_DIR}" -name "conduit_backup_*.tar.gz" -mtime +${RETENTION_DAYS} -delete
-REMAINING=$(find "${BACKUP_DIR}" -name "conduit_backup_*.tar.gz" | wc -l)
-echo "Remaining local backups: ${REMAINING}"
-
-# --- Summary ---
+echo "Backup file: $BACKUP_DIR/$BACKUP_NAME"
+echo "Backup size: $BACKUP_SIZE"
 echo ""
-echo "============================================"
-echo " Backup Complete"
-echo "============================================"
-echo "File: ${BACKUP_FILE}"
-echo "Size: ${BACKUP_SIZE:-unknown}"
-echo "Remote: ${REMOTE_BACKUP}"
-echo "Retention: ${RETENTION_DAYS} days"
-echo "============================================"
+
+# List current backups
+echo "Current backups:"
+ls -lh "$BACKUP_DIR"/conduit_backup_*.tar.gz 2>/dev/null | tail -5
+echo ""
+
+# ========================================
+# Restore instructions
+# ========================================
+echo -e "${YELLOW}To restore from this backup:${NC}"
+echo "1. Stop Conduit: docker stop conduit"
+echo "2. Remove old volume: docker volume rm ${DATA_VOLUME}"
+echo "3. Create new volume: docker volume create ${DATA_VOLUME}"
+echo "4. Extract backup:"
+echo "   docker run --rm -v ${DATA_VOLUME}:/data -v ${BACKUP_DIR}:/backup alpine sh -c 'tar -xzf /backup/${BACKUP_NAME} -C /data'"
+echo "5. Start Conduit: docker start conduit"
+echo ""

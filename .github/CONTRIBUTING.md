@@ -154,7 +154,7 @@ Additional subsystems include DAO governance, fee/treasury management, user auth
 
 ## Getting Help
 
-- Join the **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)** for real-time discussion and support
+- Join the **[Matrix Chat](https://matrix.to/#/#opendex:matrix.org)** for real-time discussion and support
 - Check the [documentation](docs/) for guides and references
 - Search existing [issues](https://github.com/quantforge4817/OpenDexRustResource/issues) for similar questions
 - Open a new issue for questions or discussion

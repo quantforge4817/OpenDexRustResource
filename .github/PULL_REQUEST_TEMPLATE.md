@@ -42,4 +42,4 @@ Describe the tests you ran to verify your changes.
 Any other information about the pull request.
 
 ## Questions?
-For discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)**.
+For discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:matrix.org)**.

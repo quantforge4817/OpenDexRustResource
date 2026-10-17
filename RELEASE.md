@@ -262,7 +262,7 @@ cargo deny check
 ## 9. Contact
 
 - **Security issues**: See [`SECURITY.md`](.github/SECURITY.md) and responsible disclosure guidelines
-- **Community chat**: Join us on **[Matrix](https://matrix.to/#/#opendex:opendex.org)** for discussion and support
+- **Community chat**: Join us on **[Matrix](https://matrix.to/#/#opendex:matrix.org)** for discussion and support
 - **General inquiries**: contact@opendex.org
 
 For general questions, open an issue on GitHub: https://github.com/quantforge4817/OpenDexRustResource/issues
