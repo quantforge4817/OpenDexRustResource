@@ -84,6 +84,7 @@ OpenDexRustSource/
 ├── audit/                  # Security audit, compliance, bug log
 ├── docs/
 │   ├── deployment/         # Web portal deployment scripts
+│   ├── matrix/             # Self-hosted Matrix homeserver deployment
 │   └── testnet/            # Testnet deployment scripts and test results
 └── book.iced.rs            # iced GUI book
 ```
@@ -96,6 +97,7 @@ OpenDexRustSource/
 | **Desktop GUI** | iced 0.14 | Native desktop app (Linux, macOS, Windows); thin client of local P2P node |
 | **Web Portal** | Leptos/WASM | Static informational site with download links and source browser |
 | **Testnet** | Ubuntu 24.04 VPS | 3 P2P nodes (1 bootstrap + 2 test), Monero stagenet, Bitcoin testnet |
+| **Matrix Server** | Conduit on VPS | Self-hosted Matrix homeserver for community chat (~$3.50–5/mo) |
 | **Security** | cargo-deny, Miri, cargo-fuzz | Dependency audit, UB detection, fuzzing (7 targets) |
 | **Regulatory** | MiCA, UK FCA | Comprehensive compliance analysis in `audit/regulatory_compliance/` |
 

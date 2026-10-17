@@ -16,6 +16,7 @@ pub struct HandlerContext<'a> {
     pub trade_book: &'a mut TradeBook,
     pub balance_book: &'a mut BalanceBook,
     pub pending_trade_states: &'a mut HashMap<Uuid, PendingTradeState>,
+    #[cfg(feature = "fiat")]
     pub p2p_offer_book: &'a mut P2POfferBook,
 }
 
@@ -26,6 +27,7 @@ use crate::sync::apply_snapshot;
 use protocol::message::{
     MessageType, Message, Order, OrderCancelled, Trade, TradeState, TradeStateChanged,
 };
+#[cfg(feature = "fiat")]
 use protocol::p2p::{P2POffer, P2POfferCancelled, P2PTrade, P2PTradeStateChanged};
 
 use protocol::state::StateSnapshot;
@@ -34,6 +36,7 @@ use crate::balances::BalanceBook;
 use crate::escrow::{fund_local_escrow, release_local_escrow, return_local_escrow};
 use crate::network::publish_message;
 use crate::orderbook::OrderBook;
+#[cfg(feature = "fiat")]
 use crate::p2p_offer_book::P2POfferBook;
 use crate::settlement::settle_local_trade;
 use crate::trade_state::{advance_trade_to_state, trade_state_rank};
@@ -416,9 +419,10 @@ pub fn handle_trade_state_changed(
 }
 
 // ---------------------------------------------------------------------------
-// P2P trading message handlers
+// P2P trading message handlers (fiat feature)
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "fiat")]
 pub fn handle_p2p_offer_created(
     offer: P2POffer,
     actor: &str,
@@ -457,6 +461,7 @@ pub fn handle_p2p_offer_created(
     Ok(())
 }
 
+#[cfg(feature = "fiat")]
 pub fn handle_p2p_offer_cancelled(
     cancelled: P2POfferCancelled,
     p2p_offer_book: &mut P2POfferBook,
@@ -472,6 +477,7 @@ pub fn handle_p2p_offer_cancelled(
     Ok(())
 }
 
+#[cfg(feature = "fiat")]
 pub fn handle_p2p_trade_created(
     trade: P2PTrade,
     actor: &str,
@@ -507,6 +513,7 @@ pub fn handle_p2p_trade_created(
     Ok(())
 }
 
+#[cfg(feature = "fiat")]
 pub fn handle_p2p_trade_state_changed(
     change: P2PTradeStateChanged,
     sender: &str,
@@ -746,6 +753,7 @@ pub fn handle_gossipsub_message(
             tracing::info!(sender = %authenticated_sender, "Received PeerAnnouncement");
         }
 
+        #[cfg(feature = "fiat")]
         MessageType::P2POfferCreated => {
             let offer = match serde_json::from_str::<P2POffer>(&msg.payload) {
                 Ok(offer) => offer,
@@ -762,6 +770,7 @@ pub fn handle_gossipsub_message(
             )?;
         }
 
+        #[cfg(feature = "fiat")]
         MessageType::P2POfferCancelled => {
             let cancelled = match serde_json::from_str::<P2POfferCancelled>(&msg.payload) {
                 Ok(cancelled) => cancelled,
@@ -784,6 +793,7 @@ pub fn handle_gossipsub_message(
             handle_p2p_offer_cancelled(cancelled, ctx.p2p_offer_book)?;
         }
 
+        #[cfg(feature = "fiat")]
         MessageType::P2PTradeCreated => {
             let trade = match serde_json::from_str::<P2PTrade>(&msg.payload) {
                 Ok(trade) => trade,
@@ -800,6 +810,7 @@ pub fn handle_gossipsub_message(
             )?;
         }
 
+        #[cfg(feature = "fiat")]
         MessageType::P2PTradeStateChanged => {
             let change = match serde_json::from_str::<P2PTradeStateChanged>(&msg.payload) {
                 Ok(change) => change,
@@ -814,6 +825,17 @@ pub fn handle_gossipsub_message(
                 &authenticated_sender,
                 ctx.p2p_offer_book,
             )?;
+        }
+
+        #[cfg(not(feature = "fiat"))]
+        MessageType::P2POfferCreated
+        | MessageType::P2POfferCancelled
+        | MessageType::P2PTradeCreated
+        | MessageType::P2PTradeStateChanged => {
+            tracing::info!(
+                message_type = ?msg.message_type,
+                "P2P fiat message received but fiat feature disabled — ignoring"
+            );
         }
     }
 

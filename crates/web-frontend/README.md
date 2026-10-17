@@ -5,7 +5,8 @@ Informational website for the OpenDex P2P decentralized exchange, built with Lep
 ## What's Included
 
 - **Hero section** — Project name, tagline, and quick action buttons
-- **About** — What OpenDex is and how it works
+- **About** — Who we are, what we're doing, why, when, and how
+- **Manifestos** — Quotes and download links for foundational texts: Cypherpunk's Manifesto, Bitcoin whitepaper, and Crypto-Anarchist Manifesto
 - **Features** — Key capabilities (P2P network, atomic swaps, privacy, etc.)
 - **Downloads** — Native desktop app download links for Linux, macOS, and Windows
 - **Source Code** — Built-in source code browser with all project files, audit docs, and architecture specs — no external repository needed
@@ -80,3 +81,14 @@ See **[docs/deployment/DEPLOY.md](../../docs/deployment/DEPLOY.md)** for complet
 3. **Rust + Trunk** installed locally to build the site
 
 The site is fully static — no backend, no database, no runtime dependencies on the server.
+
+## Optional: Self-Hosted Matrix Server
+
+The OpenDex community chat can run on your own Matrix homeserver instead of relying on `matrix.org`. A complete deployment guide for a lightweight **Conduit** homeserver on a cheap cloud VPS (~$3.50–5/mo) is available at **[docs/matrix/](../../docs/matrix/)**. This gives you full data sovereignty, `@user:opendex.org` handles, and privacy alignment with the project's values.
+
+```bash
+# Quick setup on your VPS
+sudo bash docs/matrix/setup-matrix.sh matrix.opendex.org
+```
+
+See **[docs/matrix/README.md](../../docs/matrix/README.md)** for the full guide.

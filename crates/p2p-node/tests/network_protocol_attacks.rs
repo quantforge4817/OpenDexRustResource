@@ -13,6 +13,7 @@ use p2p_node::message_handler::{
 use p2p_node::network::build_swarm;
 use p2p_node::orderbook::OrderBook;
 use p2p_node::trades::TradeBook;
+#[cfg(feature = "fiat")]
 use p2p_node::p2p_offer_book::P2POfferBook;
 use protocol::message::{
     AMOUNT_SCALE, Asset, Market, MessageType, Message, Order, OrderCancelled, PRICE_SCALE,
@@ -90,11 +91,11 @@ async fn rejects_invalid_json_payload() {
     let mut trade_book = TradeBook::new(temp_path("malformed-json-trades"));
     let mut balance_book = BalanceBook::new(temp_path("malformed-json-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -111,11 +112,11 @@ async fn rejects_invalid_outer_json() {
     let mut trade_book = TradeBook::new(temp_path("invalid-outer-trades"));
     let mut balance_book = BalanceBook::new(temp_path("invalid-outer-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(b"{not valid json at all}", &authenticated_peer, &mut ctx);
     assert!(result.is_ok(), "handler should not error on invalid outer JSON");
@@ -132,11 +133,11 @@ async fn rejects_empty_payload() {
     let mut trade_book = TradeBook::new(temp_path("empty-payload-trades"));
     let mut balance_book = BalanceBook::new(temp_path("empty-payload-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -155,11 +156,11 @@ async fn rejects_empty_sender() {
     let mut trade_book = TradeBook::new(temp_path("empty-sender-trades"));
     let mut balance_book = BalanceBook::new(temp_path("empty-sender-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -181,11 +182,11 @@ async fn rejects_schema_version_max_int() {
     let mut trade_book = TradeBook::new(temp_path("schema-max-trades"));
     let mut balance_book = BalanceBook::new(temp_path("schema-max-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -208,11 +209,11 @@ async fn rejects_zero_amount_order() {
     let mut trade_book = TradeBook::new(temp_path("zero-amount-trades"));
     let mut balance_book = BalanceBook::new(temp_path("zero-amount-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     // The handler returns an error when the exchange rejects the order
@@ -236,11 +237,11 @@ async fn rejects_zero_price_order() {
     let mut trade_book = TradeBook::new(temp_path("zero-price-trades"));
     let mut balance_book = BalanceBook::new(temp_path("zero-price-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     // The handler returns an error when the exchange rejects the order
@@ -264,11 +265,11 @@ async fn handles_max_u64_values_order() {
     let mut trade_book = TradeBook::new(temp_path("max-values-trades"));
     let mut balance_book = BalanceBook::new(temp_path("max-values-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let _ = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
 }
@@ -285,11 +286,11 @@ async fn handles_large_payload() {
     let mut trade_book = TradeBook::new(temp_path("large-payload-trades"));
     let mut balance_book = BalanceBook::new(temp_path("large-payload-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -315,13 +316,13 @@ async fn trade_created_replay_is_idempotent() {
     let mut trade_book = TradeBook::new(temp_path("replay-trade-trades"));
     let mut balance_book = BalanceBook::new(temp_path("replay-trade-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     // Add the trade directly first, then test replay
     trade_book.add_trade(trade);
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     // Replay the same trade message - should not create a duplicate
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
@@ -346,13 +347,13 @@ async fn order_cancelled_replay_is_safe() {
     let mut trade_book = TradeBook::new(temp_path("replay-cancel-trades"));
     let mut balance_book = BalanceBook::new(temp_path("replay-cancel-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     order_book.upsert_order(order);
     order_book.save_orders().unwrap();
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result1 = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result1.is_ok());
@@ -361,7 +362,7 @@ async fn order_cancelled_replay_is_safe() {
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result2 = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result2.is_ok());
@@ -384,12 +385,12 @@ async fn trade_state_changed_replay_is_safe() {
     let mut trade_book = TradeBook::new(temp_path("replay-state-trades"));
     let mut balance_book = BalanceBook::new(temp_path("replay-state-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     trade_book.add_trade(trade);
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result1 = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result1.is_ok());
@@ -413,12 +414,12 @@ async fn state_response_replay_prevents_regression() {
     let mut trade_book = TradeBook::new(temp_path("replay-snapshot-trades"));
     let mut balance_book = BalanceBook::new(temp_path("replay-snapshot-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     trade_book.add_trade(settled_trade);
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let mut stale_trade = test_trade(&buyer, &seller);
     stale_trade.id = trade_id;
@@ -453,11 +454,11 @@ async fn trade_state_change_for_unknown_trade() {
     let mut trade_book = TradeBook::new(temp_path("race-unknown-trades"));
     let mut balance_book = BalanceBook::new(temp_path("race-unknown-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -478,13 +479,13 @@ async fn cancel_during_trade_creation() {
     let mut trade_book = TradeBook::new(temp_path("race-cancel-trades"));
     let mut balance_book = BalanceBook::new(temp_path("race-cancel-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     order_book.upsert_order(order);
     order_book.save_orders().unwrap();
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&cancel_message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -505,12 +506,12 @@ async fn rapid_state_changes() {
     let mut trade_book = TradeBook::new(temp_path("rapid-state-trades"));
     let mut balance_book = BalanceBook::new(temp_path("rapid-state-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     trade_book.add_trade(trade);
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let states = vec![TradeState::Accepted, TradeState::EscrowFunding, TradeState::EscrowFunded];
     for (i, state) in states.into_iter().enumerate() {
@@ -539,11 +540,11 @@ async fn sender_field_ignored_for_authorization() {
     let mut trade_book = TradeBook::new(temp_path("sender-spoof-trades"));
     let mut balance_book = BalanceBook::new(temp_path("sender-spoof-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -589,11 +590,11 @@ async fn rejects_timestamp_zero() {
     let mut trade_book = TradeBook::new(temp_path("ts-zero-trades"));
     let mut balance_book = BalanceBook::new(temp_path("ts-zero-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -616,11 +617,11 @@ async fn rejects_timestamp_max() {
     let mut trade_book = TradeBook::new(temp_path("ts-max-trades"));
     let mut balance_book = BalanceBook::new(temp_path("ts-max-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -637,11 +638,11 @@ async fn handles_empty_message_data() {
     let mut trade_book = TradeBook::new(temp_path("empty-data-trades"));
     let mut balance_book = BalanceBook::new(temp_path("empty-data-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(b"", &authenticated_peer, &mut ctx);
     assert!(result.is_ok(), "Empty data should not cause an error");
@@ -658,11 +659,11 @@ async fn handles_null_bytes_in_payload() {
     let mut trade_book = TradeBook::new(temp_path("null-bytes-trades"));
     let mut balance_book = BalanceBook::new(temp_path("null-bytes-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());
@@ -681,11 +682,11 @@ async fn handles_unicode_in_sender() {
     let mut trade_book = TradeBook::new(temp_path("unicode-sender-trades"));
     let mut balance_book = BalanceBook::new(temp_path("unicode-sender-balances"));
     let mut pending_trade_states = HashMap::new();
-    let mut p2p_offers = P2POfferBook::new();
+    
     let mut ctx = HandlerContext {
         swarm: &mut swarm, topic: &topic, local_peer_id: &authenticated_peer,
         order_book: &mut order_book, trade_book: &mut trade_book, balance_book: &mut balance_book,
-        pending_trade_states: &mut pending_trade_states, p2p_offer_book: &mut p2p_offers,
+        pending_trade_states: &mut pending_trade_states, 
     };
     let result = handle_gossipsub_message(&serde_json::to_vec(&message).unwrap(), &authenticated_peer, &mut ctx);
     assert!(result.is_ok());

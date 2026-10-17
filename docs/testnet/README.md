@@ -1,14 +1,43 @@
 # OpenDex Testnet Deployment
 
-Complete testnet environment for OpenDex on a single VPS, including the web frontend, P2P protocol nodes, and wallet RPCs.
+Complete testnet environment for OpenDex on a single VPS, including the P2P protocol nodes and wallet RPCs.
 
 ## Overview
 
 The testnet deploys:
 
-- **Web Frontend** — Static informational portal (Leptos/WASM) served via Nginx with HTTPS
 - **P2P Protocol** — 3 nodes (1 bootstrap + 2 test) running as systemd services
 - **Wallet RPCs** — Monero stagenet wallet and Bitcoin testnet wallet for on-chain operations
+- **Web Frontend** (optional) — Static informational portal (Leptos/WASM) served via Nginx with HTTPS
+- **Matrix Server** (optional) — Self-hosted Conduit homeserver for community chat
+
+See also **[docs/matrix/](../matrix/README.md)** for the Matrix homeserver deployment guide.
+
+## Phased Deployment
+
+OpenDex supports a **two-phase deployment** strategy, allowing you to launch with core swap functionality first, then add fiat-to-crypto P2P trading later.
+
+### Phase 1: Swaps-Only (Default)
+
+The default deployment builds `p2p-node` **without** the `fiat` feature, providing:
+- BTC/XMR atomic swaps via the P2P network
+- Order book, trade matching, and settlement
+- Monero stagenet + Bitcoin testnet wallet integration
+- Lower regulatory risk (crypto-to-crypto swaps rated 🟢 GREEN)
+
+### Phase 2: Fiat Payments (Optional)
+
+When ready, rebuild with the `fiat` feature enabled to add:
+- Fiat-to-crypto P2P trading (buy/sell crypto for bank transfer, cash, etc.)
+- Payment adapters (SEPA, UK Faster Payments, cash deposit, in-person cash)
+- Dispute resolution and security bonds
+- Crypto escrow for fiat trades
+- **Regulatory note**: Fiat subsystem rated 🔴 RED — requires separate legal compliance workstream (CASP + Payment Institution authorization under MiCA/PSD2)
+
+To enable fiat support, rebuild the node with `--features fiat`:
+```bash
+cargo build --release -p p2p-node --features fiat
+```
 
 ## Architecture
 
@@ -62,13 +91,17 @@ Running on a home computer (e.g., laptop) is supported. Key considerations:
 
 ## Quick Start
 
-### One-Command Deployment
+### Swaps-Only Deployment (Default)
+
+The default deployment builds the P2P nodes without fiat support, providing core BTC/XMR swap functionality.
+
+#### One-Command Deployment
 
 ```bash
 # Clone the repository on the VPS
 git clone <repo-url> /home/opendex/opendex
 
-# Run the deployment script
+# Run the deployment script (swaps-only, no fiat)
 sudo bash docs/testnet/deploy-testnet.sh [domain] [/path/to/repo]
 ```
 
@@ -78,7 +111,7 @@ Example:
 sudo bash docs/testnet/deploy-testnet.sh testnet.opendex.io /home/opendex/opendex
 ```
 
-### Manual Step-by-Step
+#### Manual Step-by-Step
 
 ```bash
 # 1. VPS setup (users, packages, firewall)
@@ -87,11 +120,26 @@ sudo bash docs/testnet/setup-vps.sh
 # 2. Wallet daemons (Monero stagenet + Bitcoin testnet)
 sudo bash docs/testnet/setup-wallets.sh
 
-# 3. Web frontend (static site + Nginx + HTTPS)
-sudo bash docs/testnet/setup-web.sh [domain] [repo-path]
-
-# 4. P2P nodes (build + deploy + start)
+# 3. P2P nodes (build without fiat + deploy + start)
 sudo bash docs/testnet/setup-nodes.sh [repo-path]
+
+# 4. Web frontend (optional, static site + Nginx + HTTPS)
+sudo bash docs/testnet/setup-web.sh [domain] [repo-path]
+```
+
+### Full Deployment with Fiat Support
+
+To include fiat-to-crypto P2P trading, build the nodes with the `fiat` feature:
+
+```bash
+# Build with fiat support
+sudo bash docs/testnet/setup-nodes.sh [repo-path] --with-fiat
+```
+
+Or manually:
+
+```bash
+cargo build --release -p p2p-node --features fiat
 ```
 
 ## Port Allocation
@@ -347,9 +395,11 @@ docs/testnet/
 
 For regulatory compliance information, see:
 
-- `audit/regulatory_compliance/` — Compliance documentation
+- `audit/regulatory_compliance/` — Compliance documentation and fiat subsystem separation boundary
 - `audit/audit.md` — Security audit report
 - `audit/escrow_design.md` — Escrow mechanism design
+
+The fiat subsystem is rated 🔴 RED for regulatory compliance. Launching swaps-only (Phase 1) is the recommended path, as crypto-to-crypto swaps are rated 🟢 GREEN.
 
 ## Deployment Status
 
@@ -369,6 +419,24 @@ For regulatory compliance information, see:
   - Bitcoin testnet: ~550MB with `prune=550`
 - **Testnet only**: This is for testing purposes — not for production use
 - **Single machine**: All nodes run on localhost; for multi-VPS, use `--listen-address 0.0.0.0`
+- **Fiat feature**: Default build excludes fiat-to-crypto P2P trading. Use `--with-fiat` flag or `--features fiat` to include it.
+
+## Path to Mainnet
+
+Once testnet validation is complete, the path to mainnet requires only deployment configuration changes — no protocol code changes:
+
+| Component | Testnet | Mainnet |
+|-----------|---------|---------|
+| Monero network | `--stagenet` flag | No flag (mainnet default) |
+| Monero P2P port | 18089 | 18080 |
+| Monero RPC port | 18082/18083 | 18081/18082 |
+| Bitcoin network | `--testnet` flag | No flag (mainnet default) |
+| Bitcoin RPC port | 18332 | 8332 |
+| Bitcoin P2P port | 18333 | 8333 |
+| Blockchain sync | 10-60 min | **Hours to days** (full chain) |
+| Disk space | ~100 GB | **500+ GB** for full chains |
+
+See `docs/mainnet/README.md` for the mainnet deployment guide.
 
 ## Known Issues
 

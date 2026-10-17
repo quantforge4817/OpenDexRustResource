@@ -37,6 +37,20 @@ pub enum UserError {
     PasswordHashError(String),
     /// Rate limit exceeded.
     RateLimited,
+    /// Email already registered.
+    EmailTaken,
+    /// Email format is invalid.
+    InvalidEmail,
+    /// Email not verified.
+    EmailNotVerified,
+    /// Email verification code is invalid or expired.
+    InvalidVerificationCode,
+    /// Wallet address format is invalid.
+    InvalidWalletAddress,
+    /// Bitcoin wallet address is invalid.
+    InvalidBtcWalletAddress,
+    /// Monero wallet address is invalid.
+    InvalidXmrWalletAddress,
 }
 
 impl fmt::Display for UserError {
@@ -58,6 +72,13 @@ impl fmt::Display for UserError {
             UserError::InvalidRating => write!(f, "rating must be between 1 and 5"),
             UserError::PasswordHashError(msg) => write!(f, "password hashing failed: {}", msg),
             UserError::RateLimited => write!(f, "rate limit exceeded, please try again later"),
+            UserError::EmailTaken => write!(f, "email already registered"),
+            UserError::InvalidEmail => write!(f, "invalid email format"),
+            UserError::EmailNotVerified => write!(f, "email not verified"),
+            UserError::InvalidVerificationCode => write!(f, "invalid or expired verification code"),
+            UserError::InvalidWalletAddress => write!(f, "invalid wallet address format"),
+            UserError::InvalidBtcWalletAddress => write!(f, "invalid Bitcoin wallet address"),
+            UserError::InvalidXmrWalletAddress => write!(f, "invalid Monero wallet address"),
         }
     }
 }

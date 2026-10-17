@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use protocol::message::{Asset, Market, Side, TradeState};
+#[cfg(feature = "fiat")]
 use protocol::p2p::{CryptoAsset, FiatCurrency, PaymentMethod};
 use std::fmt;
 use uuid::Uuid;
@@ -233,6 +234,7 @@ pub enum Command {
     /// Show the on-chain Bitcoin wallet balance
     BtcWalletBalance,
     /// Create a P2P offer to buy/sell crypto (XMR or BTC) for fiat
+    #[cfg(feature = "fiat")]
     P2POffer {
         crypto_asset: CryptoAsset,
         side: Side,
@@ -244,20 +246,25 @@ pub enum Command {
         timeout_secs: u64,
     },
     /// Take an existing P2P offer
+    #[cfg(feature = "fiat")]
     P2PTakeOffer {
         offer_id: Uuid,
         amount: f64,
     },
     /// Show active P2P offers
+    #[cfg(feature = "fiat")]
     ShowP2POffers,
     /// Show active P2P trades
+    #[cfg(feature = "fiat")]
     ShowP2PTrades,
     /// Advance a P2P trade state
+    #[cfg(feature = "fiat")]
     P2PTradeState {
         trade_id: Uuid,
         state: String,
     },
     /// Cancel a P2P offer
+    #[cfg(feature = "fiat")]
     P2PCancelOffer {
         offer_id: Uuid,
     },
@@ -346,121 +353,124 @@ pub fn parse_command(input: &str) -> Command {
         };
     }
 
-    // --- P2P commands ---
+    // --- P2P commands (fiat feature) ---
 
-    if input.trim() == "p2p-offers" {
-        return Command::ShowP2POffers;
-    }
+    #[cfg(feature = "fiat")]
+    {
+        if input.trim() == "p2p-offers" {
+            return Command::ShowP2POffers;
+        }
 
-    if input.trim() == "p2p-trades" {
-        return Command::ShowP2PTrades;
-    }
+        if input.trim() == "p2p-trades" {
+            return Command::ShowP2PTrades;
+        }
 
-    // p2p-offer <xmr|btc> <buy|sell> <amount> <price> <currency> <payment_method> <instructions> [timeout]
-    if parts.len() >= 8 && parts[0].eq_ignore_ascii_case("p2p-offer") {
-        let crypto_asset = match parts[1].to_uppercase().as_str() {
-            "XMR" => CryptoAsset::XMR,
-            "BTC" => CryptoAsset::BTC,
-            _ => return Command::Unknown,
-        };
+        // p2p-offer <xmr|btc> <buy|sell> <amount> <price> <currency> <payment_method> <instructions> [timeout]
+        if parts.len() >= 8 && parts[0].eq_ignore_ascii_case("p2p-offer") {
+            let crypto_asset = match parts[1].to_uppercase().as_str() {
+                "XMR" => CryptoAsset::XMR,
+                "BTC" => CryptoAsset::BTC,
+                _ => return Command::Unknown,
+            };
 
-        let side = match parts[2].to_lowercase().as_str() {
-            "buy" => Side::Buy,
-            "sell" => Side::Sell,
-            _ => return Command::Unknown,
-        };
+            let side = match parts[2].to_lowercase().as_str() {
+                "buy" => Side::Buy,
+                "sell" => Side::Sell,
+                _ => return Command::Unknown,
+            };
 
-        let amount = match parts[3].parse::<f64>() {
-            Ok(v) if v > 0.0 => v,
-            _ => return Command::Unknown,
-        };
+            let amount = match parts[3].parse::<f64>() {
+                Ok(v) if v > 0.0 => v,
+                _ => return Command::Unknown,
+            };
 
-        let price = match parts[4].parse::<f64>() {
-            Ok(v) if v > 0.0 => v,
-            _ => return Command::Unknown,
-        };
+            let price = match parts[4].parse::<f64>() {
+                Ok(v) if v > 0.0 => v,
+                _ => return Command::Unknown,
+            };
 
-        let currency = match parts[5].to_uppercase().as_str() {
-            "USD" => FiatCurrency::USD,
-            "EUR" => FiatCurrency::EUR,
-            "GBP" => FiatCurrency::GBP,
-            "CAD" => FiatCurrency::CAD,
-            "AUD" => FiatCurrency::AUD,
-            "CHF" => FiatCurrency::CHF,
-            "JPY" => FiatCurrency::JPY,
-            "CNY" => FiatCurrency::CNY,
-            "INR" => FiatCurrency::INR,
-            "BRL" => FiatCurrency::BRL,
-            "RUB" => FiatCurrency::RUB,
-            "KRW" => FiatCurrency::KRW,
-            "TRY" => FiatCurrency::TRY,
-            other => FiatCurrency::Other(other.to_string()),
-        };
+            let currency = match parts[5].to_uppercase().as_str() {
+                "USD" => FiatCurrency::USD,
+                "EUR" => FiatCurrency::EUR,
+                "GBP" => FiatCurrency::GBP,
+                "CAD" => FiatCurrency::CAD,
+                "AUD" => FiatCurrency::AUD,
+                "CHF" => FiatCurrency::CHF,
+                "JPY" => FiatCurrency::JPY,
+                "CNY" => FiatCurrency::CNY,
+                "INR" => FiatCurrency::INR,
+                "BRL" => FiatCurrency::BRL,
+                "RUB" => FiatCurrency::RUB,
+                "KRW" => FiatCurrency::KRW,
+                "TRY" => FiatCurrency::TRY,
+                other => FiatCurrency::Other(other.to_string()),
+            };
 
-        let payment_method = match parts[6].to_lowercase().as_str() {
-            "banktransfer" | "bank" => PaymentMethod::BankTransfer,
-            "cash" => PaymentMethod::Cash,
-            "revolut" => PaymentMethod::Revolut,
-            "wise" => PaymentMethod::Wise,
-            "paypal" => PaymentMethod::PayPal,
-            "zelle" => PaymentMethod::Zelle,
-            "cashbymail" => PaymentMethod::CashByMail,
-            "westernunion" => PaymentMethod::WesternUnion,
-            other => PaymentMethod::Custom(other.to_string()),
-        };
+            let payment_method = match parts[6].to_lowercase().as_str() {
+                "banktransfer" | "bank" => PaymentMethod::BankTransfer,
+                "cash" => PaymentMethod::Cash,
+                "revolut" => PaymentMethod::Revolut,
+                "wise" => PaymentMethod::Wise,
+                "paypal" => PaymentMethod::PayPal,
+                "zelle" => PaymentMethod::Zelle,
+                "cashbymail" => PaymentMethod::CashByMail,
+                "westernunion" => PaymentMethod::WesternUnion,
+                other => PaymentMethod::Custom(other.to_string()),
+            };
 
-        // Collect remaining parts as payment instructions (join with spaces)
-        let instructions = parts[7..parts.len() - 1].join(" ");
-        let timeout_secs = if parts.len() > 8 {
-            parts[parts.len() - 1].parse::<u64>().unwrap_or(3600)
-        } else {
-            3600
-        };
+            // Collect remaining parts as payment instructions (join with spaces)
+            let instructions = parts[7..parts.len() - 1].join(" ");
+            let timeout_secs = if parts.len() > 8 {
+                parts[parts.len() - 1].parse::<u64>().unwrap_or(3600)
+            } else {
+                3600
+            };
 
-        return Command::P2POffer {
-            crypto_asset,
-            side,
-            amount,
-            price,
-            currency,
-            payment_method,
-            payment_instructions: instructions,
-            timeout_secs,
-        };
-    }
+            return Command::P2POffer {
+                crypto_asset,
+                side,
+                amount,
+                price,
+                currency,
+                payment_method,
+                payment_instructions: instructions,
+                timeout_secs,
+            };
+        }
 
-    // p2p-take <offer_id> <amount>
-    if parts.len() == 3 && parts[0].eq_ignore_ascii_case("p2p-take") {
-        let offer_id = match Uuid::parse_str(parts[1]) {
-            Ok(id) => id,
-            Err(_) => return Command::Unknown,
-        };
-        let amount = match parts[2].parse::<f64>() {
-            Ok(v) if v > 0.0 => v,
-            _ => return Command::Unknown,
-        };
-        return Command::P2PTakeOffer { offer_id, amount };
-    }
+        // p2p-take <offer_id> <amount>
+        if parts.len() == 3 && parts[0].eq_ignore_ascii_case("p2p-take") {
+            let offer_id = match Uuid::parse_str(parts[1]) {
+                Ok(id) => id,
+                Err(_) => return Command::Unknown,
+            };
+            let amount = match parts[2].parse::<f64>() {
+                Ok(v) if v > 0.0 => v,
+                _ => return Command::Unknown,
+            };
+            return Command::P2PTakeOffer { offer_id, amount };
+        }
 
-    // p2p-trade-state <trade_id> <state>
-    if parts.len() == 3 && parts[0].eq_ignore_ascii_case("p2p-trade-state") {
-        let trade_id = match Uuid::parse_str(parts[1]) {
-            Ok(id) => id,
-            Err(_) => return Command::Unknown,
-        };
-        return Command::P2PTradeState {
-            trade_id,
-            state: parts[2].to_string(),
-        };
-    }
+        // p2p-trade-state <trade_id> <state>
+        if parts.len() == 3 && parts[0].eq_ignore_ascii_case("p2p-trade-state") {
+            let trade_id = match Uuid::parse_str(parts[1]) {
+                Ok(id) => id,
+                Err(_) => return Command::Unknown,
+            };
+            return Command::P2PTradeState {
+                trade_id,
+                state: parts[2].to_string(),
+            };
+        }
 
-    // p2p-cancel <offer_id>
-    if parts.len() == 2 && parts[0].eq_ignore_ascii_case("p2p-cancel") {
-        let offer_id = match Uuid::parse_str(parts[1]) {
-            Ok(id) => id,
-            Err(_) => return Command::Unknown,
-        };
-        return Command::P2PCancelOffer { offer_id };
+        // p2p-cancel <offer_id>
+        if parts.len() == 2 && parts[0].eq_ignore_ascii_case("p2p-cancel") {
+            let offer_id = match Uuid::parse_str(parts[1]) {
+                Ok(id) => id,
+                Err(_) => return Command::Unknown,
+            };
+            return Command::P2PCancelOffer { offer_id };
+        }
     }
 
     if parts.len() != 5 {

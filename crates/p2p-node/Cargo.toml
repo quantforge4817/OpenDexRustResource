@@ -7,6 +7,7 @@ rust-version = "1.88"
 
 [features]
 default = []
+fiat = ["opendex-fiat"]
 
 [dependencies]
 
@@ -49,12 +50,14 @@ protocol = { path = "../protocol" }
 
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Optional: fiat-to-crypto P2P trading (enable with --features fiat)
+opendex-fiat = { path = "../fiat", optional = true }
+
 [dev-dependencies]
 criterion = "0.5"
 
 # Cryptography penetration test dependencies
 opendex-user = { path = "../user" }
-opendex-fiat = { path = "../fiat" }
 opendex-transport = { path = "../opendex-transport" }
 opendex-types = { path = "../opendex-types" }
 argon2 = "0.5"

@@ -1,2 +1,4 @@
 .idea/
+.local/
 target/
+docs/INFRASTRUCTURE_DESIGN_PLAN.md

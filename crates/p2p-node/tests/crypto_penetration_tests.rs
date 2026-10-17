@@ -267,6 +267,7 @@ mod argon2id_password_hashing {
 // 2.5.3 Bitcoin Multisig Escrow
 // ==============================
 
+#[cfg(feature = "fiat")]
 mod bitcoin_multisig_escrow {
     use opendex_fiat::multisig::{EscrowKeyPair, RedemptionScript, MultisigEscrow};
     use uuid::Uuid;
@@ -729,6 +730,7 @@ mod argon2_algorithm_protection {
 // MultisigManager Secret Key Protection
 // ==============================
 
+#[cfg(feature = "fiat")]
 mod multisig_manager_security {
     use opendex_fiat::multisig::MultisigManager;
 

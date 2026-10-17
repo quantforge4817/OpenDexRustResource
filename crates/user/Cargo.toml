@@ -8,6 +8,7 @@ description = "User accounts, authentication, and reputation system for OpenDex 
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 opendex-types = { path = "../opendex-types" }
@@ -18,6 +19,7 @@ sha2 = "0.10"
 rand_core = { version = "0.6", features = ["getrandom"] }
 password-hash = "0.5"
 tracing = "0.1"
+anyhow = "1"
 
 [dev-dependencies]
 criterion = "0.5"

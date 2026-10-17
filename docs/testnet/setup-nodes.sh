@@ -6,7 +6,11 @@
 # Run as root after running setup-vps.sh and setup-wallets.sh.
 #
 # Usage:
-#   sudo bash setup-nodes.sh [path-to-opendex-repo]
+#   sudo bash setup-nodes.sh [path-to-opendex-repo] [--with-fiat]
+#
+# Arguments:
+#   path-to-opendex-repo — Path to the OpenDex repository. Default: /home/opendex/opendex
+#   --with-fiat          — Enable fiat-to-crypto P2P trading feature (default: swaps-only)
 #
 # If no path is given, it assumes the repo is at /home/opendex/opendex
 
@@ -35,12 +39,23 @@ if ! id -u opendex &>/dev/null; then
     exit 1
 fi
 
-# Determine repo path
+# Determine repo path and fiat feature flag
 REPO_PATH="${1:-/home/opendex/opendex}"
+WITH_FIAT="${2:-}"
+
 if [[ ! -d "$REPO_PATH" ]]; then
     error "Repository not found at $REPO_PATH"
     info "Clone the repo first: sudo -u opendex git clone <repo-url> /home/opendex/opendex"
     exit 1
+fi
+
+# Build feature flags
+CARGO_FEATURES=""
+if [[ "$WITH_FIAT" == "--with-fiat" ]]; then
+    CARGO_FEATURES="--features fiat"
+    info "Fiat feature: ENABLED (fiat-to-crypto P2P trading)"
+else
+    info "Fiat feature: DISABLED (swaps-only mode)"
 fi
 
 info "=== OpenDex P2P Node Deployment ==="
@@ -75,7 +90,7 @@ fi
 # --- Build p2p-node binary ---
 info "Building p2p-node binary (release mode)..."
 cd "$REPO_PATH"
-sudo -u opendex bash -c '. "$HOME/.cargo/env" && cargo build --release -p p2p-node'
+sudo -u opendex bash -c ". \"\$HOME/.cargo/env\" && cargo build --release -p p2p-node $CARGO_FEATURES"
 P2P_BINARY="$REPO_PATH/target/release/p2p-node"
 
 if [[ ! -f "$P2P_BINARY" ]]; then

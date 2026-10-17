@@ -146,9 +146,10 @@ mod data_integrity {
 // Phase 5: Fiat Integration Attacks
 // ==============================
 
+#[cfg(feature = "fiat")]
 mod fiat_integration {
-
-    use opendex_fiat::multisig::EscrowKeyPair;
+ 
+     use opendex_fiat::multisig::EscrowKeyPair;
 
     /// Test key generation produces unique keys
     #[test]

@@ -175,6 +175,12 @@ The desktop GUI is rated **🟢 GREEN** under the OpenDex regulatory compliance 
 
 See `audit/regulatory_compliance/regulatory_compliance.md` for the full compliance analysis.
 
+## Community
+
+Join the OpenDex community on **Matrix** to ask questions, discuss development, and get help:
+
+- **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)** — Community discussion and support
+
 ## License
 
 See the project root for the applicable OpenDex license and project licensing information.

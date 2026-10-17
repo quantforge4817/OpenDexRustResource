@@ -6,7 +6,9 @@ use crate::exchange::Exchange;
 use crate::network::publish_message;
 use crate::order_factory::create_order;
 use crate::orderbook::OrderBook;
+#[cfg(feature = "fiat")]
 use crate::p2p_escrow::{P2PEscrowContext, fund_escrow, release_crypto, return_escrow};
+#[cfg(feature = "fiat")]
 use crate::p2p_offer_book::P2POfferBook;
 use crate::settlement::settle_local_trade;
 use crate::trade_state::advance_trade_to_state;
@@ -17,6 +19,7 @@ use libp2p::{PeerId, Swarm, gossipsub};
 use protocol::message::{
     AMOUNT_SCALE, Asset, MessageType, Message, OrderCancelled, TradeState, TradeStateChanged,
 };
+#[cfg(feature = "fiat")]
 use protocol::p2p::{P2POffer, P2POfferCancelled, P2PTrade, P2PTradeStateChanged, P2PTradeState};
 
 fn format_amount(amount: u64) -> String {
@@ -32,6 +35,7 @@ fn format_amount(amount: u64) -> String {
     }
 }
 
+#[cfg(feature = "fiat")]
 pub async fn handle_command(
     command: Command,
     swarm: &mut Swarm<OpenDexBehaviour>,
@@ -535,6 +539,218 @@ pub async fn handle_command(
             tracing::info!("Unknown command");
             tracing::info!("Example: buy BTC XMR 12.5 0.1");
             tracing::info!("P2P: p2p-offer XMR sell 0.1 6000 EUR banktransfer 'Account: 123456' 3600");
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(feature = "fiat"))]
+pub async fn handle_command(
+    command: Command,
+    swarm: &mut Swarm<OpenDexBehaviour>,
+    topic: &gossipsub::IdentTopic,
+    local_peer_id: &PeerId,
+    order_book: &mut OrderBook,
+    trade_book: &mut TradeBook,
+    balance_book: &mut BalanceBook,
+    monero_wallet: Option<&MoneroWalletClient>,
+    btc_wallet: Option<&BitcoinWalletClient>,
+) -> Result<()> {
+    match command {
+        Command::Fund { asset, amount } => {
+            let trader = local_peer_id.to_string();
+
+            let scaled_amount = amount
+                .checked_mul(AMOUNT_SCALE)
+                .ok_or_else(|| anyhow::anyhow!("fund amount overflow"))?;
+
+            balance_book.credit(&trader, asset.clone(), scaled_amount)?;
+            balance_book.save()?;
+
+            let balance = balance_book.balance(&trader, &asset);
+
+            tracing::info!(
+                asset = ?asset,
+                available = format_amount(balance.available),
+                locked = format_amount(balance.locked),
+                escrowed = format_amount(balance.escrowed),
+                "Funded"
+            );
+        }
+
+        Command::ShowBalances => {
+            let trader = local_peer_id.to_string();
+
+            tracing::info!("=== Balances ===");
+
+            for asset in [Asset::BTC, Asset::XMR] {
+                let balance = balance_book.balance(&trader, &asset);
+
+                tracing::info!(
+                    asset = ?asset,
+                    available = format_amount(balance.available),
+                    locked = format_amount(balance.locked),
+                    escrowed = format_amount(balance.escrowed)
+                );
+            }
+        }
+
+        Command::Order {
+            side,
+            market,
+            price,
+            amount,
+        } => {
+            let order = create_order(local_peer_id.to_string(), market, side, price, amount);
+
+            tracing::info!(order_id = %order.id, "Created order");
+
+            if let Err(e) = balance_book.lock_for_order(&order) {
+                tracing::error!(order_id = %order.id, error = %e, "Cannot create order");
+                return Ok(());
+            }
+
+            balance_book.save()?;
+
+            tracing::info!(order_id = %order.id, "Locked funds for order");
+
+            let order_message = Message {
+                message_type: MessageType::OrderCreated,
+                sender: local_peer_id.to_string(),
+                payload: serde_json::to_string(&order)?,
+                timestamp: chrono::Utc::now().timestamp() as u64,
+                schema_version: protocol::message::SCHEMA_VERSION,
+            };
+
+            publish_message(swarm, topic, &order_message)?;
+            tracing::info!(order_id = %order.id, "Published order");
+        }
+
+        Command::TradeState { id, state } => {
+            let trade = trade_book.get_trade(id).cloned();
+            if let Some(trade) = trade {
+                let timestamp = chrono::Utc::now().timestamp() as u64;
+
+                if let Err(e) = advance_trade_to_state(trade_book, id, state.clone(), timestamp) {
+                    tracing::error!(trade_id = %id, error = %e, "Trade state transition failed");
+                    return Ok(());
+                }
+
+                match &state {
+                    TradeState::EscrowFunded => {
+                        if let Err(e) = crate::escrow::fund_local_escrow(balance_book, local_peer_id, &trade) {
+                            tracing::error!(trade_id = %id, error = %e, "Escrow funding failed");
+                        }
+                    }
+                    TradeState::Settled => {
+                        if let Err(e) = crate::escrow::release_local_escrow(balance_book, local_peer_id, &trade) {
+                            tracing::error!(trade_id = %id, error = %e, "Escrow release failed");
+                        }
+                        if let Err(e) = settle_local_trade(balance_book, local_peer_id, &trade) {
+                            tracing::error!(trade_id = %id, error = %e, "Settlement failed");
+                        }
+                    }
+                    TradeState::Cancelled => {
+                        if let Err(e) = crate::escrow::return_local_escrow(balance_book, local_peer_id, &trade) {
+                            tracing::error!(trade_id = %id, error = %e, "Escrow return failed");
+                        }
+                    }
+                    _ => {}
+                }
+
+                let change = TradeStateChanged {
+                    trade_id: id,
+                    state: state.clone(),
+                    timestamp,
+                };
+
+                let message = Message {
+                    message_type: MessageType::TradeStateChanged,
+                    sender: local_peer_id.to_string(),
+                    payload: serde_json::to_string(&change)?,
+                    timestamp,
+                    schema_version: protocol::message::SCHEMA_VERSION,
+                };
+
+                match publish_message(swarm, topic, &message) {
+                    Ok(_) => {
+                        tracing::info!(trade_id = %id, state = ?state, "Published TradeStateChanged");
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            trade_id = %id, state = ?state, error = %e,
+                            "Failed to publish TradeStateChanged"
+                        );
+                    }
+                }
+            }
+        }
+
+        Command::Cancel { id } => {
+            if let Some(order) = order_book.get_order(&id).cloned() {
+                if order_book.remove_order(id) {
+                    balance_book.unlock_for_order(&order)?;
+                    balance_book.save()?;
+                    order_book.save_orders()?;
+
+                    tracing::info!(order_id = %id, "Removed local order");
+
+                    let cancelled = OrderCancelled {
+                        order_id: id,
+                        trader: order.trader.clone(),
+                    };
+
+                    let message = Message {
+                        message_type: MessageType::OrderCancelled,
+                        sender: local_peer_id.to_string(),
+                        payload: serde_json::to_string(&cancelled)?,
+                        timestamp: chrono::Utc::now().timestamp() as u64,
+                        schema_version: protocol::message::SCHEMA_VERSION,
+                    };
+
+                    publish_message(swarm, topic, &message)?;
+                }
+            } else {
+                tracing::debug!(order_id = %id, "Order not found locally");
+            }
+        }
+
+        Command::Peers => {
+            tracing::info!("=== Connected Peers ===");
+
+            for peer in swarm.connected_peers() {
+                tracing::info!(peer = %peer);
+            }
+        }
+
+        Command::WalletAddress => {
+            tracing::info!("Use 'wallet-address' in CLI mode (handled by main loop)");
+        }
+
+        Command::WalletBalance => {
+            tracing::info!("Use 'wallet-balance' in CLI mode (handled by main loop)");
+        }
+
+        Command::BtcWalletAddress => {
+            tracing::info!("Use 'btc-wallet-address' in CLI mode (handled by main loop)");
+        }
+
+        Command::BtcWalletBalance => {
+            tracing::info!("Use 'btc-wallet-balance' in CLI mode (handled by main loop)");
+        }
+
+        Command::ShowOrders => {
+            order_book.print_orders();
+        }
+
+        Command::ShowTrades => {
+            trade_book.print_trades();
+        }
+
+        Command::Unknown => {
+            tracing::info!("Unknown command");
+            tracing::info!("Example: buy BTC XMR 12.5 0.1");
         }
     }
 

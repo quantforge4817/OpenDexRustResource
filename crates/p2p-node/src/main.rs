@@ -49,11 +49,14 @@ mod exchange;
 mod gui_bridge;
 mod wallet_client;
 mod btc_wallet_client;
+#[cfg(feature = "fiat")]
 mod p2p_escrow;
+#[cfg(feature = "fiat")]
 mod p2p_offer_book;
 
 use gui_bridge::GuiCommand;
 use orderbook::OrderBook;
+#[cfg(feature = "fiat")]
 use p2p_offer_book::P2POfferBook;
 use wallet_client::{MoneroWalletClient, MoneroWalletConfig};
 use btc_wallet_client::{BitcoinWalletClient, BitcoinWalletConfig};
@@ -245,6 +248,7 @@ async fn main() -> Result<()> {
     let mut pending_trade_states: HashMap<Uuid, message_handler::PendingTradeState> =
         HashMap::new();
 
+    #[cfg(feature = "fiat")]
     let mut p2p_offer_book = P2POfferBook::load();
 
     // Initialize Monero wallet client if configured
@@ -402,6 +406,7 @@ async fn main() -> Result<()> {
                                     _ => {}
                                 }
 
+                                #[cfg(feature = "fiat")]
                                 handle_command(
                                     command,
                                     &mut swarm,
@@ -414,21 +419,44 @@ async fn main() -> Result<()> {
                                     monero_wallet.as_ref(),
                                     btc_wallet.as_ref(),
                                 ).await?;
+                                #[cfg(not(feature = "fiat"))]
+                                handle_command(
+                                    command,
+                                    &mut swarm,
+                                    &topic,
+                                    &local_peer_id,
+                                    &mut order_book,
+                                    &mut trade_book,
+                                    &mut balance_book,
+                                    monero_wallet.as_ref(),
+                                    btc_wallet.as_ref(),
+                                ).await?;
                             }
                         }
 
                         event = swarm.next() => {
                             if let Some(event) = event {
+                               #[cfg(feature = "fiat")]
                                let mut ctx = message_handler::HandlerContext {
-                swarm: &mut swarm,
-                topic: &topic,
-                local_peer_id: &local_peer_id,
-                order_book: &mut order_book,
-                trade_book: &mut trade_book,
-                balance_book: &mut balance_book,
-                pending_trade_states: &mut pending_trade_states,
-                p2p_offer_book: &mut p2p_offer_book,
-            };
+                                    swarm: &mut swarm,
+                                    topic: &topic,
+                                    local_peer_id: &local_peer_id,
+                                    order_book: &mut order_book,
+                                    trade_book: &mut trade_book,
+                                    balance_book: &mut balance_book,
+                                    pending_trade_states: &mut pending_trade_states,
+                                    p2p_offer_book: &mut p2p_offer_book,
+                                };
+                                #[cfg(not(feature = "fiat"))]
+                                let mut ctx = message_handler::HandlerContext {
+                                    swarm: &mut swarm,
+                                    topic: &topic,
+                                    local_peer_id: &local_peer_id,
+                                    order_book: &mut order_book,
+                                    trade_book: &mut trade_book,
+                                    balance_book: &mut balance_book,
+                                    pending_trade_states: &mut pending_trade_states,
+                                };
 
             message_handler::handle_swarm_event(event, &mut ctx)?;
 
@@ -441,7 +469,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Run the node event loop receiving commands from a channel instead of stdin
+/// Run the node event loop receiving commands from a channel instead of stdin (with fiat)
+#[cfg(feature = "fiat")]
 async fn run_node_loop(
     mut swarm: libp2p::Swarm<OpenDexBehaviour>,
     topic: gossipsub::IdentTopic,
@@ -497,6 +526,71 @@ async fn run_node_loop(
                         balance_book: &mut balance_book,
                         pending_trade_states: &mut pending_trade_states,
                         p2p_offer_book: &mut p2p_offer_book,
+                    };
+
+                    if let Err(e) = message_handler::handle_swarm_event(event, &mut ctx) {
+                        tracing::error!(error = %e, "Swarm event error");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Run the node event loop receiving commands from a channel instead of stdin (without fiat)
+#[cfg(not(feature = "fiat"))]
+async fn run_node_loop(
+    mut swarm: libp2p::Swarm<OpenDexBehaviour>,
+    topic: gossipsub::IdentTopic,
+    local_peer_id: PeerId,
+    mut order_book: OrderBook,
+    mut trade_book: TradeBook,
+    mut balance_book: BalanceBook,
+    mut pending_trade_states: HashMap<Uuid, message_handler::PendingTradeState>,
+    cmd_rx: flume::Receiver<gui_bridge::GuiCommand>,
+    update_tx: flume::Sender<gui_bridge::GuiUpdate>,
+) {
+    use futures::StreamExt;
+    loop {
+        tokio::select! {
+            biased;
+
+            cmd = cmd_rx.recv_async() => {
+                if let Ok(command) = cmd {
+                    handle_gui_command(
+                        command,
+                        &mut swarm,
+                        &topic,
+                        &local_peer_id,
+                        &mut order_book,
+                        &mut trade_book,
+                        &mut balance_book,
+                        &update_tx,
+                    ).await;
+                }
+            }
+
+            event = swarm.next() => {
+                if let Some(event) = &event {
+                    match event {
+                        libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                            let _ = update_tx.send(gui_bridge::GuiUpdate::PeerConnected(*peer_id));
+                        }
+                        libp2p::swarm::SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                            let _ = update_tx.send(gui_bridge::GuiUpdate::PeerDisconnected(*peer_id));
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(event) = event {
+                    let mut ctx = message_handler::HandlerContext {
+                        swarm: &mut swarm,
+                        topic: &topic,
+                        local_peer_id: &local_peer_id,
+                        order_book: &mut order_book,
+                        trade_book: &mut trade_book,
+                        balance_book: &mut balance_book,
+                        pending_trade_states: &mut pending_trade_states,
                     };
 
                     if let Err(e) = message_handler::handle_swarm_event(event, &mut ctx) {

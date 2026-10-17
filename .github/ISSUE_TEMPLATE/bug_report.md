@@ -34,3 +34,6 @@ Paste relevant logs or error output here
 
 ## Additional Context
 Any other information that might help diagnose the issue.
+
+## Need Help?
+For questions or discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)**.

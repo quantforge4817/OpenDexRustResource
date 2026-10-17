@@ -40,3 +40,6 @@ Describe the tests you ran to verify your changes.
 
 ## Additional Context
 Any other information about the pull request.
+
+## Questions?
+For discussion, join the **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)**.

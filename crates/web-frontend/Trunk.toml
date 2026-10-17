@@ -4,3 +4,8 @@ dist = "dist"
 # Set public_url to your GitHub Pages path, e.g. "/OpenDexRustSource/"
 # For the root repository page, use "/"
 public_url = "/"
+
+[[hooks]]
+stage = "post_build"
+command = "cp"
+command_arguments = ["-rf", "static/docs", "dist/docs"]

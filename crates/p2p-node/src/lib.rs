@@ -7,7 +7,9 @@ pub mod message_handler;
 pub mod network;
 pub mod order_factory;
 pub mod orderbook;
+#[cfg(feature = "fiat")]
 pub mod p2p_escrow;
+#[cfg(feature = "fiat")]
 pub mod p2p_offer_book;
 pub mod persistence;
 pub mod settlement;
@@ -212,6 +214,7 @@ pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHa
     let balance_book = balances::BalanceBook::load(balances_path)?;
 
     let pending_trade_states: HashMap<Uuid, message_handler::PendingTradeState> = HashMap::new();
+    #[cfg(feature = "fiat")]
     let p2p_offer_book = p2p_offer_book::P2POfferBook::load();
 
     // Initialize Monero wallet client if configured
@@ -285,21 +288,41 @@ pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHa
 
     // Spawn the node event loop
     tokio::spawn(async move {
-        run_node_loop_inner(
-            swarm,
-            topic,
-            local_peer_id,
-            order_book,
-            trade_book,
-            balance_book,
-            pending_trade_states,
-            p2p_offer_book,
-            monero_wallet,
-            btc_wallet,
-            cmd_rx,
-            update_tx,
-        )
-        .await;
+        #[cfg(feature = "fiat")]
+        {
+            run_node_loop_inner(
+                swarm,
+                topic,
+                local_peer_id,
+                order_book,
+                trade_book,
+                balance_book,
+                pending_trade_states,
+                p2p_offer_book,
+                monero_wallet,
+                btc_wallet,
+                cmd_rx,
+                update_tx,
+            )
+            .await;
+        }
+        #[cfg(not(feature = "fiat"))]
+        {
+            run_node_loop_inner(
+                swarm,
+                topic,
+                local_peer_id,
+                order_book,
+                trade_book,
+                balance_book,
+                pending_trade_states,
+                monero_wallet,
+                btc_wallet,
+                cmd_rx,
+                update_tx,
+            )
+            .await;
+        }
     });
 
     // Return the channels the GUI adapter needs:
@@ -313,7 +336,8 @@ pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHa
     })
 }
 
-/// Internal node event loop for GUI mode.
+/// Internal node event loop for GUI mode (with fiat support).
+#[cfg(feature = "fiat")]
 async fn run_node_loop_inner(
     mut swarm: libp2p::Swarm<OpenDexBehaviour>,
     topic: gossipsub::IdentTopic,
@@ -383,7 +407,76 @@ async fn run_node_loop_inner(
     }
 }
 
-/// Handle a GUI command within the node event loop.
+/// Internal node event loop for GUI mode (without fiat support).
+#[cfg(not(feature = "fiat"))]
+async fn run_node_loop_inner(
+    mut swarm: libp2p::Swarm<OpenDexBehaviour>,
+    topic: gossipsub::IdentTopic,
+    local_peer_id: PeerId,
+    mut order_book: orderbook::OrderBook,
+    mut trade_book: trades::TradeBook,
+    mut balance_book: balances::BalanceBook,
+    mut pending_trade_states: std::collections::HashMap<uuid::Uuid, message_handler::PendingTradeState>,
+    mut monero_wallet: Option<wallet_client::MoneroWalletClient>,
+    mut btc_wallet: Option<btc_wallet_client::BitcoinWalletClient>,
+    cmd_rx: flume::Receiver<gui_bridge::GuiCommand>,
+    update_tx: flume::Sender<gui_bridge::GuiUpdate>,
+) {
+    use futures::StreamExt;
+    loop {
+        tokio::select! {
+            biased;
+
+            cmd = cmd_rx.recv_async() => {
+                if let Ok(command) = cmd {
+                    handle_gui_command_inner(
+                        command,
+                        &mut swarm,
+                        &topic,
+                        &local_peer_id,
+                        &mut order_book,
+                        &mut trade_book,
+                        &mut balance_book,
+                        monero_wallet.as_mut(),
+                        btc_wallet.as_mut(),
+                        &update_tx,
+                    ).await;
+                }
+            }
+
+            event = swarm.next() => {
+                if let Some(event) = &event {
+                    match event {
+                        libp2p::swarm::SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                            let _ = update_tx.send(gui_bridge::GuiUpdate::PeerConnected(*peer_id));
+                        }
+                        libp2p::swarm::SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                            let _ = update_tx.send(gui_bridge::GuiUpdate::PeerDisconnected(*peer_id));
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(event) = event {
+                    let mut ctx = message_handler::HandlerContext {
+                        swarm: &mut swarm,
+                        topic: &topic,
+                        local_peer_id: &local_peer_id,
+                        order_book: &mut order_book,
+                        trade_book: &mut trade_book,
+                        balance_book: &mut balance_book,
+                        pending_trade_states: &mut pending_trade_states,
+                    };
+                    if let Err(e) = message_handler::handle_swarm_event(event, &mut ctx) {
+                        tracing::error!(error = %e, "Swarm event error");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handle a GUI command within the node event loop (with fiat support).
+#[cfg(feature = "fiat")]
 async fn handle_gui_command_inner(
     command: gui_bridge::GuiCommand,
     swarm: &mut libp2p::Swarm<OpenDexBehaviour>,
@@ -393,6 +486,215 @@ async fn handle_gui_command_inner(
     trade_book: &mut trades::TradeBook,
     balance_book: &mut balances::BalanceBook,
     p2p_offer_book: &mut p2p_offer_book::P2POfferBook,
+    monero_wallet: Option<&mut wallet_client::MoneroWalletClient>,
+    btc_wallet: Option<&mut btc_wallet_client::BitcoinWalletClient>,
+    update_tx: &flume::Sender<gui_bridge::GuiUpdate>,
+) {
+    use gui_bridge::GuiUpdate;
+    use protocol::message::AMOUNT_SCALE;
+
+    match command {
+        gui_bridge::GuiCommand::PlaceOrder { side, market, price, amount } => {
+            let order = order_factory::create_order(
+                local_peer_id.to_string(),
+                market,
+                side,
+                price,
+                amount,
+            );
+            let order_id = order.id;
+
+            if let Err(e) = balance_book.lock_for_order(&order) {
+                let _ = update_tx.send(GuiUpdate::OrderResult {
+                    order_id,
+                    success: false,
+                    error: Some(format!("Cannot lock funds: {}", e)),
+                });
+                return;
+            }
+            let _ = balance_book.save();
+
+            let order_message = protocol::message::Message {
+                message_type: protocol::message::MessageType::OrderCreated,
+                sender: local_peer_id.to_string(),
+                payload: serde_json::to_string(&order).unwrap_or_default(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                schema_version: protocol::message::SCHEMA_VERSION,
+            };
+
+            if let Err(e) = network::publish_message(swarm, topic, &order_message) {
+                let _ = balance_book.unlock_for_order(&order);
+                let _ = balance_book.save();
+                let _ = update_tx.send(GuiUpdate::OrderResult {
+                    order_id,
+                    success: false,
+                    error: Some(format!("Publish failed: {}", e)),
+                });
+                return;
+            }
+
+            order_book.upsert_order(order);
+            let _ = order_book.save_orders();
+
+            let _ = update_tx.send(GuiUpdate::OrderResult {
+                order_id,
+                success: true,
+                error: None,
+            });
+        }
+        gui_bridge::GuiCommand::CancelOrder { order_id } => {
+            if let Some(order) = order_book.get_order(&order_id).cloned() {
+                if order_book.remove_order(order_id) {
+                    let _ = balance_book.unlock_for_order(&order);
+                    let _ = balance_book.save();
+                    let _ = order_book.save_orders();
+
+                    let cancelled = protocol::message::OrderCancelled {
+                        order_id,
+                        trader: order.trader.clone(),
+                    };
+                    let message = protocol::message::Message {
+                        message_type: protocol::message::MessageType::OrderCancelled,
+                        sender: local_peer_id.to_string(),
+                        payload: serde_json::to_string(&cancelled).unwrap_or_default(),
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                        schema_version: protocol::message::SCHEMA_VERSION,
+                    };
+                    let _ = network::publish_message(swarm, topic, &message);
+                }
+            }
+        }
+        gui_bridge::GuiCommand::Fund { asset, amount } => {
+            let trader = local_peer_id.to_string();
+            let scaled_amount = (amount * AMOUNT_SCALE as f64) as u64;
+            if let Err(e) = balance_book.credit(&trader, asset.clone(), scaled_amount) {
+                let _ = update_tx.send(GuiUpdate::Error(format!("Fund error: {}", e)));
+                return;
+            }
+            let _ = balance_book.save();
+            let asset_label = match &asset {
+                protocol::message::Asset::BTC => "BTC",
+                protocol::message::Asset::XMR => "XMR",
+            };
+            let _ = update_tx.send(GuiUpdate::LogMessage(format!("Funded {} with {}", asset_label, amount)));
+            let mut balances = Vec::new();
+            for a in [protocol::message::Asset::BTC, protocol::message::Asset::XMR] {
+                let b = balance_book.balance(&trader, &a);
+                balances.push((trader.clone(), a, b));
+            }
+            let _ = update_tx.send(GuiUpdate::BalancesUpdated(balances));
+        }
+        gui_bridge::GuiCommand::ConnectPeer { multiaddr } => {
+            match multiaddr.parse::<libp2p::Multiaddr>() {
+                Ok(addr) => {
+                    if let Err(e) = swarm.dial(addr) {
+                        let _ = update_tx.send(GuiUpdate::Error(format!("Dial failed: {}", e)));
+                    }
+                }
+                Err(e) => {
+                    let _ = update_tx.send(GuiUpdate::Error(format!("Invalid address: {}", e)));
+                }
+            }
+        }
+        gui_bridge::GuiCommand::RequestBalances => {
+            let trader = local_peer_id.to_string();
+            let mut balances = Vec::new();
+            for asset in [protocol::message::Asset::BTC, protocol::message::Asset::XMR] {
+                let balance = balance_book.balance(&trader, &asset);
+                balances.push((trader.clone(), asset, balance));
+            }
+            let _ = update_tx.send(GuiUpdate::BalancesUpdated(balances));
+        }
+        gui_bridge::GuiCommand::RequestOrderBook => {
+            let orders = order_book.active_orders();
+            let _ = update_tx.send(GuiUpdate::OrderBookSnapshot(orders));
+        }
+        gui_bridge::GuiCommand::RequestTrades => {
+            for trade in trade_book.all_trades() {
+                let _ = update_tx.send(GuiUpdate::TradeAdded(trade));
+            }
+        }
+        gui_bridge::GuiCommand::AdvanceTradeState { trade_id, state } => {
+            if trade_book.get_trade(trade_id).is_some() {
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let _ = trade_book.transition_trade(trade_id, state.clone(), timestamp);
+                let _ = update_tx.send(GuiUpdate::TradeStateChanged { trade_id, state });
+            }
+        }
+        gui_bridge::GuiCommand::RequestWalletAddress => {
+            if let Some(wallet) = monero_wallet {
+                match wallet.get_address().await {
+                    Ok(addr) => {
+                        let _ = update_tx.send(GuiUpdate::WalletAddress(addr));
+                    }
+                    Err(e) => {
+                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet address error: {}", e)));
+                    }
+                }
+            } else {
+                let _ = update_tx.send(GuiUpdate::WalletConnected { connected: false, address: None });
+            }
+        }
+        gui_bridge::GuiCommand::RequestWalletBalance => {
+            if let Some(wallet) = monero_wallet {
+                match wallet.get_balance_xmr(0).await {
+                    Ok((available, unlocked)) => {
+                        let _ = update_tx.send(GuiUpdate::WalletBalance { available, unlocked });
+                    }
+                    Err(e) => {
+                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet balance error: {}", e)));
+                    }
+                }
+            }
+        }
+        gui_bridge::GuiCommand::RequestBtcWalletAddress => {
+            if let Some(wallet) = btc_wallet {
+                match wallet.get_new_address(None).await {
+                    Ok(addr) => {
+                        let _ = update_tx.send(GuiUpdate::BtcWalletAddress(addr));
+                    }
+                    Err(e) => {
+                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet address error: {}", e)));
+                    }
+                }
+            } else {
+                let _ = update_tx.send(GuiUpdate::BtcWalletConnected { connected: false, address: None });
+            }
+        }
+        gui_bridge::GuiCommand::RequestBtcWalletBalance => {
+            if let Some(wallet) = btc_wallet {
+                match wallet.get_balance().await {
+                    Ok(balance) => {
+                        let _ = update_tx.send(GuiUpdate::BtcWalletBalance { balance });
+                    }
+                    Err(e) => {
+                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet balance error: {}", e)));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handle a GUI command within the node event loop (without fiat support).
+#[cfg(not(feature = "fiat"))]
+async fn handle_gui_command_inner(
+    command: gui_bridge::GuiCommand,
+    swarm: &mut libp2p::Swarm<OpenDexBehaviour>,
+    topic: &gossipsub::IdentTopic,
+    local_peer_id: &PeerId,
+    order_book: &mut orderbook::OrderBook,
+    trade_book: &mut trades::TradeBook,
+    balance_book: &mut balances::BalanceBook,
     monero_wallet: Option<&mut wallet_client::MoneroWalletClient>,
     btc_wallet: Option<&mut btc_wallet_client::BitcoinWalletClient>,
     update_tx: &flume::Sender<gui_bridge::GuiUpdate>,

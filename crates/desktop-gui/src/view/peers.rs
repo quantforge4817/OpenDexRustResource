@@ -4,6 +4,13 @@ use crate::app::Message;
 use crate::model::GuiModel;
 use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
 
+/// Well-known bootstrap nodes for new users to join the network
+const BOOTSTRAP_NODES: &[(&str, &str)] = &[
+    ("OpenDex Node 1", "/ip4/104.248.50.17/tcp/4001/p2p/12D3KooWBootstrap1"),
+    ("OpenDex Node 2", "/ip4/142.132.204.6/tcp/4001/p2p/12D3KooWBootstrap2"),
+    ("OpenDex Node 3", "/ip4/167.99.83.21/tcp/4001/p2p/12D3KooWBootstrap3"),
+];
+
 pub fn peers_panel(model: &GuiModel) -> Element<'_, Message> {
     let peer_input = TextInput::new("Peer address (multiaddr)", &model.peer_input)
         .on_input(Message::PeerInputChanged)
@@ -39,9 +46,36 @@ pub fn peers_panel(model: &GuiModel) -> Element<'_, Message> {
     let title = Container::new(Text::new("Peers").size(14))
         .padding(iced::Padding::new(8.0).left(10).bottom(4));
 
+    // Bootstrap nodes section
+    let bootstrap_title = Container::new(
+        Text::new("⚡ Quick Connect").size(11).color(ACCENT_COLOR)
+    ).padding(iced::Padding::new(4.0).left(10).top(4));
+
+    let bootstrap_list = BOOTSTRAP_NODES.iter().fold(
+        Column::new().spacing(2),
+        |col, (name, addr)| {
+            let btn = Button::new(
+                Row::new()
+                    .spacing(6)
+                    .push(Text::new(*name).size(10).color(TEXT_SECONDARY))
+                    .push(Text::new("→").size(10).color(ACCENT_COLOR))
+            )
+            .on_press(Message::ConnectBootstrap(addr.to_string()))
+            .padding(iced::Padding::new(4.0).left(10).right(10));
+            col.push(btn)
+        }
+    );
+
+    let bootstrap_section = Column::new()
+        .spacing(2)
+        .push(bootstrap_title)
+        .push(bootstrap_list)
+        .padding(iced::Padding::new(4.0).left(10).right(10));
+
     let content = Column::new()
-        .spacing(8)
+        .spacing(4)
         .push(title)
+        .push(bootstrap_section)
         .push(Row::new()
             .spacing(8)
             .padding(iced::Padding::new(8.0).left(10).right(10))

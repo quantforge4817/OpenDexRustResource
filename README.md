@@ -113,6 +113,7 @@ OpenDexRustResource/
 ├── audit/                  # Security audit, compliance, bug log
 └── docs/                   # Documentation
     ├── deployment/         # Web portal deployment scripts
+    ├── matrix/             # Self-hosted Matrix homeserver deployment
     └── testnet/            # Testnet deployment scripts and results
 ```
 
@@ -157,6 +158,14 @@ The non-custodial, decentralized architecture is rated **GREEN** under the proje
 
 ---
 
+## 💬 Community
+
+Join the OpenDex community on **Matrix** to ask questions, discuss development, connect with contributors, and share ideas:
+
+- **[Matrix Chat](https://matrix.to/#/#opendex:opendex.org)** — Community discussion and support
+
+We also provide a self-hosted Matrix homeserver deployment guide for those who want to run their own instance. See **[docs/matrix/](docs/matrix/)** for details.
+
 ## 📖 Documentation
 
 - **[Roadmap](docs/ROADMAP.md)** — Development milestones and future plans
@@ -166,6 +175,7 @@ The non-custodial, decentralized architecture is rated **GREEN** under the proje
 - **[Testing](audit/testing.md)** — Testing strategy and coverage
 - **[Testnet](docs/testnet/README.md)** — Testnet deployment guide
 - **[Deployment](docs/deployment/README.md)** — Web portal deployment guide
+- **[Matrix Server](docs/matrix/README.md)** — Self-hosted Matrix homeserver setup
 
 ---
 

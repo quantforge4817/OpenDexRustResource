@@ -2,6 +2,13 @@
 
 All notable changes to the OpenDex project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Self-hosted Matrix homeserver deployment guide (`docs/matrix/`) — Conduit on cloud VPS (~$3.50–5/mo)
+- Community chat link updated to `#opendex:opendex.org` (self-hosted Matrix server)
+- Matrix server references added to project documentation (README, CONTRIBUTING, SECURITY, ROADMAP, deployment docs)
+
 ## [v0.1.0-rc1] — 2026-10-15
 
 ### Release Type
