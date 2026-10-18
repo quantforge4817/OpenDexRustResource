@@ -28,11 +28,17 @@ pub fn SourceBrowser() -> impl IntoView {
     let children = move || data::list_children(&current_path.get());
 
     let dirs = move || {
-        children().into_iter().filter(|(_, is_dir)| *is_dir).collect_view()
+        children()
+            .into_iter()
+            .filter(|(_, is_dir)| *is_dir)
+            .collect_view()
     };
 
     let files = move || {
-        children().into_iter().filter(|(_, is_dir)| !*is_dir).collect_view()
+        children()
+            .into_iter()
+            .filter(|(_, is_dir)| !*is_dir)
+            .collect_view()
     };
 
     view! {
@@ -126,8 +132,8 @@ fn dirs(current_path: RwSignal<String>, selected_file: RwSignal<Option<String>>)
                 let _ = i;
                 let open_dir = {
                     let name = name.clone();
-                    let current_path = current_path.clone();
-                    let selected_file = selected_file.clone();
+                    let current_path = current_path;
+                    let selected_file = selected_file;
                     move |_| {
                         let current = current_path.get();
                         let new_path = if current.is_empty() {
@@ -167,8 +173,8 @@ fn files(current_path: RwSignal<String>, selected_file: RwSignal<Option<String>>
                 let _ = i;
                 let open_file = {
                     let name = name.clone();
-                    let current_path = current_path.clone();
-                    let selected_file = selected_file.clone();
+                    let current_path = current_path;
+                    let selected_file = selected_file;
                     move |_| {
                         let current = current_path.get();
                         let full_path = if current.is_empty() {
@@ -192,7 +198,7 @@ fn files(current_path: RwSignal<String>, selected_file: RwSignal<Option<String>>
 
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
-     .replace('<', "&lt;")
-     .replace('>', "&gt;")
-     .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

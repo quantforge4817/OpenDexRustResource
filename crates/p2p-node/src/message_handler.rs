@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::sync::apply_snapshot;
 
 use protocol::message::{
-    MessageType, Message, Order, OrderCancelled, Trade, TradeState, TradeStateChanged,
+    Message, MessageType, Order, OrderCancelled, Trade, TradeState, TradeStateChanged,
 };
 #[cfg(feature = "fiat")]
 use protocol::p2p::{P2POffer, P2POfferCancelled, P2PTrade, P2PTradeStateChanged};
@@ -60,6 +60,7 @@ fn is_happy_path_state(state: &TradeState) -> bool {
 pub fn is_trade_participant(trade: &Trade, sender: &str) -> bool {
     sender == trade.buyer || sender == trade.seller
 }
+#[allow(dead_code)]
 pub fn is_authenticated_sender(claimed_sender: &str, authenticated_peer_id: &PeerId) -> bool {
     claimed_sender == authenticated_peer_id.to_string()
 }
@@ -128,6 +129,7 @@ pub fn handle_order_cancelled(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_order_created(
     order: Order,
     actor: &str,
@@ -540,7 +542,10 @@ pub fn handle_p2p_trade_state_changed(
     }
 
     let mut trade = trade;
-    if trade.transition(change.state.clone(), change.timestamp).is_ok() {
+    if trade
+        .transition(change.state.clone(), change.timestamp)
+        .is_ok()
+    {
         p2p_offer_book.trades.insert(change.trade_id, trade);
         p2p_offer_book.save_trades()?;
         tracing::info!(
@@ -763,11 +768,7 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_p2p_offer_created(
-                offer,
-                &authenticated_sender,
-                ctx.p2p_offer_book,
-            )?;
+            handle_p2p_offer_created(offer, &authenticated_sender, ctx.p2p_offer_book)?;
         }
 
         #[cfg(feature = "fiat")]
@@ -803,11 +804,7 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_p2p_trade_created(
-                trade,
-                &authenticated_sender,
-                ctx.p2p_offer_book,
-            )?;
+            handle_p2p_trade_created(trade, &authenticated_sender, ctx.p2p_offer_book)?;
         }
 
         #[cfg(feature = "fiat")]
@@ -820,11 +817,7 @@ pub fn handle_gossipsub_message(
                 }
             };
 
-            handle_p2p_trade_state_changed(
-                change,
-                &authenticated_sender,
-                ctx.p2p_offer_book,
-            )?;
+            handle_p2p_trade_state_changed(change, &authenticated_sender, ctx.p2p_offer_book)?;
         }
 
         #[cfg(not(feature = "fiat"))]

@@ -68,12 +68,18 @@ impl SepaProvider {
 
     /// Generate a unique end-to-end transaction ID.
     fn generate_end_to_end_id() -> String {
-        format!("E2E-{}", uuid::Uuid::new_v4().hyphenated().to_string()[..8].to_uppercase())
+        format!(
+            "E2E-{}",
+            uuid::Uuid::new_v4().hyphenated().to_string()[..8].to_uppercase()
+        )
     }
 
     /// Generate a unique SEPA transaction ID.
     fn generate_sepa_transaction_id() -> String {
-        format!("SEPA-{}", uuid::Uuid::new_v4().hyphenated().to_string()[..8].to_uppercase())
+        format!(
+            "SEPA-{}",
+            uuid::Uuid::new_v4().hyphenated().to_string()[..8].to_uppercase()
+        )
     }
 }
 
@@ -128,7 +134,9 @@ impl PaymentAdapter for SepaProvider {
             currency: opendex_types::FiatCurrency::EUR,
             amount: crate::payment::FiatAmount::new(0, opendex_types::FiatCurrency::EUR),
             sender_reference: crate::payment::PaymentReference(payment.end_to_end_id.clone()),
-            recipient_reference: crate::payment::PaymentReference(payment.sepa_transaction_id.clone()),
+            recipient_reference: crate::payment::PaymentReference(
+                payment.sepa_transaction_id.clone(),
+            ),
             verified_at: chrono::Utc::now(),
             status: PaymentStatus::Confirmed,
         })

@@ -10,11 +10,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use opendex_types::{
-    Asset, BitcoinNetwork, MoneroNetwork, ParticipantId,
-    ProtocolVersion, Satoshis, Piconero, SwapId, TradeId,
-};
 use opendex_errors::ProtocolError;
+use opendex_types::{
+    Asset, BitcoinNetwork, MoneroNetwork, ParticipantId, Piconero, ProtocolVersion, Satoshis,
+    SwapId, TradeId,
+};
 
 // ─── Swap Context ───────────────────────────────────────────────────────────
 
@@ -202,10 +202,7 @@ pub trait SettlementProtocol {
     type Error: From<ProtocolError> + std::error::Error + Send + Sync;
 
     /// Initialize the protocol for a new swap.
-    fn initialize(
-        &self,
-        context: SwapContext,
-    ) -> Result<Self::State, Self::Error>;
+    fn initialize(&self, context: SwapContext) -> Result<Self::State, Self::Error>;
 
     /// Process a message from the counterparty.
     fn process_message(
@@ -222,10 +219,7 @@ pub trait SettlementProtocol {
     ) -> Result<Vec<ProtocolAction>, Self::Error>;
 
     /// Attempt recovery from an interrupted swap.
-    fn recover(
-        &self,
-        state: &Self::State,
-    ) -> Result<Vec<ProtocolAction>, Self::Error>;
+    fn recover(&self, state: &Self::State) -> Result<Vec<ProtocolAction>, Self::Error>;
 }
 
 // ─── Swap State ─────────────────────────────────────────────────────────────

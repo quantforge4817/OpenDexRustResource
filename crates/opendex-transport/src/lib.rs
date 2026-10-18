@@ -10,14 +10,13 @@
 //! - `MockTransport` — In-memory transport for testing
 
 pub mod envelope;
-pub mod transport;
+pub mod libp2p_transport;
 pub mod message_store;
 pub mod mock;
-pub mod libp2p_transport;
+pub mod transport;
 
 pub use envelope::*;
-pub use transport::*;
+pub use libp2p_transport::*;
 pub use message_store::*;
 pub use mock::*;
-pub use libp2p_transport::*;
-
+pub use transport::*;

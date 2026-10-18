@@ -27,11 +27,10 @@ use std::str::FromStr;
 use bitcoin::consensus::encode::serialize;
 use bitcoin::hashes::{Hash, sha256};
 use bitcoin::opcodes::all;
-use bitcoin::secp256k1::{All, Message, Secp256k1, SecretKey, PublicKey};
+use bitcoin::secp256k1::{All, Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::sighash::{EcdsaSighashType, SighashCache};
 use bitcoin::{
-    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Witness,
+    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -105,7 +104,10 @@ impl Serialize for RedemptionScript {
         let mut state = serializer.serialize_struct("RedemptionScript", 5)?;
         state.serialize_field("witness_script", &hex::encode(&self.witness_script))?;
         state.serialize_field("p2wsh_script", &hex::encode(&self.p2wsh_script))?;
-        state.serialize_field("script_hash", &hex::encode(self.script_hash.to_byte_array()))?;
+        state.serialize_field(
+            "script_hash",
+            &hex::encode(self.script_hash.to_byte_array()),
+        )?;
         state.serialize_field("maker_pub_key_hex", &self.maker_pub_key_hex)?;
         state.serialize_field("taker_pub_key_hex", &self.taker_pub_key_hex)?;
         state.end()
@@ -212,7 +214,10 @@ impl Serialize for PartialSignature {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("PartialSignature", 3)?;
-        state.serialize_field("signature_with_sighash", &hex::encode(&self.signature_with_sighash))?;
+        state.serialize_field(
+            "signature_with_sighash",
+            &hex::encode(&self.signature_with_sighash),
+        )?;
         state.serialize_field("party", &self.party)?;
         state.serialize_field("trade_id", &self.trade_id)?;
         state.end()
@@ -392,20 +397,24 @@ impl MultisigEscrow {
         let deposit_txid = bitcoin::Txid::from_str(deposit_txid_hex)
             .map_err(|e| SettlementError::MultisigError(format!("Invalid txid: {}", e)))?;
 
-        let taker_addr_unchecked: bitcoin::Address<_> = bitcoin::Address::from_str(taker_address)
-            .map_err(|e| SettlementError::MultisigError(format!("Invalid address: {}", e)))?;
+        let taker_addr_unchecked: bitcoin::Address<_> =
+            bitcoin::Address::from_str(taker_address)
+                .map_err(|e| SettlementError::MultisigError(format!("Invalid address: {}", e)))?;
         let taker_addr = taker_addr_unchecked
             .require_network(self.network)
-            .map_err(|_| SettlementError::MultisigError("Address not valid for network".to_string()))?;
+            .map_err(|_| {
+                SettlementError::MultisigError("Address not valid for network".to_string())
+            })?;
 
         let amount = Amount::from_sat(amount);
         let fee = Amount::from_sat(miner_fee_sats);
 
         // Ensure the fee doesn't exceed the total amount
         if fee > amount {
-            return Err(SettlementError::MultisigError(
-                format!("Miner fee ({}) exceeds escrow amount ({})", miner_fee_sats, amount),
-            ));
+            return Err(SettlementError::MultisigError(format!(
+                "Miner fee ({}) exceeds escrow amount ({})",
+                miner_fee_sats, amount
+            )));
         }
 
         let taker_value = amount - fee;
@@ -470,7 +479,9 @@ impl MultisigEscrow {
         taker_sig: &PartialSignature,
     ) -> Result<(), SettlementError> {
         if tx.input.is_empty() {
-            return Err(SettlementError::MultisigError("No inputs to sign".to_string()));
+            return Err(SettlementError::MultisigError(
+                "No inputs to sign".to_string(),
+            ));
         }
 
         let mut witness = Witness::new();
@@ -535,7 +546,9 @@ impl MultisigManager {
         let escrow = MultisigEscrow::new(trade_id, &maker_key, &taker_key, network);
         self.keys.insert(trade_id, (maker_key, taker_key));
         let _ = self.escrows.insert(trade_id, escrow);
-        Ok(self.escrows.get(&trade_id)
+        Ok(self
+            .escrows
+            .get(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow setup failed".to_string()))?)
     }
 
@@ -570,16 +583,21 @@ impl MultisigManager {
         amount: u64,
         taker_address: &str,
     ) -> Result<PartialSignature, SettlementError> {
-        let (maker_key, _) = self.keys.get(&trade_id)
+        let (maker_key, _) = self
+            .keys
+            .get(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Keys not found".to_string()))?;
 
-        let escrow = self.get_escrow(trade_id)
+        let escrow = self
+            .get_escrow(trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
         let tx = escrow.create_payout_tx(deposit_txid, vout, amount, taker_address, 2000)?;
         let partial_sig = escrow.sign_payout(&tx, maker_key, "maker".to_string(), amount)?;
 
-        let escrow_mut = self.escrows.get_mut(&trade_id)
+        let escrow_mut = self
+            .escrows
+            .get_mut(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.payout_tx_hex = Some(MultisigEscrow::tx_to_hex(&tx));
         escrow_mut.maker_partial_sig = Some(partial_sig.clone());
@@ -595,13 +613,18 @@ impl MultisigManager {
         vout: u32,
         amount: u64,
     ) -> Result<PartialSignature, SettlementError> {
-        let (_, taker_key) = self.keys.get(&trade_id)
+        let (_, taker_key) = self
+            .keys
+            .get(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Keys not found".to_string()))?;
 
-        let escrow = self.get_escrow(trade_id)
+        let escrow = self
+            .get_escrow(trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
-        let tx_hex = escrow.payout_tx_hex.as_ref()
+        let tx_hex = escrow
+            .payout_tx_hex
+            .as_ref()
             .ok_or_else(|| SettlementError::MultisigError("No payout tx to sign".to_string()))?;
 
         let tx_bytes = hex::decode(tx_hex)
@@ -611,27 +634,34 @@ impl MultisigManager {
 
         let partial_sig = escrow.sign_payout(&tx, taker_key, "taker".to_string(), amount)?;
 
-        let escrow_mut = self.escrows.get_mut(&trade_id)
+        let escrow_mut = self
+            .escrows
+            .get_mut(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.taker_partial_sig = Some(partial_sig.clone());
 
         Ok(partial_sig)
     }
 
-    pub fn finalize_payout(
-        &mut self,
-        trade_id: Uuid,
-    ) -> Result<String, SettlementError> {
-        let escrow = self.escrows.get_mut(&trade_id)
+    pub fn finalize_payout(&mut self, trade_id: Uuid) -> Result<String, SettlementError> {
+        let escrow = self
+            .escrows
+            .get_mut(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
-        let maker_sig = escrow.maker_partial_sig.as_ref()
+        let maker_sig = escrow
+            .maker_partial_sig
+            .as_ref()
             .ok_or_else(|| SettlementError::MultisigError("Maker signature missing".to_string()))?;
 
-        let taker_sig = escrow.taker_partial_sig.as_ref()
+        let taker_sig = escrow
+            .taker_partial_sig
+            .as_ref()
             .ok_or_else(|| SettlementError::MultisigError("Taker signature missing".to_string()))?;
 
-        let tx_hex = escrow.payout_tx_hex.take()
+        let tx_hex = escrow
+            .payout_tx_hex
+            .take()
             .ok_or_else(|| SettlementError::MultisigError("Payout tx missing".to_string()))?;
 
         let tx_bytes = hex::decode(&tx_hex)
@@ -656,13 +686,16 @@ impl MultisigManager {
         amount: u64,
         maker_address: &str,
     ) -> Result<String, SettlementError> {
-        let escrow = self.get_escrow(trade_id)
+        let escrow = self
+            .get_escrow(trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
 
         let tx = escrow.create_payout_tx(deposit_txid, vout, amount, maker_address, 2000)?;
         let tx_hex = MultisigEscrow::tx_to_hex(&tx);
 
-        let escrow_mut = self.escrows.get_mut(&trade_id)
+        let escrow_mut = self
+            .escrows
+            .get_mut(&trade_id)
             .ok_or_else(|| SettlementError::MultisigError("Escrow not found".to_string()))?;
         escrow_mut.return_tx_hex = Some(tx_hex.clone());
 
@@ -719,7 +752,9 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        let escrow = manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
+        let escrow = manager
+            .setup_escrow(trade_id, maker, taker, test_network())
+            .unwrap();
         assert_eq!(escrow.trade_id, trade_id);
         assert!(matches!(escrow.state, MultisigEscrowState::AwaitingDeposit));
         assert!(escrow.deposit_address_str().starts_with("tb1q"));
@@ -731,20 +766,31 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
-        manager.record_deposit(
-            trade_id,
-            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
-            0,
-            100_000_000,
-        ).unwrap();
+        manager
+            .setup_escrow(trade_id, maker, taker, test_network())
+            .unwrap();
+        manager
+            .record_deposit(
+                trade_id,
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
+                0,
+                100_000_000,
+            )
+            .unwrap();
         let escrow = manager.get_escrow(trade_id).unwrap();
-        assert!(matches!(escrow.state, MultisigEscrowState::Deposited { .. }));
+        assert!(matches!(
+            escrow.state,
+            MultisigEscrowState::Deposited { .. }
+        ));
     }
 
     #[test]
     fn partial_signature_json_roundtrip() {
-        let sig = PartialSignature::new(vec![0u8; 65], "maker".to_string(), Uuid::new_v4().to_string());
+        let sig = PartialSignature::new(
+            vec![0u8; 65],
+            "maker".to_string(),
+            Uuid::new_v4().to_string(),
+        );
         let json = sig.to_json().unwrap();
         let restored = PartialSignature::from_json(&json).unwrap();
         assert_eq!(restored.party(), "maker");
@@ -757,12 +803,21 @@ mod tests {
         let maker = EscrowKeyPair::new();
         let taker = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
-        manager.setup_escrow(trade_id, maker, taker, test_network()).unwrap();
+        manager
+            .setup_escrow(trade_id, maker, taker, test_network())
+            .unwrap();
         assert!(matches!(
             manager.get_escrow(trade_id).unwrap().state,
             MultisigEscrowState::AwaitingDeposit
         ));
-        manager.record_deposit(trade_id, "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(), 0, 100_000_000).unwrap();
+        manager
+            .record_deposit(
+                trade_id,
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
+                0,
+                100_000_000,
+            )
+            .unwrap();
         assert!(matches!(
             manager.get_escrow(trade_id).unwrap().state,
             MultisigEscrowState::Deposited { .. }
@@ -814,13 +869,15 @@ mod tests {
         let escrow = MultisigEscrow::new(trade_id, &maker, &taker, Network::Testnet);
         // Use the taker's own multisig deposit address as payout target
         let taker_addr = escrow.deposit_address_str();
-        let tx = escrow.create_payout_tx(
-            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-            0,
-            100_000_000,
-            &taker_addr,
-            2000,
-        ).unwrap();
+        let tx = escrow
+            .create_payout_tx(
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+                0,
+                100_000_000,
+                &taker_addr,
+                2000,
+            )
+            .unwrap();
         assert_eq!(tx.input.len(), 1);
         assert_eq!(tx.output.len(), 1);
         // Taker receives amount minus miner fee
@@ -836,23 +893,34 @@ mod tests {
         let deposit_txid = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
         let amount = 100_000_000u64;
 
-        manager.setup_escrow(trade_id, maker.clone(), taker.clone(), test_network()).unwrap();
-        manager.record_deposit(trade_id, deposit_txid.to_string(), 0, amount).unwrap();
+        manager
+            .setup_escrow(trade_id, maker.clone(), taker.clone(), test_network())
+            .unwrap();
+        manager
+            .record_deposit(trade_id, deposit_txid.to_string(), 0, amount)
+            .unwrap();
 
         // Use the escrow's own deposit address as payout target
         let taker_addr = manager.get_escrow(trade_id).unwrap().deposit_address_str();
 
-        let maker_sig = manager.maker_sign_payout(trade_id, deposit_txid, 0, amount, &taker_addr).unwrap();
+        let maker_sig = manager
+            .maker_sign_payout(trade_id, deposit_txid, 0, amount, &taker_addr)
+            .unwrap();
         assert_eq!(maker_sig.party(), "maker");
 
-        let taker_sig = manager.taker_sign_payout(trade_id, deposit_txid, 0, amount).unwrap();
+        let taker_sig = manager
+            .taker_sign_payout(trade_id, deposit_txid, 0, amount)
+            .unwrap();
         assert_eq!(taker_sig.party(), "taker");
 
         let final_tx_hex = manager.finalize_payout(trade_id).unwrap();
         assert!(!final_tx_hex.is_empty());
 
         let escrow = manager.get_escrow(trade_id).unwrap();
-        assert!(matches!(escrow.state, MultisigEscrowState::ReadyToBroadcast));
+        assert!(matches!(
+            escrow.state,
+            MultisigEscrowState::ReadyToBroadcast
+        ));
     }
 
     #[test]
@@ -862,13 +930,15 @@ mod tests {
         let trade_id = Uuid::new_v4();
         let escrow = MultisigEscrow::new(trade_id, &maker, &taker, Network::Testnet);
         let taker_addr = escrow.deposit_address_str();
-        let tx = escrow.create_payout_tx(
-            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-            0,
-            100_000_000,
-            &taker_addr,
-            5000,
-        ).unwrap();
+        let tx = escrow
+            .create_payout_tx(
+                "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+                0,
+                100_000_000,
+                &taker_addr,
+                5000,
+            )
+            .unwrap();
         // Taker receives amount minus miner fee
         assert_eq!(tx.output[0].value.to_sat(), 100_000_000 - 5000);
     }

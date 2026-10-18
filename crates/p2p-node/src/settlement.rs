@@ -129,11 +129,19 @@ fn apply_settlement_plan(balance_book: &mut BalanceBook, plan: &SettlementPlan) 
             } else {
                 // Reservation already removed by reconciliation; consume from
                 // aggregate locked balance.
-                balance_book.consume_locked(&plan.trader, plan.debit_asset.clone(), plan.debit_amount)?;
+                balance_book.consume_locked(
+                    &plan.trader,
+                    plan.debit_asset.clone(),
+                    plan.debit_amount,
+                )?;
             }
         }
         None => {
-            balance_book.consume_locked(&plan.trader, plan.debit_asset.clone(), plan.debit_amount)?;
+            balance_book.consume_locked(
+                &plan.trader,
+                plan.debit_asset.clone(),
+                plan.debit_amount,
+            )?;
         }
     }
 

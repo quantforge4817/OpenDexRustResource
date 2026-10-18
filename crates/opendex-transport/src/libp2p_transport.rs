@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use libp2p::{Multiaddr, PeerId};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use opendex_types::ParticipantId;
 
@@ -64,8 +64,11 @@ impl std::error::Error for Libp2pTransportError {}
 /// libp2p Swarm. The builder pattern allows full control over the libp2p
 /// configuration.
 pub struct Libp2pTransport {
+    #[allow(dead_code)]
     participant_id: ParticipantId,
+    #[allow(dead_code)]
     sender: mpsc::UnboundedSender<ProtocolEnvelope>,
+    #[allow(dead_code)]
     receiver: Arc<Mutex<mpsc::UnboundedReceiver<InboundMessage<ProtocolEnvelope>>>>,
 }
 
@@ -74,9 +77,12 @@ impl Libp2pTransport {
     ///
     /// Uses `serde_json` to serialize the envelope, which can then be sent
     /// over the libp2p network via Gossipsub or direct peer-to-peer channels.
-    pub fn serialize_envelope(envelope: &ProtocolEnvelope) -> Result<Vec<u8>, Libp2pTransportError> {
-        serde_json::to_vec(envelope)
-            .map_err(|e| Libp2pTransportError::SendFailed(format!("JSON serialization failed: {}", e)))
+    pub fn serialize_envelope(
+        envelope: &ProtocolEnvelope,
+    ) -> Result<Vec<u8>, Libp2pTransportError> {
+        serde_json::to_vec(envelope).map_err(|e| {
+            Libp2pTransportError::SendFailed(format!("JSON serialization failed: {}", e))
+        })
     }
 
     /// Deserialize a `ProtocolEnvelope` from JSON bytes received over the network.
@@ -84,8 +90,9 @@ impl Libp2pTransport {
     /// # Arguments
     /// * `bytes` - JSON-encoded bytes of a `ProtocolEnvelope`
     pub fn deserialize_envelope(bytes: &[u8]) -> Result<ProtocolEnvelope, Libp2pTransportError> {
-        serde_json::from_slice(bytes)
-            .map_err(|e| Libp2pTransportError::ReceiveFailed(format!("JSON deserialization failed: {}", e)))
+        serde_json::from_slice(bytes).map_err(|e| {
+            Libp2pTransportError::ReceiveFailed(format!("JSON deserialization failed: {}", e))
+        })
     }
 
     /// Convert a libp2p `PeerId` to an OpenDex `ParticipantId`.
@@ -93,8 +100,8 @@ impl Libp2pTransport {
     /// The libp2p PeerId is derived from the peer's public key. We hash it
     /// using SHA-256 to create a UUID-based ParticipantId for OpenDex routing.
     pub fn peer_id_to_participant(peer_id: &PeerId) -> ParticipantId {
-        use uuid::Uuid;
         use sha2::{Digest, Sha256};
+        use uuid::Uuid;
 
         let peer_str = format!("{}", peer_id);
         let mut hasher = Sha256::new();
@@ -110,8 +117,9 @@ impl Libp2pTransport {
     /// # Arguments
     /// * `addr_str` - A multiaddress string like "/ip4/0.0.0.0/tcp/0"
     pub fn parse_multiaddr(addr_str: &str) -> Result<Multiaddr, Libp2pTransportError> {
-        addr_str.parse()
-            .map_err(|e| Libp2pTransportError::NotInitialized(format!("Invalid multiaddress: {}", e)))
+        addr_str.parse().map_err(|e| {
+            Libp2pTransportError::NotInitialized(format!("Invalid multiaddress: {}", e))
+        })
     }
 
     /// Create a new libp2p transport.
@@ -124,7 +132,8 @@ impl Libp2pTransport {
     ) -> Result<(Self, tokio::task::JoinHandle<()>), Libp2pTransportError> {
         Err(Libp2pTransportError::NotInitialized(
             "Libp2pTransport requires custom Swarm construction. \
-             Use Libp2pTransport::build_swarm() directly.".to_string(),
+             Use Libp2pTransport::build_swarm() directly."
+                .to_string(),
         ))
     }
 }
@@ -133,7 +142,11 @@ impl Libp2pTransport {
 impl Transport for Libp2pTransport {
     type Error = Libp2pTransportError;
 
-    async fn send(&self, _peer: ParticipantId, _envelope: ProtocolEnvelope) -> Result<(), Self::Error> {
+    async fn send(
+        &self,
+        _peer: ParticipantId,
+        _envelope: ProtocolEnvelope,
+    ) -> Result<(), Self::Error> {
         Err(Libp2pTransportError::NotInitialized(
             "Transport not initialized".to_string(),
         ))

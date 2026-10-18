@@ -34,41 +34,121 @@ impl DaemonMoneroChain {
     /// * `url` - The Monero daemon URL (e.g., "http://127.0.0.1:18081")
     pub fn new(url: &str) -> Result<Self, ChainError> {
         // Validate URL
-        monero_rpc::RpcClient::new(url.to_string())
+        monero_rpc::RpcClientBuilder::new()
+            .build(url.to_string())
             .map_err(|e| ChainError::ConnectionFailed(e.to_string()))?;
-        Ok(Self { url: url.to_string() })
+        Ok(Self {
+            url: url.to_string(),
+        })
     }
 
     /// Create a `monero_rpc::DaemonJsonRpcClient` for direct API access.
     pub fn daemon_client(&self) -> Result<monero_rpc::DaemonJsonRpcClient, ChainError> {
-        let rpc = monero_rpc::RpcClient::new(self.url.clone())
+        let rpc = monero_rpc::RpcClientBuilder::new()
+            .build(self.url.clone())
             .map_err(|e| ChainError::ConnectionFailed(e.to_string()))?;
         Ok(rpc.daemon())
     }
 }
 
 impl MoneroChain for DaemonMoneroChain {
-    fn transaction(
-        &self,
-        _txid: &str,
-    ) -> Result<Option<MoneroTransaction>, ChainError> {
-        // Use monero_rpc::DaemonJsonRpcClient for real lookup
+    fn transaction(&self, txid: &str) -> Result<Option<MoneroTransaction>, ChainError> {
+        // Parse the txid as a Monero hash
+        let txid_bytes = hex::decode(txid)
+            .map_err(|e| ChainError::SerializationError(format!("Invalid txid hex: {}", e)))?;
+
+        if txid_bytes.len() != 32 {
+            return Err(ChainError::SerializationError(
+                "Monero txid must be 32 bytes".to_string(),
+            ));
+        }
+
+        let crypto_hash = monero_rpc::monero::cryptonote::hash::Hash::new(&txid_bytes);
+
+        // Create daemon RPC client and look up the transaction
+        let rpc = monero_rpc::RpcClientBuilder::new()
+            .build(self.url.clone())
+            .map_err(|e| ChainError::ConnectionFailed(e.to_string()))?;
+        let daemon = rpc.daemon_rpc();
+
+        let txid_clone = txid.to_string();
+        let result = tokio::runtime::Handle::current()
+            .block_on(async { daemon.get_transactions(vec![crypto_hash], None, None).await })
+            .map_err(|e| ChainError::RpcError(format!("get_transactions failed: {}", e)))?;
+
+        // Extract transaction data from the response
+        if let Some(ref txs) = result.txs {
+            if let Some(tx) = txs.first() {
+                let block_height = tx.block_height;
+
+                // Compute confirmations from current height - block height
+                let current_height = self.height()?;
+                let confirmations = if let Some(bh) = block_height {
+                    if current_height > bh {
+                        (current_height - bh) as u32
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+
+                // Amount is not directly available from daemon RPC;
+                // it requires parsing the transaction JSON or using wallet RPC
+                // For now, return 0 as a placeholder
+                let amount = Piconero(0);
+
+                return Ok(Some(MoneroTransaction {
+                    txid: txid_clone,
+                    amount,
+                    confirmations,
+                    block_height,
+                }));
+            }
+        }
+
         Ok(None)
     }
 
     fn height(&self) -> Result<u64, ChainError> {
-        // Use monero_rpc::DaemonJsonRpcClient::get_height() for real height
-        Ok(0)
+        let rpc = monero_rpc::RpcClientBuilder::new()
+            .build(self.url.clone())
+            .map_err(|e| ChainError::ConnectionFailed(e.to_string()))?;
+        let daemon = rpc.daemon();
+
+        // get_block_count returns the number of blocks (height + 1)
+        let count = tokio::runtime::Handle::current()
+            .block_on(async { daemon.get_block_count().await })
+            .map_err(|e| ChainError::RpcError(format!("get_block_count failed: {}", e)))?;
+
+        // Block count is height + 1, so subtract 1
+        let height = count.get();
+        if height == 0 {
+            return Ok(0);
+        }
+        Ok(height - 1)
     }
 
     fn broadcast(&self, _tx_hex: &str) -> Result<String, ChainError> {
-        // Use monero_rpc::DaemonJsonRpcClient::relay_tx() for real broadcast
-        Ok(String::new())
+        // relay_tx is available on the wallet client, not daemon
+        // For daemon-only access, we use submit_block or relay through wallet
+        // Since we don't have a wallet, use the daemon's relay_tx if available
+        // The monero-rpc crate's DaemonJsonRpcClient doesn't have relay_tx
+        // We need to use the wallet client or a different approach
+        // For now, return an error indicating wallet is needed
+        Err(ChainError::RpcError(
+            "Transaction relay requires a Monero wallet client. Use submit_block for raw blocks."
+                .to_string(),
+        ))
     }
 
-    fn confirmations(&self, _txid: &str) -> Result<u32, ChainError> {
-        // Use monero_rpc for real confirmations
-        Ok(0)
+    fn confirmations(&self, txid: &str) -> Result<u32, ChainError> {
+        // Look up the transaction to get its confirmations
+        if let Some(tx) = self.transaction(txid)? {
+            Ok(tx.confirmations)
+        } else {
+            Ok(0)
+        }
     }
 }
 
@@ -77,10 +157,7 @@ impl MoneroChain for DaemonMoneroChain {
 /// Interface to the Monero blockchain.
 pub trait MoneroChain: Send + Sync {
     /// Look up a transaction by its hash.
-    fn transaction(
-        &self,
-        txid: &str,
-    ) -> Result<Option<MoneroTransaction>, ChainError>;
+    fn transaction(&self, txid: &str) -> Result<Option<MoneroTransaction>, ChainError>;
 
     /// Get the current block height.
     fn height(&self) -> Result<u64, ChainError>;
@@ -117,18 +194,18 @@ impl MockMoneroChain {
     }
 
     /// Pre-register a transaction for testing.
-    pub fn register_transaction(
-        &self,
-        txid: String,
-        amount: Piconero,
-        confirmations: u32,
-    ) {
+    pub fn register_transaction(&self, txid: String, amount: Piconero, confirmations: u32) {
         let tx = MoneroTransaction {
             txid: txid.clone(),
             amount,
             confirmations,
             block_height: if confirmations > 0 {
-                Some(self.current_height.lock().unwrap().saturating_sub(confirmations as u64))
+                Some(
+                    self.current_height
+                        .lock()
+                        .unwrap()
+                        .saturating_sub(confirmations as u64),
+                )
             } else {
                 None
             },
@@ -180,11 +257,7 @@ mod tests {
     #[test]
     fn mock_chain_returns_registered_transaction() {
         let chain = MockMoneroChain::new();
-        chain.register_transaction(
-            "def456".to_string(),
-            Piconero(100_000_000_000_000),
-            20,
-        );
+        chain.register_transaction("def456".to_string(), Piconero(100_000_000_000_000), 20);
 
         let tx = chain.transaction("def456").unwrap().unwrap();
         assert_eq!(tx.amount, Piconero(100_000_000_000_000));

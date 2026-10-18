@@ -40,30 +40,30 @@ impl<'a> Exchange<'a> {
         buy_order: Option<Order>,
         sell_order: Option<Order>,
     ) -> Result<()> {
-        if let Some(order) = buy_order {
-            if self.balance_book.order_reservation(&order.id).is_some() {
-                let remaining_amount = order.amount.saturating_sub(trade.amount);
+        if let Some(order) = buy_order
+            && self.balance_book.order_reservation(&order.id).is_some()
+        {
+            let remaining_amount = order.amount.saturating_sub(trade.amount);
 
-                let remaining_order = Order {
-                    amount: remaining_amount,
-                    ..order.clone()
-                };
+            let remaining_order = Order {
+                amount: remaining_amount,
+                ..order.clone()
+            };
 
-                let remaining_required =
-                    self.balance_book.required_reservation(&remaining_order)?;
+            let remaining_required =
+                self.balance_book.required_reservation(&remaining_order)?;
 
-                self.balance_book
-                    .reconcile_order_reservation(&order, remaining_required)?;
-            }
+            self.balance_book
+                .reconcile_order_reservation(&order, remaining_required)?;
         }
 
-        if let Some(order) = sell_order {
-            if self.balance_book.order_reservation(&order.id).is_some() {
-                let remaining_amount = order.amount.saturating_sub(trade.amount);
+        if let Some(order) = sell_order
+            && self.balance_book.order_reservation(&order.id).is_some()
+        {
+            let remaining_amount = order.amount.saturating_sub(trade.amount);
 
-                self.balance_book
-                    .reconcile_order_reservation(&order, remaining_amount)?;
-            }
+            self.balance_book
+                .reconcile_order_reservation(&order, remaining_amount)?;
         }
 
         Ok(())
@@ -152,10 +152,7 @@ impl<'a> Exchange<'a> {
             return Ok(Vec::new());
         }
 
-        let live_order = self
-            .order_book
-            .get_order(&order.id)
-            .cloned();
+        let live_order = self.order_book.get_order(&order.id).cloned();
 
         let trades = live_order
             .map(|live_order| self.order_book.match_order(&live_order))
@@ -171,15 +168,9 @@ impl<'a> Exchange<'a> {
 
             // Capture the original orders before apply_trade() can remove
             // them after a full fill.
-            let buy_order = self
-                .order_book
-                .get_order(&trade.buy_order)
-                .cloned();
+            let buy_order = self.order_book.get_order(&trade.buy_order).cloned();
 
-            let sell_order = self
-                .order_book
-                .get_order(&trade.sell_order)
-                .cloned();
+            let sell_order = self.order_book.get_order(&trade.sell_order).cloned();
 
             self.apply_trade_and_reconcile(trade, buy_order, sell_order)?;
         }
@@ -207,15 +198,9 @@ impl<'a> Exchange<'a> {
 
         // Capture the orders before apply_trade() can remove them after
         // a full fill.
-        let buy_order = self
-            .order_book
-            .get_order(&trade.buy_order)
-            .cloned();
+        let buy_order = self.order_book.get_order(&trade.buy_order).cloned();
 
-        let sell_order = self
-            .order_book
-            .get_order(&trade.sell_order)
-            .cloned();
+        let sell_order = self.order_book.get_order(&trade.sell_order).cloned();
 
         self.apply_trade_and_reconcile(&trade, buy_order, sell_order)?;
 

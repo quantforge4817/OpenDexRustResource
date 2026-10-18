@@ -121,7 +121,7 @@ graph LR
 Create the `docs/matrix/` directory with all deployment assets.
 
 - Create `docs/matrix/README.md` — comprehensive guide covering Conduit installation, domain setup, HTTPS via Certbot, room creation, and migration from `#opendex:matrix.org`
-- Create `docs/matrix/docker-compose.yml` — Conduit homeserver container with RocksDB backend, volume mounts, and port mappings (8448 for federation, 6167 internal)
+- Create `docs/matrix/docker-compose.yml` — Conduit server container with RocksDB backend, volume mounts, and port mappings (8448 for federation, 6167 internal)
 - Create `docs/matrix/setup-matrix.sh` — automated VPS setup script (Docker install, domain config, Certbot HTTPS, Conduit config generation)
 - Create `docs/matrix/conduit.toml` — Conduit configuration template with server name, federation enabled, registration tokens, and trusted servers (`matrix.org`)
 - Create `docs/matrix/nginx-matrix.conf` — Nginx reverse proxy config for Matrix federation traffic and `.well-known` discovery endpoints
@@ -133,6 +133,22 @@ Update existing project files to reference the new cloud-hosted Matrix server.
 - Update `crates/web-frontend/src/lib.rs` ContactSection (line 755) to link to `#opendex:opendex.org` instead of `#opendex:matrix.org`
 - Update `README.md` to add the Matrix server deployment guide to the Documentation section
 - Update `docs/deployment/DEPLOY.md` to include a Matrix server deployment section with quick start instructions
-- Update `docs/deployment/README.md` to add a reference to the Matrix homeserver guide
+- Update `docs/deployment/README.md` to add a reference to the Matrix server guide
 - Update `crates/web-frontend/README.md` to mention the Matrix infrastructure option
 - Update `CHANGELOG.md` to add an entry for the Matrix VPS deployment guide
+
+### ✓ Step 3: Remove all "homeserver" and "self-hosted" language from documentation
+Clean up all documentation to use "cloud-hosted Matrix server" instead of "homeserver" or "self-hosted".
+
+- Update `README.md` — change "Self-hosted Matrix homeserver" to "Cloud-hosted Matrix server" (line 116)
+- Update `README.md` — change "cloud-hosted Matrix homeserver" to "cloud-hosted Matrix server" (lines 167, 178)
+- Update `CHANGELOG.md` — change "homeserver" to "server"
+- Update `docs/deployment/README.md` — change "Matrix Homeserver" to "Matrix Server"
+- Update `docs/deployment/DEPLOY.md` — change "homeserver" to "server"
+- Update `crates/web-frontend/README.md` — change "homeserver" to "server"
+- Update `docs/matrix/README.md` — change "Homeserver" to "Server" in title and content
+- Update `docs/matrix/setup-matrix.sh` — change "Homeserver" to "Server" in comments and output
+- Update `docs/matrix/backup.sh` — change "Homeserver" to "Server" in comments
+- Update `docs/matrix/conduit.toml` — change "Homeserver" to "Server" in comments
+- Update `docs/matrix/nginx-matrix.conf` — change "homeserver" to "server" in comments
+- Commit and push all changes to GitHub

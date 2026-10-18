@@ -58,10 +58,10 @@ fn collect_files(project_root: &Path, current: &Path, files: &mut BTreeMap<Strin
         }
 
         // Skip large files (> 500KB) and likely binaries
-        if let Ok(metadata) = fs::metadata(&path) {
-            if metadata.len() > 500_000 {
-                continue;
-            }
+        if let Ok(metadata) = fs::metadata(&path)
+            && metadata.len() > 500_000
+        {
+            continue;
         }
 
         if path.is_dir() {

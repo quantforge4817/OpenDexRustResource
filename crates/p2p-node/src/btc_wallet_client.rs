@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Bitcoin wallet client abstraction layer.
 ///
 /// Connects OpenDex to a running Bitcoin Core (`bitcoind`) wallet RPC service
@@ -8,10 +9,11 @@
 /// Uses raw JSON-RPC over HTTP via reqwest, avoiding native dependencies.
 /// The wallet RPC must be running externally (e.g., `bitcoind` with wallet
 /// support enabled) and reachable at the configured address.
-use anyhow::{Result, Context, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 /// Bitcoin amount scale: 1 BTC = 10^8 satoshis.
+#[allow(dead_code)]
 pub const BTC_SCALE: u64 = 100_000_000;
 
 // ---------------------------------------------------------------------------
@@ -58,17 +60,20 @@ struct GetNewAddressResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SendToAddressResponse {
     txid: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetReceivedByAddressResponse {
     /// Amount received in BTC
     amount: f64,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetTransactionDetail {
     address: String,
     category: String,
@@ -80,6 +85,7 @@ struct GetTransactionDetail {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetTransactionInfo {
     #[serde(default)]
     confirmations: i64,
@@ -93,49 +99,69 @@ struct GetTransactionInfo {
 }
 
 #[derive(Debug, Deserialize)]
-struct GetTransactionResponse {
+#[allow(dead_code)]
+pub struct GetTransactionResponse {
     #[serde(default)]
     confirmations: i64,
     #[serde(default)]
+    #[allow(dead_code)]
     blockhash: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     blockheight: Option<u64>,
     #[serde(default)]
+    #[allow(dead_code)]
     fee: f64,
+    #[allow(dead_code)]
     details: Vec<GetTransactionDetail>,
     #[serde(default)]
+    #[allow(dead_code)]
     hex: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct GetWalletInfoResponse {
+#[allow(dead_code)]
+pub struct GetWalletInfoResponse {
     #[serde(default)]
+    #[allow(dead_code)]
     walletname: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     balance: f64,
     #[serde(default)]
+    #[allow(dead_code)]
     unconfirmed_balance: f64,
     #[serde(default)]
+    #[allow(dead_code)]
     immature_balance: f64,
 }
 
 #[derive(Debug, Deserialize)]
-struct ListUnspentEntry {
+pub struct ListUnspentEntry {
+    #[allow(dead_code)]
     txid: String,
+    #[allow(dead_code)]
     vout: u32,
+    #[allow(dead_code)]
     address: String,
+    #[allow(dead_code)]
     label: String,
+    #[allow(dead_code)]
     amount: f64,
+    #[allow(dead_code)]
     confirmations: u32,
+    #[allow(dead_code)]
     spendable: bool,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ListUnspentResponse {
     entries: Vec<ListUnspentEntry>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetBlockCountResponse {
     height: u64,
 }
@@ -181,6 +207,7 @@ pub enum BitcoinWalletState {
 
 /// A thin wrapper around the Bitcoin Core wallet RPC providing
 /// OpenDex-specific operations via raw JSON-RPC over HTTP.
+#[allow(dead_code)]
 pub struct BitcoinWalletClient {
     http: reqwest::Client,
     config: BitcoinWalletConfig,
@@ -211,10 +238,7 @@ impl BitcoinWalletClient {
     }
 
     /// Execute a JSON-RPC call with empty params.
-    async fn call_no_params<T: serde::de::DeserializeOwned>(
-        &self,
-        method: &str,
-    ) -> Result<T> {
+    async fn call_no_params<T: serde::de::DeserializeOwned>(&self, method: &str) -> Result<T> {
         self.call::<(), T>(method, None).await
     }
 
@@ -269,25 +293,27 @@ impl BitcoinWalletClient {
         match self.get_block_count().await {
             Ok(height) => {
                 self.state = BitcoinWalletState::Connected;
-                tracing::info!(block_height = height, "Successfully connected to Bitcoin wallet RPC");
+                tracing::info!(
+                    block_height = height,
+                    "Successfully connected to Bitcoin wallet RPC"
+                );
                 Ok(())
             }
             Err(e) => {
                 self.state = BitcoinWalletState::Error(format!("Connection test failed: {}", e));
-                Err(anyhow!(
-                    "Failed to connect to Bitcoin wallet RPC: {}",
-                    e
-                ))
+                Err(anyhow!("Failed to connect to Bitcoin wallet RPC: {}", e))
             }
         }
     }
 
     /// Check if the wallet is currently connected.
+    #[allow(dead_code)]
     pub fn is_connected(&self) -> bool {
         matches!(self.state, BitcoinWalletState::Connected)
     }
 
     /// Get the current wallet state.
+    #[allow(dead_code)]
     pub fn state(&self) -> &BitcoinWalletState {
         &self.state
     }
@@ -305,6 +331,7 @@ impl BitcoinWalletClient {
     }
 
     /// Get wallet info including balance details.
+    #[allow(dead_code)]
     pub async fn get_wallet_info(&self) -> Result<GetWalletInfoResponse> {
         let resp: GetWalletInfoResponse = self.call_no_params("getwalletinfo").await?;
         Ok(resp)
@@ -459,13 +486,16 @@ impl BitcoinWalletClient {
         address: &str,
         min_confirmations: u32,
     ) -> Result<u64> {
-        let amount = self.get_received_by_address(address, min_confirmations).await?;
+        let amount = self
+            .get_received_by_address(address, min_confirmations)
+            .await?;
         Ok((amount * BTC_SCALE as f64) as u64)
     }
 
     /// Get details about a transaction by TXID.
     ///
     /// Returns confirmations, block height, fee, and transaction details.
+    #[allow(dead_code)]
     pub async fn get_transaction(&self, txid: &str) -> Result<GetTransactionResponse> {
         #[derive(Serialize)]
         struct Params {
@@ -508,6 +538,7 @@ impl BitcoinWalletClient {
     /// * `min_confirmations` - Minimum confirmations for UTXOs
     ///
     /// Returns a list of UTXO entries.
+    #[allow(dead_code)]
     pub async fn list_unspent(&self, min_confirmations: u32) -> Result<Vec<ListUnspentEntry>> {
         #[derive(Serialize)]
         struct Params {
@@ -515,7 +546,12 @@ impl BitcoinWalletClient {
         }
 
         let resp: ListUnspentResponse = self
-            .call("listunspent", Some(Params { minconf: min_confirmations }))
+            .call(
+                "listunspent",
+                Some(Params {
+                    minconf: min_confirmations,
+                }),
+            )
             .await?;
         Ok(resp.entries)
     }

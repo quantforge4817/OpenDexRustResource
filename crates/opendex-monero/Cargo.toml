@@ -12,4 +12,5 @@ serde = { version = "1", features = ["derive"] }
 
 # Real Monero RPC
 monero-rpc = { version = "0.5", default-features = false, features = ["rustls-tls"] }
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["sync", "rt"] }
+hex = "0.4"

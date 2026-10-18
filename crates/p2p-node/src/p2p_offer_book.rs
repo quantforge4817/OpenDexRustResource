@@ -2,7 +2,6 @@
 ///
 /// Stores active P2P offers posted by the local node and received from peers.
 /// Offers can be taken by other peers to initiate P2P trades.
-
 use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;

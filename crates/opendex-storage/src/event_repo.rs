@@ -135,20 +135,28 @@ impl EventRepository for InMemoryEventRepository {
 
     fn load_after(&self, sequence: u64) -> Result<Vec<EventRecord>, StorageError> {
         let records = self.records.lock().unwrap();
-        Ok(records.iter().filter(|r| r.sequence > sequence).cloned().collect())
+        Ok(records
+            .iter()
+            .filter(|r| r.sequence > sequence)
+            .cloned()
+            .collect())
     }
 
     fn load_for_swap(&self, swap_id: SwapId) -> Result<Vec<EventRecord>, StorageError> {
         let records = self.records.lock().unwrap();
-        Ok(records.iter().filter(|r| r.event.swap_id() == swap_id).cloned().collect())
+        Ok(records
+            .iter()
+            .filter(|r| r.event.swap_id() == swap_id)
+            .cloned()
+            .collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_types::{TradeId, Satoshis, Piconero};
     use opendex_protocol_types::SwapState;
+    use opendex_types::{Piconero, Satoshis, TradeId};
     use std::sync::Arc;
     use tempfile::tempdir;
 
@@ -183,19 +191,22 @@ mod tests {
             trade_id: TradeId(uuid::Uuid::new_v4()),
             btc_amount: Satoshis(100_000),
             xmr_amount: Piconero(2_000_000_000_000),
-        }).unwrap();
+        })
+        .unwrap();
 
         repo.append(SwapEvent::SwapStateChanged {
             swap_id,
             from_state: SwapState::Created,
             to_state: SwapState::Negotiating,
-        }).unwrap();
+        })
+        .unwrap();
 
         repo.append(SwapEvent::SwapStateChanged {
             swap_id,
             from_state: SwapState::Negotiating,
             to_state: SwapState::ProtocolSetup,
-        }).unwrap();
+        })
+        .unwrap();
 
         // Load after sequence 1 — should return 2 records
         let records = repo.load_after(1).unwrap();
@@ -213,14 +224,16 @@ mod tests {
             trade_id: TradeId(uuid::Uuid::new_v4()),
             btc_amount: Satoshis(100_000),
             xmr_amount: Piconero(2_000_000_000_000),
-        }).unwrap();
+        })
+        .unwrap();
 
         repo.append(SwapEvent::SwapCreated {
             swap_id: swap2,
             trade_id: TradeId(uuid::Uuid::new_v4()),
             btc_amount: Satoshis(200_000),
             xmr_amount: Piconero(4_000_000_000_000),
-        }).unwrap();
+        })
+        .unwrap();
 
         let records1 = repo.load_for_swap(swap1).unwrap();
         let records2 = repo.load_for_swap(swap2).unwrap();
@@ -263,12 +276,14 @@ mod tests {
                 trade_id: TradeId(uuid::Uuid::new_v4()),
                 btc_amount: Satoshis(100_000),
                 xmr_amount: Piconero(2_000_000_000_000),
-            }).unwrap();
+            })
+            .unwrap();
             repo.append(SwapEvent::SwapStateChanged {
                 swap_id,
                 from_state: SwapState::Created,
                 to_state: SwapState::Negotiating,
-            }).unwrap();
+            })
+            .unwrap();
         } // dropped — simulating crash
 
         {

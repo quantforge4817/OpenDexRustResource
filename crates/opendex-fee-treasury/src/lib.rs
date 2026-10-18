@@ -57,7 +57,7 @@
 //! └──────────────────────┘
 //! ```
 
-use opendex_dao::{ProtocolParameter, ParameterValue};
+use opendex_dao::{ParameterValue, ProtocolParameter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -352,7 +352,7 @@ impl Default for Treasury {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_dao::{DaoConfig, DaoEngine, DaoProposal, ProtocolParameter, ParameterValue, Vote};
+    use opendex_dao::{DaoConfig, DaoEngine, DaoProposal, ParameterValue, ProtocolParameter, Vote};
 
     // ------------------------------------------------------------------
     // FeeCalculator Tests
@@ -653,7 +653,13 @@ mod tests {
 
         // Treasury receives the fee
         let mut treasury = Treasury::new();
-        let record = treasury.receive_fee(fee, net, "BTC".to_string(), 1000, Some("trade_1".to_string()));
+        let record = treasury.receive_fee(
+            fee,
+            net,
+            "BTC".to_string(),
+            1000,
+            Some("trade_1".to_string()),
+        );
 
         assert_eq!(record.fee_amount, 1000);
         assert_eq!(treasury.get_balance("BTC"), Some(1000));

@@ -19,7 +19,7 @@ use std::str::FromStr;
 use opendex_errors::ChainError;
 use opendex_types::Satoshis;
 
-use bitcoin::{consensus::Decodable, hashes::Hash, Txid};
+use bitcoin::{Txid, consensus::Decodable};
 use electrum_client::ElectrumApi;
 
 // ─── Transaction ID Utilities ────────────────────────────────────────────────
@@ -72,7 +72,9 @@ impl ElectrumBitcoinChain {
         // Validate the URL by attempting to create a client
         electrum_client::Client::new(server_url)
             .map_err(|e| ChainError::ConnectionFailed(e.to_string()))?;
-        Ok(Self { url: server_url.to_string() })
+        Ok(Self {
+            url: server_url.to_string(),
+        })
     }
 
     /// Create an `electrum_client::Client` for direct API access.
@@ -83,23 +85,22 @@ impl ElectrumBitcoinChain {
 }
 
 impl BitcoinChain for ElectrumBitcoinChain {
-    fn transaction(
-        &self,
-        txid: &str,
-    ) -> Result<Option<BitcoinTransaction>, ChainError> {
+    fn transaction(&self, txid: &str) -> Result<Option<BitcoinTransaction>, ChainError> {
         let txid_parsed = parse_txid(txid)?;
         let client = self.client()?;
-        let raw_bytes = client.transaction_get_raw(&txid_parsed)
-            .map_err(|e| ChainError::RpcError(format!("Electrum transaction_get_raw failed: {}", e)))?;
-        
+        let raw_bytes = client.transaction_get_raw(&txid_parsed).map_err(|e| {
+            ChainError::RpcError(format!("Electrum transaction_get_raw failed: {}", e))
+        })?;
+
         // Parse the raw transaction to extract amount and other details
         let mut cursor = std::io::Cursor::new(&raw_bytes[..]);
-        let tx = bitcoin::Transaction::consensus_decode(&mut cursor)
-            .map_err(|e| ChainError::SerializationError(format!("Failed to decode transaction: {}", e)))?;
-        
+        let tx = bitcoin::Transaction::consensus_decode(&mut cursor).map_err(|e| {
+            ChainError::SerializationError(format!("Failed to decode transaction: {}", e))
+        })?;
+
         // Calculate total output amount
         let total_amount: u64 = tx.output.iter().map(|o| o.value.to_sat()).sum();
-        
+
         Ok(Some(BitcoinTransaction {
             txid: txid_to_hex(&txid_parsed),
             amount: Satoshis(total_amount),
@@ -110,32 +111,73 @@ impl BitcoinChain for ElectrumBitcoinChain {
 
     fn tip(&self) -> Result<u64, ChainError> {
         let client = self.client()?;
-        let notification = client.block_headers_subscribe()
-            .map_err(|e| ChainError::RpcError(format!("Electrum block_headers_subscribe failed: {}", e)))?;
+        let notification = client.block_headers_subscribe().map_err(|e| {
+            ChainError::RpcError(format!("Electrum block_headers_subscribe failed: {}", e))
+        })?;
         Ok(notification.height as u64)
     }
 
     fn broadcast(&self, tx_hex: &str) -> Result<String, ChainError> {
         let client = self.client()?;
-        let raw_bytes = hex::decode(tx_hex)
-            .map_err(|e| ChainError::SerializationError(format!("Invalid tx hex for broadcast: {}", e)))?;
-        let txid = client.transaction_broadcast_raw(&raw_bytes)
-            .map_err(|e| ChainError::RpcError(format!("Electrum transaction_broadcast_raw failed: {}", e)))?;
+        let raw_bytes = hex::decode(tx_hex).map_err(|e| {
+            ChainError::SerializationError(format!("Invalid tx hex for broadcast: {}", e))
+        })?;
+        let txid = client.transaction_broadcast_raw(&raw_bytes).map_err(|e| {
+            ChainError::RpcError(format!("Electrum transaction_broadcast_raw failed: {}", e))
+        })?;
         Ok(txid_to_hex(&txid))
     }
 
     fn confirmations(&self, txid: &str) -> Result<u32, ChainError> {
         let txid_parsed = parse_txid(txid)?;
         let client = self.client()?;
-        
-        // Fetch the transaction to verify it exists
-        let _tx = client.transaction_get(&txid_parsed)
+
+        // Get the current tip height
+        let tip_height = client
+            .block_headers_subscribe()
+            .map_err(|e| {
+                ChainError::RpcError(format!("Electrum block_headers_subscribe failed: {}", e))
+            })?
+            .height;
+
+        // Get the transaction to extract the locking script (output)
+        let tx = client
+            .transaction_get(&txid_parsed)
             .map_err(|e| ChainError::RpcError(format!("Electrum transaction_get failed: {}", e)))?;
-        
-        // Without knowing the block height, we can't compute confirmations directly
-        // A full implementation would use script_get_history to find the block height
-        // then compute: confirmations = tip_height - block_height
-        Ok(0)
+
+        // Use the first output's script to query history
+        if tx.output.is_empty() {
+            return Ok(0);
+        }
+        let script = &tx.output[0].script_pubkey;
+
+        // Query script history to find the block height
+        let history = client.script_get_history(script).map_err(|e| {
+            ChainError::RpcError(format!("Electrum script_get_history failed: {}", e))
+        })?;
+
+        // Find the confirmation for this txid
+        let mut block_height: i32 = 0;
+        for entry in history {
+            if entry.tx_hash == txid_parsed {
+                block_height = entry.height;
+                break;
+            }
+        }
+
+        // If height is 0, the transaction is unconfirmed (mempool)
+        if block_height == 0 {
+            return Ok(0);
+        }
+
+        // Compute confirmations as tip_height - block_height
+        let block_height_usize = block_height as usize;
+        let confirmations = if tip_height > block_height_usize {
+            (tip_height - block_height_usize) as u32
+        } else {
+            0
+        };
+        Ok(confirmations)
     }
 }
 
@@ -147,10 +189,7 @@ impl BitcoinChain for ElectrumBitcoinChain {
 /// other backend without changing the swap engine.
 pub trait BitcoinChain: Send + Sync {
     /// Look up a transaction by its ID.
-    fn transaction(
-        &self,
-        txid: &str,
-    ) -> Result<Option<BitcoinTransaction>, ChainError>;
+    fn transaction(&self, txid: &str) -> Result<Option<BitcoinTransaction>, ChainError>;
 
     /// Get the current block tip height.
     fn tip(&self) -> Result<u64, ChainError>;
@@ -191,18 +230,18 @@ impl MockBitcoinChain {
     }
 
     /// Pre-register a transaction for testing.
-    pub fn register_transaction(
-        &self,
-        txid: String,
-        amount: Satoshis,
-        confirmations: u32,
-    ) {
+    pub fn register_transaction(&self, txid: String, amount: Satoshis, confirmations: u32) {
         let tx = BitcoinTransaction {
             txid: txid.clone(),
             amount,
             confirmations,
             block_height: if confirmations > 0 {
-                Some(self.current_height.lock().unwrap().saturating_sub(confirmations as u64))
+                Some(
+                    self.current_height
+                        .lock()
+                        .unwrap()
+                        .saturating_sub(confirmations as u64),
+                )
             } else {
                 None
             },
@@ -254,11 +293,7 @@ mod tests {
     #[test]
     fn mock_chain_returns_registered_transaction() {
         let chain = MockBitcoinChain::new();
-        chain.register_transaction(
-            "abc123".to_string(),
-            Satoshis(100_000_000),
-            6,
-        );
+        chain.register_transaction("abc123".to_string(), Satoshis(100_000_000), 6);
 
         let tx = chain.transaction("abc123").unwrap().unwrap();
         assert_eq!(tx.amount, Satoshis(100_000_000));

@@ -20,9 +20,8 @@ fn deterministic_trade_id(
 
     let hash = Sha256::digest(trade_input.as_bytes());
 
-    Uuid::from_slice(&hash[..16]).unwrap_or_else(|_| {
-        panic!("SHA-256 digest is 32 bytes, always enough for Uuid")
-    })
+    Uuid::from_slice(&hash[..16])
+        .unwrap_or_else(|_| panic!("SHA-256 digest is 32 bytes, always enough for Uuid"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -359,10 +358,7 @@ impl OrderBook {
                 .orders
                 .iter()
                 .filter(|(id, existing)| {
-                    let available_amount = available
-                        .get(id)
-                        .copied()
-                        .unwrap_or(existing.amount);
+                    let available_amount = available.get(id).copied().unwrap_or(existing.amount);
 
                     available_amount > 0
                         && existing.market.base == incoming.market.base

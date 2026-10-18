@@ -93,7 +93,11 @@ impl TransactionIntentRepository for InMemoryTransactionIntentRepository {
 
     fn find(&self, swap_id: SwapId) -> Result<Vec<TransactionIntent>, StorageError> {
         let intents = self.intents.lock().unwrap();
-        Ok(intents.iter().filter(|i| i.swap_id == swap_id).cloned().collect())
+        Ok(intents
+            .iter()
+            .filter(|i| i.swap_id == swap_id)
+            .cloned()
+            .collect())
     }
 }
 
@@ -134,14 +138,16 @@ mod tests {
             tx_type: TransactionType::BtcFunding,
             chain: Asset::Btc,
             txid: "btc-txid".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         repo.create(&TransactionIntent {
             swap_id,
             tx_type: TransactionType::XmrFunding,
             chain: Asset::Xmr,
             txid: "xmr-txid".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         let found = repo.find(swap_id).unwrap();
         assert_eq!(found.len(), 2);
@@ -165,7 +171,8 @@ mod tests {
             tx_type: TransactionType::BtcFunding,
             chain: Asset::Btc,
             txid: "btc-txid".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         let found = repo.find(swap_id).unwrap();
         assert_eq!(found.len(), 1);
@@ -183,7 +190,8 @@ mod tests {
                 tx_type: TransactionType::BtcRedemption,
                 chain: Asset::Btc,
                 txid: "btc-redemption-txid".to_string(),
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         {

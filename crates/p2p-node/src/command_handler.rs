@@ -2,7 +2,6 @@ use crate::OpenDexBehaviour;
 use crate::balances::BalanceBook;
 use crate::btc_wallet_client::BitcoinWalletClient;
 use crate::cli::Command;
-use crate::exchange::Exchange;
 use crate::network::publish_message;
 use crate::order_factory::create_order;
 use crate::orderbook::OrderBook;
@@ -17,10 +16,10 @@ use crate::wallet_client::MoneroWalletClient;
 use anyhow::Result;
 use libp2p::{PeerId, Swarm, gossipsub};
 use protocol::message::{
-    AMOUNT_SCALE, Asset, MessageType, Message, OrderCancelled, TradeState, TradeStateChanged,
+    AMOUNT_SCALE, Asset, Message, MessageType, OrderCancelled, TradeState, TradeStateChanged,
 };
 #[cfg(feature = "fiat")]
-use protocol::p2p::{P2POffer, P2POfferCancelled, P2PTrade, P2PTradeStateChanged, P2PTradeState};
+use protocol::p2p::{P2POffer, P2POfferCancelled, P2PTrade, P2PTradeState, P2PTradeStateChanged};
 
 fn format_amount(amount: u64) -> String {
     let whole = amount / AMOUNT_SCALE;
@@ -538,7 +537,9 @@ pub async fn handle_command(
         Command::Unknown => {
             tracing::info!("Unknown command");
             tracing::info!("Example: buy BTC XMR 12.5 0.1");
-            tracing::info!("P2P: p2p-offer XMR sell 0.1 6000 EUR banktransfer 'Account: 123456' 3600");
+            tracing::info!(
+                "P2P: p2p-offer XMR sell 0.1 6000 EUR banktransfer 'Account: 123456' 3600"
+            );
         }
     }
 
@@ -546,6 +547,7 @@ pub async fn handle_command(
 }
 
 #[cfg(not(feature = "fiat"))]
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_command(
     command: Command,
     swarm: &mut Swarm<OpenDexBehaviour>,
@@ -554,8 +556,8 @@ pub async fn handle_command(
     order_book: &mut OrderBook,
     trade_book: &mut TradeBook,
     balance_book: &mut BalanceBook,
-    monero_wallet: Option<&MoneroWalletClient>,
-    btc_wallet: Option<&BitcoinWalletClient>,
+    _monero_wallet: Option<&MoneroWalletClient>,
+    _btc_wallet: Option<&BitcoinWalletClient>,
 ) -> Result<()> {
     match command {
         Command::Fund { asset, amount } => {
@@ -639,12 +641,16 @@ pub async fn handle_command(
 
                 match &state {
                     TradeState::EscrowFunded => {
-                        if let Err(e) = crate::escrow::fund_local_escrow(balance_book, local_peer_id, &trade) {
+                        if let Err(e) =
+                            crate::escrow::fund_local_escrow(balance_book, local_peer_id, &trade)
+                        {
                             tracing::error!(trade_id = %id, error = %e, "Escrow funding failed");
                         }
                     }
                     TradeState::Settled => {
-                        if let Err(e) = crate::escrow::release_local_escrow(balance_book, local_peer_id, &trade) {
+                        if let Err(e) =
+                            crate::escrow::release_local_escrow(balance_book, local_peer_id, &trade)
+                        {
                             tracing::error!(trade_id = %id, error = %e, "Escrow release failed");
                         }
                         if let Err(e) = settle_local_trade(balance_book, local_peer_id, &trade) {
@@ -652,7 +658,9 @@ pub async fn handle_command(
                         }
                     }
                     TradeState::Cancelled => {
-                        if let Err(e) = crate::escrow::return_local_escrow(balance_book, local_peer_id, &trade) {
+                        if let Err(e) =
+                            crate::escrow::return_local_escrow(balance_book, local_peer_id, &trade)
+                        {
                             tracing::error!(trade_id = %id, error = %e, "Escrow return failed");
                         }
                     }

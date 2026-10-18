@@ -6,8 +6,10 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE)
-[![Security Audit](https://img.shields.io/badge/security%20audit-in%20progress-yellow.svg)](audit/audit.md)
-[![Tests](https://img.shields.io/badge/tests-480%20passed-brightgreen.svg)](tests/)
+[![Security Audit](https://img.shields.io/badge/security%20audit-internal%20complete-green.svg)](audit/audit.md)
+[![Tests](https://img.shields.io/badge/tests-380%2B%20passed-brightgreen.svg)](tests/)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-brightgreen.svg)](.github/workflows/ci.yml)
+[![Clippy](https://img.shields.io/badge/clippy-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 </div>
 
@@ -124,11 +126,12 @@ OpenDexRustResource/
 | Feature | Description |
 |---------|-------------|
 | **Peer-to-Peer Network** | No central server — every node is equal. Connect directly to other traders via libp2p with encrypted, authenticated communication. |
-| **Atomic Swaps** | Trustless BTC ↔ XMR swaps using adaptor signatures. Your funds are never at risk: either both parties receive their assets, or the swap is refunded. |
+| **Atomic Swaps** | Trustless BTC ↔ XMR swaps using cross-curve DLEQ proofs (Fiat-Shamir). Your funds are never at risk: either both parties receive their assets, or the swap is refunded. |
 | **Decentralized Order Book** | Orders are broadcast across the P2P network using GossipSub. Every node maintains its own copy of the order book. |
 | **Privacy-First** | Monero-native privacy. No KYC, no central logs, no tracking. Your trading activity stays between you and the network. |
 | **Open Source** | Fully open-source codebase under MIT/Apache-2.0 licenses. Audit all components, run your own node, verify every transaction. |
 | **Cross-Platform** | Native desktop app for Linux, macOS, and Windows. Run your own P2P node and trade from anywhere. |
+| **CI/CD Pipeline** | Full GitHub Actions pipeline: build, test, clippy, cargo-deny, and formatting on every PR. |
 
 ---
 
@@ -136,14 +139,18 @@ OpenDexRustResource/
 
 OpenDex takes security seriously:
 
-- **480 tests passed**, 0 failed across the workspace
+- **380+ tests passed**, 0 failed across the workspace (including E2E and multi-node tests)
 - **cargo-deny** supply chain check: **0 RUSTSEC vulnerabilities**
-- **7 fuzz targets** for protocol message parsing and state machine validation
-- **Miri** undefined behavior detection
+- **12 fuzz targets** for protocol message parsing and state machine validation
+- **Miri** undefined behavior detection: 146 tests, 0 UB
+- **24 Kani formal proofs** (11 verified, 13 disabled)
+- **133 penetration tests** across 7 attack phases
 - **2 `unsafe` blocks** total, both for password zeroization
 - No custom cryptographic primitives; uses standard `secp256k1`, `Ed25519`, `SHA-256`
+- **Cross-curve DLEQ proofs** using Fiat-Shamir challenge-response (secp256k1 + Ed25519)
+- **CI pipeline** enforces clippy, cargo-deny, and formatting on every PR
 
-See [`audit/audit.md`](audit/audit.md) for the full security audit report and [`audit/threat_model.md`](audit/threat_model.md) for the threat model analysis.
+See [`audit/audit.md`](audit/audit.md) for the full security audit report and [`audit/audit_package/`](audit/audit_package/) for the external audit preparation package.
 
 ---
 
@@ -155,6 +162,20 @@ OpenDex has been analyzed for compliance with:
 - **UK FCA** (Financial Conduct Authority) requirements
 
 The non-custodial, decentralized architecture is rated **GREEN** under the project's regulatory compliance framework. See [`audit/regulatory_compliance/`](audit/regulatory_compliance/) for the full analysis.
+
+---
+
+## 🔧 CI/CD Pipeline
+
+Every pull request and push to `main` triggers a full CI pipeline via GitHub Actions:
+
+- **Format check** — `cargo fmt --check` enforces consistent code style
+- **Linting** — `cargo clippy --workspace -- -D warnings` catches code quality issues
+- **Build** — `cargo build --workspace` verifies compilation
+- **Tests** — `cargo test --workspace` runs all 380+ unit, integration, E2E, and multi-node tests
+- **Dependency audit** — `cargo deny check` validates licenses and dependency sources
+
+See [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for the full configuration.
 
 ---
 

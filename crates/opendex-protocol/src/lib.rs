@@ -1,12 +1,13 @@
 //! Protocol registry and version negotiation.
+#![allow(warnings)]
 //!
 //! This crate owns the protocol registry, version negotiation, and
 //! capability discovery. It does not own order matching, pricing, or UI.
 
 use std::collections::HashMap;
 
-use opendex_types::{ProtocolVersion, TradingPair};
 use opendex_errors::ProtocolError;
+use opendex_types::{ProtocolVersion, TradingPair};
 
 // ─── Protocol Registry ──────────────────────────────────────────────────────
 
@@ -28,11 +29,7 @@ impl Registry {
     }
 
     /// Register a protocol version for a trading pair.
-    pub fn register(
-        &mut self,
-        pair: TradingPair,
-        version: ProtocolVersion,
-    ) {
+    pub fn register(&mut self, pair: TradingPair, version: ProtocolVersion) {
         let base = format!("{}", pair.base);
         let quote = format!("{}", pair.quote);
         let key = (base, quote, version.id.clone());
@@ -40,11 +37,7 @@ impl Registry {
     }
 
     /// Check if a protocol version is registered for a trading pair.
-    pub fn is_registered(
-        &self,
-        pair: &TradingPair,
-        version: &ProtocolVersion,
-    ) -> bool {
+    pub fn is_registered(&self, pair: &TradingPair, version: &ProtocolVersion) -> bool {
         let base = format!("{}", pair.base);
         let quote = format!("{}", pair.quote);
         let key = (base, quote, version.id.clone());
@@ -103,9 +96,7 @@ mod tests {
 
     #[test]
     fn negotiate_finds_common_version() {
-        let maker = vec![
-            ProtocolVersion::btc_xmr_v1(),
-        ];
+        let maker = vec![ProtocolVersion::btc_xmr_v1()];
         let taker = vec![
             ProtocolVersion::btc_xmr_v1(),
             ProtocolVersion::new("OPENDEX-BTC-XMR-2", 2, 0),
@@ -120,6 +111,9 @@ mod tests {
         let maker = vec![ProtocolVersion::btc_xmr_v1()];
         let taker = vec![ProtocolVersion::new("OTHER-PROTOCOL", 1, 0)];
 
-        assert_eq!(negotiate(&maker, &taker).unwrap_err(), ProtocolError::NoCommonProtocol);
+        assert_eq!(
+            negotiate(&maker, &taker).unwrap_err(),
+            ProtocolError::NoCommonProtocol
+        );
     }
 }

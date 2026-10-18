@@ -33,7 +33,10 @@ pub struct FiatAmount {
 impl FiatAmount {
     /// Create a new fiat amount from minor units.
     pub fn new(minor_units: u64, currency: FiatCurrency) -> Self {
-        Self { minor_units, currency }
+        Self {
+            minor_units,
+            currency,
+        }
     }
 
     /// Create a zero amount.

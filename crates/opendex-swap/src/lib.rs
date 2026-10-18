@@ -1,4 +1,5 @@
 //! Generic swap lifecycle management.
+#![allow(warnings)]
 //!
 //! This crate owns the swap state machine and coordinates between the
 //! protocol adapter, chain watchers, and wallet. It does not know
@@ -6,22 +7,22 @@
 
 use serde::{Deserialize, Serialize};
 
-use opendex_types::{
-    Asset, BitcoinNetwork, MoneroNetwork, ParticipantId, ProtocolVersion,
-    Satoshis, Piconero, SwapId, TradeId,
-};
+use opendex_bitcoin::BitcoinChain;
 use opendex_errors::{ChainError, OpenDexError, ProtocolError, StorageError};
+use opendex_events::{EventId, SwapEvent};
+use opendex_monero::MoneroChain;
 use opendex_protocol_types::{
     ChainObservation, ProtocolAction, SettlementProtocol, Swap, SwapContext, SwapState,
     TransactionType,
 };
-use opendex_events::{EventId, SwapEvent};
+use opendex_recovery::{RecoveryDecision, RecoveryEngine};
 use opendex_storage::{EventRepository, SwapRepository, TransactionIntentRepository};
-use opendex_recovery::{RecoveryEngine, RecoveryDecision};
 use opendex_transport::{MessageStore, ProtocolEnvelope};
 use opendex_types::MessageId;
-use opendex_bitcoin::BitcoinChain;
-use opendex_monero::MoneroChain;
+use opendex_types::{
+    Asset, BitcoinNetwork, MoneroNetwork, ParticipantId, Piconero, ProtocolVersion, Satoshis,
+    SwapId, TradeId,
+};
 
 // Re-export Swap for convenience
 pub use opendex_protocol_types::Swap as ProtocolSwap;
@@ -93,7 +94,9 @@ impl<
         xmr_destination: String,
     ) -> Result<P::State, OpenDexError> {
         // Persist the swap
-        self.swap_repo.create(swap).map_err(|e| OpenDexError::Storage(e))?;
+        self.swap_repo
+            .create(swap)
+            .map_err(|e| OpenDexError::Storage(e))?;
 
         // Record SwapCreated event
         let event = SwapEvent::SwapCreated {
@@ -121,9 +124,9 @@ impl<
             protocol_version: swap.protocol.clone(),
         };
 
-        self.protocol.initialize(context).map_err(|e| {
-            OpenDexError::Protocol(ProtocolError::Upstream(e.to_string()))
-        })
+        self.protocol
+            .initialize(context)
+            .map_err(|e| OpenDexError::Protocol(ProtocolError::Upstream(e.to_string())))
     }
 
     /// Transition swap state, persisting the change and recording an event.
@@ -171,9 +174,9 @@ impl<
         state: &mut P::State,
         observation: ChainObservation,
     ) -> Result<Vec<ProtocolAction>, OpenDexError> {
-        self.protocol.observe_chain(state, observation).map_err(|e| {
-            OpenDexError::Protocol(ProtocolError::Upstream(e.to_string()))
-        })
+        self.protocol
+            .observe_chain(state, observation)
+            .map_err(|e| OpenDexError::Protocol(ProtocolError::Upstream(e.to_string())))
     }
 
     /// Record a transaction intent before broadcast.
@@ -224,19 +227,16 @@ impl<
 
                 // Check the appropriate blockchain for this transaction
                 let on_chain = match intent.chain {
-                    Asset::Btc => {
-                        opendex_bitcoin::BitcoinChain::transaction(
-                            &self.bitcoin_chain, &intent.txid
-                        )
-                        .map(|tx| tx.is_some())
-                        .unwrap_or(false)
-                    }
+                    Asset::Btc => opendex_bitcoin::BitcoinChain::transaction(
+                        &self.bitcoin_chain,
+                        &intent.txid,
+                    )
+                    .map(|tx| tx.is_some())
+                    .unwrap_or(false),
                     Asset::Xmr => {
-                        opendex_monero::MoneroChain::transaction(
-                            &self.monero_chain, &intent.txid
-                        )
-                        .map(|tx| tx.is_some())
-                        .unwrap_or(false)
+                        opendex_monero::MoneroChain::transaction(&self.monero_chain, &intent.txid)
+                            .map(|tx| tx.is_some())
+                            .unwrap_or(false)
                     }
                     _ => false,
                 };
@@ -330,8 +330,7 @@ impl<
         }
 
         // Evaluate recovery decision
-        self.recovery_engine
-            .evaluate(&swap.state, observations)
+        self.recovery_engine.evaluate(&swap.state, observations)
     }
 
     /// Reconstruct swap state from the event log.
@@ -351,11 +350,7 @@ impl<
             }
         }
 
-        Ok(if events.is_empty() {
-            None
-        } else {
-            Some(state)
-        })
+        Ok(if events.is_empty() { None } else { Some(state) })
     }
 
     /// Complete a swap, recording the final event.
@@ -369,11 +364,7 @@ impl<
     }
 
     /// Fail a swap with a reason, recording the event.
-    pub fn fail_swap(
-        &self,
-        swap_id: SwapId,
-        reason: String,
-    ) -> Result<(), OpenDexError> {
+    pub fn fail_swap(&self, swap_id: SwapId, reason: String) -> Result<(), OpenDexError> {
         self.transition(swap_id, SwapState::Failed)?;
         let event = SwapEvent::SwapFailed { swap_id, reason };
         self.event_repo
@@ -447,15 +438,14 @@ pub fn transition_state(current: &SwapState, next: SwapState) -> Result<SwapStat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_btc_xmr::BtcXmrAdapter;
-    use opendex_storage::{
-        InMemoryEventRepository, InMemorySwapRepository,
-        InMemoryTransactionIntentRepository,
-    };
-    use opendex_recovery::DeterministicRecoveryEngine;
-    use opendex_protocol_types::SwapState;
     use opendex_bitcoin::MockBitcoinChain;
+    use opendex_btc_xmr::BtcXmrAdapter;
     use opendex_monero::MockMoneroChain;
+    use opendex_protocol_types::SwapState;
+    use opendex_recovery::DeterministicRecoveryEngine;
+    use opendex_storage::{
+        InMemoryEventRepository, InMemorySwapRepository, InMemoryTransactionIntentRepository,
+    };
 
     type TestEngine = SwapEngine<
         BtcXmrAdapter,
@@ -468,11 +458,15 @@ mod tests {
     >;
 
     fn check_btc_on_chain(chain: &MockBitcoinChain, txid: &str) -> bool {
-        BitcoinChain::transaction(chain, txid).map(|tx| tx.is_some()).unwrap_or(false)
+        BitcoinChain::transaction(chain, txid)
+            .map(|tx| tx.is_some())
+            .unwrap_or(false)
     }
 
     fn check_xmr_on_chain(chain: &MockMoneroChain, txid: &str) -> bool {
-        MoneroChain::transaction(chain, txid).map(|tx| tx.is_some()).unwrap_or(false)
+        MoneroChain::transaction(chain, txid)
+            .map(|tx| tx.is_some())
+            .unwrap_or(false)
     }
 
     fn create_test_engine() -> (TestEngine, Swap) {
@@ -485,8 +479,13 @@ mod tests {
         let monero_chain = MockMoneroChain::new();
 
         let engine = TestEngine::new(
-            protocol, swap_repo, event_repo, tx_repo, recovery,
-            bitcoin_chain, monero_chain,
+            protocol,
+            swap_repo,
+            event_repo,
+            tx_repo,
+            recovery,
+            bitcoin_chain,
+            monero_chain,
         );
 
         let swap = Swap::new(
@@ -559,7 +558,9 @@ mod tests {
     #[test]
     fn test_transition_persists_state() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let new_state = engine.transition(swap.id, SwapState::Negotiating).unwrap();
         assert_eq!(new_state, SwapState::Negotiating);
@@ -568,7 +569,9 @@ mod tests {
     #[test]
     fn test_transition_records_event() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
 
         let reconstructed = engine.reconstruct_from_events(swap.id).unwrap();
@@ -578,9 +581,13 @@ mod tests {
     #[test]
     fn test_complete_swap() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
         engine.transition(swap.id, SwapState::Funded).unwrap();
         engine.transition(swap.id, SwapState::Redeeming).unwrap();
@@ -593,9 +600,13 @@ mod tests {
     #[test]
     fn test_recover_returns_decision() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         let decision = engine.recover(swap.id, &[]).unwrap();
@@ -605,9 +616,13 @@ mod tests {
     #[test]
     fn test_reconcile_returns_incomplete_swaps() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         // reconcile() returns swaps that had missing events replayed.
@@ -634,8 +649,13 @@ mod tests {
         );
 
         let engine = TestEngine::new(
-            protocol, swap_repo, event_repo, tx_repo, recovery,
-            bitcoin_chain, monero_chain,
+            protocol,
+            swap_repo,
+            event_repo,
+            tx_repo,
+            recovery,
+            bitcoin_chain,
+            monero_chain,
         );
 
         let swap = Swap::new(
@@ -648,9 +668,13 @@ mod tests {
             ProtocolVersion::btc_xmr_v1(),
         );
 
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         // Record a transaction intent with the registered txid
@@ -676,9 +700,13 @@ mod tests {
     #[test]
     fn test_reconcile_skips_empty_txid() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         // Record an intent with empty txid (not yet broadcast)
@@ -698,9 +726,13 @@ mod tests {
     #[test]
     fn test_reconcile_skips_missing_transaction() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         // Record an intent with a txid that doesn't exist on-chain
@@ -734,8 +766,13 @@ mod tests {
         );
 
         let engine = TestEngine::new(
-            protocol, swap_repo, event_repo, tx_repo, recovery,
-            bitcoin_chain, monero_chain,
+            protocol,
+            swap_repo,
+            event_repo,
+            tx_repo,
+            recovery,
+            bitcoin_chain,
+            monero_chain,
         );
 
         let swap = Swap::new(
@@ -748,9 +785,13 @@ mod tests {
             ProtocolVersion::btc_xmr_v1(),
         );
 
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
         engine.transition(swap.id, SwapState::Negotiating).unwrap();
-        engine.transition(swap.id, SwapState::ProtocolSetup).unwrap();
+        engine
+            .transition(swap.id, SwapState::ProtocolSetup)
+            .unwrap();
         engine.transition(swap.id, SwapState::Funding).unwrap();
 
         let intent = opendex_protocol_types::TransactionIntent {
@@ -791,7 +832,9 @@ mod tests {
     #[test]
     fn test_replay_protection() {
         let (mut engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let message_id = opendex_types::MessageId(uuid::Uuid::new_v4());
 
@@ -808,7 +851,9 @@ mod tests {
     #[test]
     fn test_sequence_tracking() {
         let (mut engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let message_id = opendex_types::MessageId(uuid::Uuid::new_v4());
         engine.mark_message_seen(swap.id, message_id, 5);
@@ -819,7 +864,9 @@ mod tests {
     #[test]
     fn test_next_sequence_increments() {
         let (mut engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let seq1 = engine.next_sequence();
         let seq2 = engine.next_sequence();
@@ -830,7 +877,9 @@ mod tests {
     #[test]
     fn test_build_envelope() {
         let (mut engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let message_id = opendex_types::MessageId(uuid::Uuid::new_v4());
         let sender = swap.maker;
@@ -852,7 +901,9 @@ mod tests {
     #[test]
     fn test_message_store_isolation() {
         let (engine, swap) = create_test_engine();
-        engine.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         let store = engine.message_store();
         let message_id = opendex_types::MessageId(uuid::Uuid::new_v4());
@@ -889,11 +940,18 @@ mod tests {
         let bitcoin_chain_a = MockBitcoinChain::new();
         let monero_chain_a = MockMoneroChain::new();
         let mut engine_a = TestEngine::new(
-            protocol_a, swap_repo_a, event_repo_a, tx_repo_a, recovery_a,
-            bitcoin_chain_a, monero_chain_a,
+            protocol_a,
+            swap_repo_a,
+            event_repo_a,
+            tx_repo_a,
+            recovery_a,
+            bitcoin_chain_a,
+            monero_chain_a,
         );
 
-        engine_a.create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string()).unwrap();
+        engine_a
+            .create_swap(&swap, "btc_dest".to_string(), "xmr_dest".to_string())
+            .unwrap();
 
         // Engine A sends a message to Engine B
         let message_id = MessageId(uuid::Uuid::new_v4());
@@ -904,7 +962,8 @@ mod tests {
             participant_a,
             0,
         );
-        let envelope = engine_a.build_envelope(&message, participant_a, ProtocolVersion::btc_xmr_v1());
+        let envelope =
+            engine_a.build_envelope(&message, participant_a, ProtocolVersion::btc_xmr_v1());
 
         // Send via transport
         pair.transport_a

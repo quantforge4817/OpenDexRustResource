@@ -7,8 +7,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use opendex_types::{Asset, Piconero, Satoshis, SwapId, TradeId};
 use opendex_protocol_types::SwapState;
+use opendex_types::{Asset, Piconero, Satoshis, SwapId, TradeId};
 
 // ─── Event ID ───────────────────────────────────────────────────────────────
 
@@ -16,9 +16,15 @@ use opendex_protocol_types::SwapState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EventId(pub Uuid);
 
+impl Default for EventId {
+    fn default() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
 impl EventId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self::default()
     }
 }
 
@@ -69,15 +75,10 @@ pub enum SwapEvent {
     },
 
     /// Swap completed successfully.
-    SwapCompleted {
-        swap_id: SwapId,
-    },
+    SwapCompleted { swap_id: SwapId },
 
     /// Swap failed with a reason.
-    SwapFailed {
-        swap_id: SwapId,
-        reason: String,
-    },
+    SwapFailed { swap_id: SwapId, reason: String },
 }
 
 impl SwapEvent {
@@ -112,14 +113,19 @@ pub struct EventRecord {
 
 impl EventRecord {
     pub fn new(id: EventId, sequence: u64, timestamp: String, event: SwapEvent) -> Self {
-        Self { id, sequence, timestamp, event }
+        Self {
+            id,
+            sequence,
+            timestamp,
+            event,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_types::{SwapId, TradeId, Satoshis, Piconero, Asset};
+    use opendex_types::{Asset, Piconero, Satoshis, SwapId, TradeId};
 
     fn test_swap_id() -> SwapId {
         SwapId(Uuid::new_v4())
@@ -215,7 +221,9 @@ mod tests {
     #[test]
     fn test_event_record_creation() {
         let id = EventId::new();
-        let event = SwapEvent::SwapCompleted { swap_id: test_swap_id() };
+        let event = SwapEvent::SwapCompleted {
+            swap_id: test_swap_id(),
+        };
         let record = EventRecord::new(id, 1, "2024-01-01T00:00:00Z".to_string(), event);
         assert_eq!(record.id, id);
         assert_eq!(record.sequence, 1);

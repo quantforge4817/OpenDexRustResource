@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use opendex_types::{Asset, FiatCurrency, ParticipantId, TradeId};
 
-use crate::payment::{FiatAmount, PaymentId, PaymentReference, PaymentRecipient};
+use crate::payment::{FiatAmount, PaymentId, PaymentRecipient, PaymentReference};
 
 // ─── Settlement Method ──────────────────────────────────────────────────────
 
@@ -15,17 +15,11 @@ use crate::payment::{FiatAmount, PaymentId, PaymentReference, PaymentRecipient};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SettlementMethod {
     /// Bank wire/SEPA transfer.
-    BankTransfer {
-        currency: FiatCurrency,
-    },
+    BankTransfer { currency: FiatCurrency },
     /// Cash deposited at a designated location.
-    CashDeposit {
-        currency: FiatCurrency,
-    },
+    CashDeposit { currency: FiatCurrency },
     /// In-person cash exchange.
-    CashInPerson {
-        currency: FiatCurrency,
-    },
+    CashInPerson { currency: FiatCurrency },
 }
 
 impl SettlementMethod {
@@ -322,10 +316,7 @@ impl FiatTrade {
     /// Advance the trade to a new state.
     pub fn transition(&mut self, next: FiatTradeState, timestamp: u64) -> anyhow::Result<()> {
         if self.state == next {
-            return Err(anyhow::anyhow!(
-                "trade already in state: {}",
-                self.state
-            ));
+            return Err(anyhow::anyhow!("trade already in state: {}", self.state));
         }
 
         if !self.state.can_transition_to(&next) {
@@ -417,8 +408,8 @@ mod tests {
             FiatTradeState::Accepted,
             FiatTradeState::CryptoReserved,
             FiatTradeState::PaymentRequested,
-            FiatTradeState::PaymentSubmitted,  // Taker clicks "I've paid"
-            FiatTradeState::MakerConfirmed,    // Maker clicks "I confirm payment"
+            FiatTradeState::PaymentSubmitted, // Taker clicks "I've paid"
+            FiatTradeState::MakerConfirmed,   // Maker clicks "I confirm payment"
             FiatTradeState::CryptoRelease,
             FiatTradeState::Complete,
         ];
@@ -434,8 +425,12 @@ mod tests {
         let mut trade = make_trade();
         trade.transition(FiatTradeState::Accepted, 2).unwrap();
         trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-        trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
-        trade.transition(FiatTradeState::PaymentSubmitted, 5).unwrap();
+        trade
+            .transition(FiatTradeState::PaymentRequested, 4)
+            .unwrap();
+        trade
+            .transition(FiatTradeState::PaymentSubmitted, 5)
+            .unwrap();
         // Should fail: maker must confirm first
         assert!(trade.transition(FiatTradeState::CryptoRelease, 6).is_err());
     }

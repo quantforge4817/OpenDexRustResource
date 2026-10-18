@@ -6,9 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::FiatError;
 use crate::payment::{PaymentId, PaymentRequest, PaymentStatus};
 use crate::verification::VerifiedPayment;
-use crate::error::FiatError;
 
 /// Core trait for plugging in payment providers.
 ///
@@ -21,22 +21,13 @@ pub trait PaymentAdapter: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     /// Create a new payment request with the provider.
-    fn create_payment(
-        &self,
-        request: PaymentRequest,
-    ) -> Result<Self::Payment, Self::Error>;
+    fn create_payment(&self, request: PaymentRequest) -> Result<Self::Payment, Self::Error>;
 
     /// Check the current status of a payment.
-    fn check_status(
-        &self,
-        payment: &Self::Payment,
-    ) -> Result<PaymentStatus, Self::Error>;
+    fn check_status(&self, payment: &Self::Payment) -> Result<PaymentStatus, Self::Error>;
 
     /// Verify a payment and return detailed verification results.
-    fn verify(
-        &self,
-        payment: &Self::Payment,
-    ) -> Result<VerifiedPayment, Self::Error>;
+    fn verify(&self, payment: &Self::Payment) -> Result<VerifiedPayment, Self::Error>;
 
     /// Check payment status by payment ID (for automatic detection).
     fn check_payment_status(
@@ -142,7 +133,7 @@ impl PaymentAdapter for MockPaymentProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_types::{FiatCurrency, TradeId, ParticipantId};
+    use opendex_types::{FiatCurrency, ParticipantId, TradeId};
     use uuid::Uuid;
 
     fn make_request() -> PaymentRequest {

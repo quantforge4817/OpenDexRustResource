@@ -153,7 +153,12 @@ pub struct Price {
 
 impl Price {
     pub fn new(base: Asset, quote: Asset, numerator: u128, denominator: u128) -> Self {
-        Self { base, quote, numerator, denominator }
+        Self {
+            base,
+            quote,
+            numerator,
+            denominator,
+        }
     }
 }
 
@@ -184,7 +189,11 @@ pub struct ProtocolVersion {
 
 impl ProtocolVersion {
     pub fn new(id: impl Into<String>, major: u16, minor: u16) -> Self {
-        Self { id: id.into(), major, minor }
+        Self {
+            id: id.into(),
+            major,
+            minor,
+        }
     }
 
     /// The canonical BTC-XMR protocol identifier.

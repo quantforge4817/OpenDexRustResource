@@ -105,7 +105,12 @@ impl SwapRepository for FileSwapRepository {
         let cache = self.cache.lock().unwrap();
         let incomplete = cache
             .values()
-            .filter(|swap| !matches!(swap.state, SwapState::Completed | SwapState::Refunded | SwapState::Failed))
+            .filter(|swap| {
+                !matches!(
+                    swap.state,
+                    SwapState::Completed | SwapState::Refunded | SwapState::Failed
+                )
+            })
             .cloned()
             .collect();
         Ok(incomplete)
@@ -157,7 +162,12 @@ impl SwapRepository for InMemorySwapRepository {
         let swaps = self.swaps.lock().unwrap();
         let incomplete = swaps
             .values()
-            .filter(|swap| !matches!(swap.state, SwapState::Completed | SwapState::Refunded | SwapState::Failed))
+            .filter(|swap| {
+                !matches!(
+                    swap.state,
+                    SwapState::Completed | SwapState::Refunded | SwapState::Failed
+                )
+            })
             .cloned()
             .collect();
         Ok(incomplete)
@@ -167,7 +177,7 @@ impl SwapRepository for InMemorySwapRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opendex_types::{TradeId, ParticipantId, Satoshis, Piconero, ProtocolVersion, Asset};
+    use opendex_types::{Asset, ParticipantId, Piconero, ProtocolVersion, Satoshis, TradeId};
     use std::sync::Arc;
     use tempfile::tempdir;
     use uuid::Uuid;

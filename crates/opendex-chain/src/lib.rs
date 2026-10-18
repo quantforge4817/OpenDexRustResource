@@ -81,7 +81,7 @@ impl Chain for opendex_monero::MockMoneroChain {
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
 pub use opendex_bitcoin::{BitcoinChain, BitcoinTransaction, MockBitcoinChain};
-pub use opendex_monero::{MoneroChain, MoneroTransaction, MockMoneroChain};
+pub use opendex_monero::{MockMoneroChain, MoneroChain, MoneroTransaction};
 
 #[cfg(test)]
 mod tests {
@@ -97,7 +97,9 @@ mod tests {
         let tip = Chain::tip(&chain).unwrap();
         assert_eq!(tip, 100);
 
-        let tx = Chain::get_transaction(&chain, &"abc123".to_string()).unwrap().unwrap();
+        let tx = Chain::get_transaction(&chain, &"abc123".to_string())
+            .unwrap()
+            .unwrap();
         assert_eq!(tx.confirmations, 3);
     }
 
@@ -105,13 +107,19 @@ mod tests {
     fn test_monero_chain_trait_object() {
         let chain = MockMoneroChain::new();
         chain.set_height(200);
-        chain.register_transaction("def456".to_string(), opendex_types::Piconero(2_000_000_000_000), 5);
+        chain.register_transaction(
+            "def456".to_string(),
+            opendex_types::Piconero(2_000_000_000_000),
+            5,
+        );
 
         // Test via Chain trait
         let tip = Chain::tip(&chain).unwrap();
         assert_eq!(tip, 200);
 
-        let tx = Chain::get_transaction(&chain, &"def456".to_string()).unwrap().unwrap();
+        let tx = Chain::get_transaction(&chain, &"def456".to_string())
+            .unwrap()
+            .unwrap();
         assert_eq!(tx.confirmations, 5);
     }
 
@@ -129,4 +137,3 @@ mod tests {
         assert!(!txid.is_empty());
     }
 }
-

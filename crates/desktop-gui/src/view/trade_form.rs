@@ -1,8 +1,8 @@
-use iced::Element;
-use iced::widget::{Button, Container, Column, Row, Text, TextInput};
 use crate::app::Message;
 use crate::model::GuiModel;
 use crate::style::BG_PANEL;
+use iced::Element;
+use iced::widget::{Button, Column, Container, Row, Text, TextInput};
 
 pub fn trade_form_panel(model: &GuiModel) -> Element<'_, Message> {
     let side_label = match model.trade_form.side {
@@ -16,7 +16,7 @@ pub fn trade_form_panel(model: &GuiModel) -> Element<'_, Message> {
                 "Sell".to_string()
             } else {
                 "Buy".to_string()
-            }
+            },
         ))
         .padding(iced::Padding::new(8.0).top(6).bottom(6));
 
@@ -42,16 +42,15 @@ pub fn trade_form_panel(model: &GuiModel) -> Element<'_, Message> {
         .spacing(8)
         .padding(10)
         .push(Text::new("Trade Execution").size(14))
-        .push(Row::new()
-            .spacing(10)
-            .push(side_button)
-            .push(market_text))
+        .push(Row::new().spacing(10).push(side_button).push(market_text))
         .push(price_input)
         .push(amount_input)
-        .push(Row::new()
-            .spacing(10)
-            .push(submit_button)
-            .push(refresh_button));
+        .push(
+            Row::new()
+                .spacing(10)
+                .push(submit_button)
+                .push(refresh_button),
+        );
 
     Container::new(content)
         .padding(10)

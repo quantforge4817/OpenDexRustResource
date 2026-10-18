@@ -15,13 +15,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use opendex_types::ParticipantId;
+use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
 use crate::error::UserError;
-use crate::user::{UserAccount, UserId, Username, Email, BtcWalletAddress, XmrWalletAddress, ReputationTier, Rating, Review};
+use crate::user::{
+    BtcWalletAddress, Email, Rating, ReputationTier, Review, UserAccount, UserId, Username,
+    XmrWalletAddress,
+};
 
 /// Sliding window rate limiter.
 ///
@@ -76,9 +79,7 @@ impl RateLimiter {
         let oldest_key = self
             .requests
             .iter()
-            .min_by_key(|(_, timestamps)| {
-                timestamps.last().copied().unwrap_or(u64::MAX)
-            })
+            .min_by_key(|(_, timestamps)| timestamps.last().copied().unwrap_or(u64::MAX))
             .map(|(key, _)| key.clone());
 
         if let Some(key) = oldest_key {
@@ -149,8 +150,8 @@ impl AuthToken {
         let random_part = Uuid::new_v4().to_string();
         let payload = format!("{}:{}:{}", user_id.0, random_part, expires_ts);
 
-        let mut mac = HmacSha256::new_from_slice(signing_key)
-            .expect("HMAC can accept any key size");
+        let mut mac =
+            HmacSha256::new_from_slice(signing_key).expect("HMAC can accept any key size");
         mac.update(payload.as_bytes());
         let signature = mac.finalize();
         let sig_bytes = signature.into_bytes();
@@ -291,7 +292,11 @@ impl VerificationCodeEntry {
         let num = u32::from_le_bytes(bytes) as u64 % 1_000_000;
         let code = format!("{:06}", num);
         let expires_at = Utc::now() + Duration::minutes(Self::TTL_MINUTES);
-        Self { code, user_id, expires_at }
+        Self {
+            code,
+            user_id,
+            expires_at,
+        }
     }
 
     fn is_valid(&self) -> bool {
@@ -541,7 +546,9 @@ impl AuthService {
     /// Verify the email address using the 6-digit verification code.
     pub fn verify_email(&mut self, user_id: UserId, code: &str) -> Result<(), UserError> {
         // Find the verification code entry
-        let entry = self.verification_codes.get(&user_id)
+        let entry = self
+            .verification_codes
+            .get(&user_id)
             .ok_or(UserError::InvalidVerificationCode)?;
 
         // Check if code has expired
@@ -595,11 +602,7 @@ impl AuthService {
     /// Log in with username and password.
     ///
     /// Returns an authentication token on success.
-    pub fn login(
-        &mut self,
-        username: &str,
-        password: &str,
-    ) -> Result<LoginResult, UserError> {
+    pub fn login(&mut self, username: &str, password: &str) -> Result<LoginResult, UserError> {
         // Rate limit check: 5 attempts per minute per username
         let now = chrono::Utc::now().timestamp() as u64;
         if !self.login_rate_limiter.is_allowed(username, now) {
@@ -642,10 +645,7 @@ impl AuthService {
     /// Validate an authentication token and return the associated user ID.
     /// Verifies the HMAC signature and checks expiration.
     pub fn validate_token(&self, token: &str) -> Result<UserId, UserError> {
-        let auth_token = self
-            .tokens
-            .get(token)
-            .ok_or(UserError::InvalidToken)?;
+        let auth_token = self.tokens.get(token).ok_or(UserError::InvalidToken)?;
 
         // Verify HMAC signature
         if !auth_token.verify(&self.signing_key, Utc::now()) {
@@ -677,7 +677,10 @@ impl AuthService {
 
     /// Suspend a user account.
     pub fn suspend_user(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.suspend();
         // Invalidate all tokens for this user
         self.tokens.retain(|_, t| t.user_id != user_id);
@@ -687,7 +690,10 @@ impl AuthService {
 
     /// Reactivate a suspended user account.
     pub fn reactivate_user(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.reactivate();
         self.save_if_persisted();
         Ok(())
@@ -707,7 +713,10 @@ impl AuthService {
 
     /// Record a placed order (maker side) for a user.
     pub fn record_make(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_make();
         self.save_if_persisted();
         Ok(())
@@ -715,7 +724,10 @@ impl AuthService {
 
     /// Record an accepted order (taker side) for a user.
     pub fn record_take(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_take();
         self.save_if_persisted();
         Ok(())
@@ -723,7 +735,10 @@ impl AuthService {
 
     /// Record a successfully completed trade for a user.
     pub fn record_completed_trade(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_completed_trade();
         self.save_if_persisted();
         Ok(())
@@ -731,7 +746,10 @@ impl AuthService {
 
     /// Record a disputed trade for a user.
     pub fn record_dispute(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_dispute();
         self.save_if_persisted();
         Ok(())
@@ -739,7 +757,10 @@ impl AuthService {
 
     /// Record a failure to respond for a user.
     pub fn record_failure_to_respond(&mut self, user_id: UserId) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_failure_to_respond();
         self.save_if_persisted();
         Ok(())
@@ -747,7 +768,10 @@ impl AuthService {
 
     /// Record a rating received from a trade counterparty (1-5 scale).
     pub fn record_rating(&mut self, user_id: UserId, rating: u32) -> Result<(), UserError> {
-        let account = self.users.get_mut(&user_id).ok_or(UserError::UserNotFound)?;
+        let account = self
+            .users
+            .get_mut(&user_id)
+            .ok_or(UserError::UserNotFound)?;
         account.record_rating(rating)?;
         self.save_if_persisted();
         Ok(())
@@ -792,8 +816,14 @@ impl AuthService {
         }
 
         // Both users must exist
-        let reviewer = self.users.get(&reviewer_id).ok_or(UserError::UserNotFound)?;
-        let reviewed = self.users.get(&reviewed_id).ok_or(UserError::UserNotFound)?;
+        let reviewer = self
+            .users
+            .get(&reviewer_id)
+            .ok_or(UserError::UserNotFound)?;
+        let reviewed = self
+            .users
+            .get(&reviewed_id)
+            .ok_or(UserError::UserNotFound)?;
 
         // Check reviewer hasn't already reviewed this trade
         if reviewer.reputation.has_reviewed_trade(trade_id) {
@@ -830,7 +860,13 @@ mod tests {
     fn register_new_user() {
         let mut auth = AuthService::new();
         let result = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         assert!(result.user_id.0 != Uuid::nil());
@@ -861,20 +897,44 @@ mod tests {
     #[test]
     fn duplicate_username_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
-        let result = auth.register("alice".to_string(), "otherpassword".to_string(), "other@example.com".to_string(), None, None);
+        let result = auth.register(
+            "alice".to_string(),
+            "otherpassword".to_string(),
+            "other@example.com".to_string(),
+            None,
+            None,
+        );
         assert_eq!(result.unwrap_err(), UserError::UsernameTaken);
     }
 
     #[test]
     fn duplicate_email_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
-        let result = auth.register("bob".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None);
+        let result = auth.register(
+            "bob".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        );
         assert_eq!(result.unwrap_err(), UserError::EmailTaken);
     }
 
@@ -882,14 +942,21 @@ mod tests {
     fn email_verification_success() {
         let mut auth = AuthService::new();
         let reg = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let user = auth.get_user(reg.user_id).unwrap();
         assert!(!user.is_email_verified());
 
         // Verify with correct code
-        auth.verify_email(reg.user_id, &reg.verification_code).unwrap();
+        auth.verify_email(reg.user_id, &reg.verification_code)
+            .unwrap();
 
         let user = auth.get_user(reg.user_id).unwrap();
         assert!(user.is_email_verified());
@@ -899,7 +966,13 @@ mod tests {
     fn email_verification_wrong_code() {
         let mut auth = AuthService::new();
         let reg = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let result = auth.verify_email(reg.user_id, "000000");
@@ -910,7 +983,13 @@ mod tests {
     fn resend_verification_code() {
         let mut auth = AuthService::new();
         let reg = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let new_code = auth.resend_verification_code(reg.user_id).unwrap();
@@ -928,8 +1007,14 @@ mod tests {
     #[test]
     fn login_success() {
         let mut auth = AuthService::new();
-        auth.register("bob".to_string(), "securepass1".to_string(), "bob@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "bob".to_string(),
+            "securepass1".to_string(),
+            "bob@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         let result = auth.login("bob", "securepass1").unwrap();
         assert_eq!(result.username, "bob");
@@ -939,8 +1024,14 @@ mod tests {
     #[test]
     fn login_wrong_password() {
         let mut auth = AuthService::new();
-        auth.register("bob".to_string(), "securepass1".to_string(), "bob@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "bob".to_string(),
+            "securepass1".to_string(),
+            "bob@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         let result = auth.login("bob", "wrongpassword");
         assert_eq!(result.unwrap_err(), UserError::InvalidCredentials);
@@ -956,8 +1047,14 @@ mod tests {
     #[test]
     fn token_validation() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         let login = auth.login("alice", "password123").unwrap();
         let user_id = auth.validate_token(&login.token.token).unwrap();
@@ -974,8 +1071,14 @@ mod tests {
     #[test]
     fn logout_invalidates_token() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         let login = auth.login("alice", "password123").unwrap();
         auth.logout(&login.token.token);
@@ -988,7 +1091,13 @@ mod tests {
     fn suspended_account_cannot_login() {
         let mut auth = AuthService::new();
         let reg = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         auth.suspend_user(reg.user_id).unwrap();
@@ -1001,7 +1110,13 @@ mod tests {
     fn reactivate_suspended_account() {
         let mut auth = AuthService::new();
         let reg = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         auth.suspend_user(reg.user_id).unwrap();
@@ -1014,8 +1129,14 @@ mod tests {
     #[test]
     fn get_user_by_username() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         let user = auth.get_user_by_username("alice").unwrap();
         assert_eq!(user.username.as_str(), "alice");
@@ -1024,8 +1145,14 @@ mod tests {
     #[test]
     fn login_records_timestamp() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         auth.login("alice", "password123").unwrap();
         let user = auth.get_user_by_username("alice").unwrap();
@@ -1074,8 +1201,14 @@ mod tests {
     #[test]
     fn login_rate_limited_after_5_attempts() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         // 5 successful logins should succeed
         for _ in 0..5 {
@@ -1091,16 +1224,31 @@ mod tests {
     #[test]
     fn login_rate_limit_per_username() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
-        auth.register("bob".to_string(), "password123".to_string(), "bob@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
+        auth.register(
+            "bob".to_string(),
+            "password123".to_string(),
+            "bob@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         // Exhaust Alice's limit
         for _ in 0..5 {
             auth.login("alice", "password123").ok();
         }
-        assert_eq!(auth.login("alice", "password123").unwrap_err(), UserError::RateLimited);
+        assert_eq!(
+            auth.login("alice", "password123").unwrap_err(),
+            UserError::RateLimited
+        );
 
         // Bob should still be able to login
         let result = auth.login("bob", "password123");
@@ -1116,11 +1264,18 @@ mod tests {
         {
             let mut auth = AuthService::with_storage(&path).unwrap();
             let reg = auth
-                .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+                .register(
+                    "alice".to_string(),
+                    "password123".to_string(),
+                    "alice@example.com".to_string(),
+                    None,
+                    None,
+                )
                 .unwrap();
 
             // Verify email
-            auth.verify_email(reg.user_id, &reg.verification_code).unwrap();
+            auth.verify_email(reg.user_id, &reg.verification_code)
+                .unwrap();
 
             assert_eq!(auth.user_count(), 1);
             assert!(auth.get_user(reg.user_id).unwrap().is_email_verified());
@@ -1168,7 +1323,10 @@ mod tests {
         let user = auth.get_user_by_username("bob").unwrap();
         assert!(user.btc_wallet.is_some());
         assert!(user.xmr_wallet.is_some());
-        assert_eq!(user.btc_wallet.as_ref().unwrap().as_str(), "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+        assert_eq!(
+            user.btc_wallet.as_ref().unwrap().as_str(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1182,8 +1340,14 @@ mod tests {
         let token: String;
         {
             let mut auth = AuthService::with_storage(&path).unwrap();
-            auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-                .unwrap();
+            auth.register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
+            .unwrap();
             let login = auth.login("alice", "password123").unwrap();
             token = login.token.token.clone();
         } // dropped — new instance should use same signing key
@@ -1202,8 +1366,14 @@ mod tests {
     #[test]
     fn in_memory_mode_skips_save() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
-            .unwrap();
+        auth.register(
+            "alice".to_string(),
+            "password123".to_string(),
+            "alice@example.com".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
 
         // save() on in-memory service should return Ok without error
         assert!(auth.save().is_ok());
@@ -1218,7 +1388,13 @@ mod tests {
         {
             let mut auth = AuthService::with_storage(&path).unwrap();
             let reg = auth
-                .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+                .register(
+                    "alice".to_string(),
+                    "password123".to_string(),
+                    "alice@example.com".to_string(),
+                    None,
+                    None,
+                )
                 .unwrap();
             auth.suspend_user(reg.user_id).unwrap();
         } // dropped
@@ -1237,17 +1413,35 @@ mod tests {
     fn submit_review_success() {
         let mut auth = AuthService::new();
         let alice = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
         let bob = auth
-            .register("bob".to_string(), "password123".to_string(), "bob@example.com".to_string(), None, None)
+            .register(
+                "bob".to_string(),
+                "password123".to_string(),
+                "bob@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let trade_id = opendex_types::TradeId(Uuid::new_v4());
         let rating = Rating::new(5).unwrap();
 
         let review = auth
-            .submit_review(trade_id, alice.user_id, bob.user_id, rating, Some("Great trader!".to_string()))
+            .submit_review(
+                trade_id,
+                alice.user_id,
+                bob.user_id,
+                rating,
+                Some("Great trader!".to_string()),
+            )
             .unwrap();
 
         assert_eq!(review.reviewer_id, alice.user_id);
@@ -1268,7 +1462,13 @@ mod tests {
     fn cannot_review_yourself() {
         let mut auth = AuthService::new();
         let alice = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let result = auth.submit_review(
@@ -1285,17 +1485,41 @@ mod tests {
     fn cannot_review_same_trade_twice() {
         let mut auth = AuthService::new();
         let alice = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
         let bob = auth
-            .register("bob".to_string(), "password123".to_string(), "bob@example.com".to_string(), None, None)
+            .register(
+                "bob".to_string(),
+                "password123".to_string(),
+                "bob@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         let trade_id = opendex_types::TradeId(Uuid::new_v4());
-        auth.submit_review(trade_id, alice.user_id, bob.user_id, Rating::new(5).unwrap(), None)
-            .unwrap();
+        auth.submit_review(
+            trade_id,
+            alice.user_id,
+            bob.user_id,
+            Rating::new(5).unwrap(),
+            None,
+        )
+        .unwrap();
 
-        let result = auth.submit_review(trade_id, alice.user_id, bob.user_id, Rating::new(4).unwrap(), None);
+        let result = auth.submit_review(
+            trade_id,
+            alice.user_id,
+            bob.user_id,
+            Rating::new(4).unwrap(),
+            None,
+        );
         assert_eq!(result.unwrap_err(), UserError::ReviewAlreadySubmitted);
     }
 
@@ -1303,13 +1527,31 @@ mod tests {
     fn multiple_reviews_average() {
         let mut auth = AuthService::new();
         let alice = auth
-            .register("alice".to_string(), "password123".to_string(), "alice@example.com".to_string(), None, None)
+            .register(
+                "alice".to_string(),
+                "password123".to_string(),
+                "alice@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
         let bob = auth
-            .register("bob".to_string(), "password123".to_string(), "bob@example.com".to_string(), None, None)
+            .register(
+                "bob".to_string(),
+                "password123".to_string(),
+                "bob@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
         let charlie = auth
-            .register("charlie".to_string(), "password123".to_string(), "charlie@example.com".to_string(), None, None)
+            .register(
+                "charlie".to_string(),
+                "password123".to_string(),
+                "charlie@example.com".to_string(),
+                None,
+                None,
+            )
             .unwrap();
 
         // Alice reviews Bob 5 stars
@@ -1319,7 +1561,8 @@ mod tests {
             bob.user_id,
             Rating::new(5).unwrap(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Charlie reviews Bob 3 stars
         auth.submit_review(
@@ -1328,7 +1571,8 @@ mod tests {
             bob.user_id,
             Rating::new(3).unwrap(),
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         let bob_rep = auth.get_reputation(bob.user_id).unwrap();
         assert_eq!(bob_rep.review_count(), 2);

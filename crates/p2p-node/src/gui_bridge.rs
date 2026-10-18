@@ -10,6 +10,7 @@ use crate::trades::TradeBook;
 
 /// Commands sent from the GUI to the P2P node
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum GuiCommand {
     PlaceOrder {
         side: Side,
@@ -46,6 +47,7 @@ pub enum GuiCommand {
 
 /// Updates sent from the P2P node to the GUI
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum GuiUpdate {
     OrderBookSnapshot(Vec<Order>),
     TradeAdded(Trade),
@@ -66,18 +68,30 @@ pub enum GuiUpdate {
     /// Monero wallet address retrieved
     WalletAddress(String),
     /// Monero wallet balance retrieved (available, unlocked in XMR)
-    WalletBalance { available: f64, unlocked: f64 },
+    WalletBalance {
+        available: f64,
+        unlocked: f64,
+    },
     /// Monero wallet connection status
-    WalletConnected { connected: bool, address: Option<String> },
+    WalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
     /// Bitcoin wallet address retrieved
     BtcWalletAddress(String),
     /// Bitcoin wallet balance retrieved (in BTC)
-    BtcWalletBalance { balance: f64 },
+    BtcWalletBalance {
+        balance: f64,
+    },
     /// Bitcoin wallet connection status
-    BtcWalletConnected { connected: bool, address: Option<String> },
+    BtcWalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
 }
 
 /// Holds the state needed for the node event loop
+#[allow(dead_code)]
 pub struct NodeState {
     pub order_book: OrderBook,
     pub trade_book: TradeBook,
@@ -88,6 +102,7 @@ pub struct NodeState {
 }
 
 impl NodeState {
+    #[allow(dead_code)]
     pub fn new(
         order_book: OrderBook,
         trade_book: TradeBook,
@@ -106,21 +121,25 @@ impl NodeState {
     }
 
     /// Send an update to the GUI, ignoring errors if the receiver is dropped
+    #[allow(dead_code)]
     pub fn send_update(&self, update: GuiUpdate) {
         let _ = self.update_tx.send(update);
     }
 
     /// Send a log message to the GUI
+    #[allow(dead_code)]
     pub fn log(&self, msg: impl std::fmt::Display) {
         self.send_update(GuiUpdate::LogMessage(msg.to_string()));
     }
 
     /// Send an error to the GUI
+    #[allow(dead_code)]
     pub fn error(&self, msg: impl std::fmt::Display) {
         self.send_update(GuiUpdate::Error(msg.to_string()));
     }
 
     /// Request current balances from the balance book
+    #[allow(dead_code)]
     pub fn request_balances(&self) {
         let trader = self.local_peer_id.to_string();
         let mut balances = Vec::new();
@@ -132,12 +151,14 @@ impl NodeState {
     }
 
     /// Request current order book snapshot
+    #[allow(dead_code)]
     pub fn request_order_book(&self) {
         let orders = self.order_book.active_orders();
         self.send_update(GuiUpdate::OrderBookSnapshot(orders));
     }
 
     /// Request current trades
+    #[allow(dead_code)]
     pub fn request_trades(&self) {
         for trade in self.trade_book.all_trades() {
             self.send_update(GuiUpdate::TradeAdded(trade));

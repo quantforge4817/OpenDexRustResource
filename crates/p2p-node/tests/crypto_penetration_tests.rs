@@ -11,9 +11,22 @@
 // ==============================
 
 mod hmac_token_security {
-    use opendex_user::auth::AuthService;
     use chrono::{Duration, Utc};
+    use opendex_user::auth::AuthService;
     use uuid::Uuid;
+
+    /// Helper to register a user with the required 5-argument signature.
+    fn register_user(auth: &mut AuthService, username: &str, password: &str) {
+        let _ = auth
+            .register(
+                username.to_string(),
+                password.to_string(),
+                format!("{}@example.com", username),
+                None,
+                None,
+            )
+            .unwrap();
+    }
 
     /// Verify that two AuthService instances generate different signing keys.
     /// Tokens from one instance must be rejected by another.
@@ -22,8 +35,8 @@ mod hmac_token_security {
         let mut auth1 = AuthService::new();
         let mut auth2 = AuthService::new();
 
-        auth1.register("alice".to_string(), "password123".to_string()).unwrap();
-        auth2.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth1, "alice", "password123");
+        register_user(&mut auth2, "alice", "password123");
 
         let login1 = auth1.login("alice", "password123").unwrap();
 
@@ -39,7 +52,7 @@ mod hmac_token_security {
     #[test]
     fn signature_malleability_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let original_token = login.token.token.clone();
@@ -47,8 +60,12 @@ mod hmac_token_security {
         // Flip bits in the signature portion (last 64 hex chars = 32 bytes)
         let mut modified = original_token.clone();
         let sig_start = modified.len().saturating_sub(64);
-        let sig_bytes = unsafe { std::slice::from_raw_parts_mut(modified.as_mut_ptr().add(sig_start), 64) };
-        sig_bytes[0] = match sig_bytes[0] { b'0'..=b'9' => (sig_bytes[0] + 1) as u8, _ => b'0' };
+        let sig_bytes =
+            unsafe { std::slice::from_raw_parts_mut(modified.as_mut_ptr().add(sig_start), 64) };
+        sig_bytes[0] = match sig_bytes[0] {
+            b'0'..=b'9' => (sig_bytes[0] + 1) as u8,
+            _ => b'0',
+        };
 
         let result = auth.validate_token(&modified);
         assert!(result.is_err(), "Modified signature should be rejected");
@@ -58,7 +75,8 @@ mod hmac_token_security {
     #[test]
     fn empty_signature_rejected() {
         let auth = AuthService::new();
-        let token_with_empty_sig = "00000000-0000-0000-0000-000000000000:test:9999999999:".to_string();
+        let token_with_empty_sig =
+            "00000000-0000-0000-0000-000000000000:test:9999999999:".to_string();
         let result = auth.validate_token(&token_with_empty_sig);
         assert!(result.is_err(), "Empty signature should be rejected");
     }
@@ -68,7 +86,8 @@ mod hmac_token_security {
     fn malformed_hex_signature_rejected() {
         let auth = AuthService::new();
 
-        let token_invalid_hex = "00000000-0000-0000-0000-000000000000:test:9999999999:ZZZZ".to_string();
+        let token_invalid_hex =
+            "00000000-0000-0000-0000-000000000000:test:9999999999:ZZZZ".to_string();
         assert!(auth.validate_token(&token_invalid_hex).is_err());
 
         let token_odd_hex = "00000000-0000-0000-0000-000000000000:test:9999999999:abc".to_string();
@@ -79,28 +98,37 @@ mod hmac_token_security {
     #[test]
     fn expired_token_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         assert!(auth.validate_token(&login.token.token).is_ok());
 
         let future_time = Utc::now() + Duration::hours(25);
-        assert!(!login.token.is_valid(future_time), "Token should be invalid after 24-hour TTL");
+        assert!(
+            !login.token.is_valid(future_time),
+            "Token should be invalid after 24-hour TTL"
+        );
     }
 
     /// Verify token behavior at exact expiration boundary.
     #[test]
     fn token_expiration_boundary() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
 
         let at_expiration = login.token.expires_at;
-        assert!(!login.token.is_valid(at_expiration), "Token at exact expiration should be invalid");
+        assert!(
+            !login.token.is_valid(at_expiration),
+            "Token at exact expiration should be invalid"
+        );
 
         let one_sec_before = login.token.expires_at - Duration::seconds(1);
-        assert!(login.token.is_valid(one_sec_before), "Token one second before expiration should be valid");
+        assert!(
+            login.token.is_valid(one_sec_before),
+            "Token one second before expiration should be valid"
+        );
     }
 
     /// Verify that tokens with wrong signing key are rejected.
@@ -110,45 +138,70 @@ mod hmac_token_security {
         let key2 = vec![2u8; 32];
 
         let mut auth1 = AuthService::with_signing_key(key1);
-        auth1.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth1, "alice", "password123");
         let login = auth1.login("alice", "password123").unwrap();
 
         let auth2 = AuthService::with_signing_key(key2);
         let result = auth2.validate_token(&login.token.token);
-        assert!(result.is_err(), "Token signed with one key should fail verification with a different key");
+        assert!(
+            result.is_err(),
+            "Token signed with one key should fail verification with a different key"
+        );
     }
 
     /// Verify that short keys work with HMAC (HMAC accepts any key size).
     #[test]
     fn hmac_accepts_various_key_sizes() {
         let mut auth_1byte = AuthService::with_signing_key(vec![42u8; 1]);
-        auth_1byte.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth_1byte, "alice", "password123");
         let login_1byte = auth_1byte.login("alice", "password123").unwrap();
         assert!(auth_1byte.validate_token(&login_1byte.token.token).is_ok());
 
         let mut auth_256byte = AuthService::with_signing_key(vec![42u8; 256]);
-        auth_256byte.register("bob".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth_256byte, "bob", "password123");
         let login_256byte = auth_256byte.login("bob", "password123").unwrap();
-        assert!(auth_256byte.validate_token(&login_256byte.token.token).is_ok());
+        assert!(
+            auth_256byte
+                .validate_token(&login_256byte.token.token)
+                .is_ok()
+        );
     }
 
     /// Verify token format structure: {user_id}:{random_uuid}:{expires_ts}:{signature}
     #[test]
     fn token_format_structure() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let parts: Vec<&str> = login.token.token.splitn(4, ':').collect();
 
-        assert!(parts.len() >= 4, "Token should have at least 4 colon-separated parts");
+        assert!(
+            parts.len() >= 4,
+            "Token should have at least 4 colon-separated parts"
+        );
 
-        assert!(Uuid::parse_str(parts[0]).is_ok(), "First part should be a valid UUID (user_id)");
-        assert!(Uuid::parse_str(parts[1]).is_ok(), "Second part should be a valid UUID (random_uuid)");
-        assert!(parts[2].parse::<i64>().is_ok(), "Third part should be a valid timestamp");
+        assert!(
+            Uuid::parse_str(parts[0]).is_ok(),
+            "First part should be a valid UUID (user_id)"
+        );
+        assert!(
+            Uuid::parse_str(parts[1]).is_ok(),
+            "Second part should be a valid UUID (random_uuid)"
+        );
+        assert!(
+            parts[2].parse::<i64>().is_ok(),
+            "Third part should be a valid timestamp"
+        );
 
-        assert!(parts[3].len() == 64, "HMAC-SHA256 signature should be 64 hex characters (32 bytes)");
-        assert!(parts[3].chars().all(|c| c.is_ascii_hexdigit()), "Signature should be valid hex");
+        assert!(
+            parts[3].len() == 64,
+            "HMAC-SHA256 signature should be 64 hex characters (32 bytes)"
+        );
+        assert!(
+            parts[3].chars().all(|c| c.is_ascii_hexdigit()),
+            "Signature should be valid hex"
+        );
     }
 }
 
@@ -157,8 +210,8 @@ mod hmac_token_security {
 // ==============================
 
 mod argon2id_password_hashing {
-    use opendex_user::user::PasswordHash;
     use opendex_user::error::UserError;
+    use opendex_user::user::PasswordHash;
 
     /// Verify that two hashes of the same password produce different outputs (different salts).
     #[test]
@@ -167,7 +220,10 @@ mod argon2id_password_hashing {
         let hash1 = PasswordHash::from_password(password).unwrap();
         let hash2 = PasswordHash::from_password(password).unwrap();
 
-        assert!(hash1 != hash2, "Two hashes of the same password should differ due to unique salts");
+        assert!(
+            hash1 != hash2,
+            "Two hashes of the same password should differ due to unique salts"
+        );
     }
 
     /// Verify that the same password verifies against its own hash.
@@ -183,7 +239,10 @@ mod argon2id_password_hashing {
     fn password_verification_wrong() {
         let password = "mysecurepassword123";
         let hash = PasswordHash::from_password(password).unwrap();
-        assert!(!hash.verify("wrongpassword"), "Wrong password should not verify");
+        assert!(
+            !hash.verify("wrongpassword"),
+            "Wrong password should not verify"
+        );
     }
 
     /// Verify that empty passwords are rejected.
@@ -213,8 +272,14 @@ mod argon2id_password_hashing {
     fn unicode_password_handling() {
         let password = "密码🔐пароль";
         let hash = PasswordHash::from_password(password).unwrap();
-        assert!(hash.verify(password), "Unicode password should verify correctly");
-        assert!(!hash.verify("different"), "Different password should not verify");
+        assert!(
+            hash.verify(password),
+            "Unicode password should verify correctly"
+        );
+        assert!(
+            !hash.verify("different"),
+            "Different password should not verify"
+        );
     }
 
     /// Verify that passwords with zero-width characters work.
@@ -222,8 +287,14 @@ mod argon2id_password_hashing {
     fn zero_width_character_password() {
         let password = "password\u{200B}\u{200C}123";
         let hash = PasswordHash::from_password(password).unwrap();
-        assert!(hash.verify(password), "Password with zero-width characters should verify");
-        assert!(!hash.verify("password123"), "Visually similar password should fail");
+        assert!(
+            hash.verify(password),
+            "Password with zero-width characters should verify"
+        );
+        assert!(
+            !hash.verify("password123"),
+            "Visually similar password should fail"
+        );
     }
 
     /// Verify that corrupted hash strings are handled gracefully.
@@ -233,7 +304,10 @@ mod argon2id_password_hashing {
     fn corrupted_hash_handling() {
         // A valid hash that won't match any password
         let hash = PasswordHash::from_password("somepassword123").unwrap();
-        assert!(!hash.verify("completely_different"), "Wrong password should fail");
+        assert!(
+            !hash.verify("completely_different"),
+            "Wrong password should fail"
+        );
     }
 
     /// Verify hash collision resistance.
@@ -242,15 +316,24 @@ mod argon2id_password_hashing {
         let hash1 = PasswordHash::from_password("password1").unwrap();
         let hash2 = PasswordHash::from_password("password2").unwrap();
 
-        assert!(hash1 != hash2, "Different passwords should produce different hashes");
-        assert!(!hash1.verify("password2"), "Hash of password1 should not verify password2");
-        assert!(!hash2.verify("password1"), "Hash of password2 should not verify password1");
+        assert!(
+            hash1 != hash2,
+            "Different passwords should produce different hashes"
+        );
+        assert!(
+            !hash1.verify("password2"),
+            "Hash of password1 should not verify password2"
+        );
+        assert!(
+            !hash2.verify("password1"),
+            "Hash of password2 should not verify password1"
+        );
     }
 
     /// Verify OWASP-recommended minimum parameters.
     #[test]
     fn argon2_parameters_security_check() {
-        use argon2::{Argon2, Algorithm, Version, Params};
+        use argon2::{Algorithm, Argon2, Params, Version};
 
         // argon2 0.5 Params::default() uses: memory_cost=65536, time_cost=3, parallelism=1
         let params = Params::default();
@@ -269,7 +352,7 @@ mod argon2id_password_hashing {
 
 #[cfg(feature = "fiat")]
 mod bitcoin_multisig_escrow {
-    use opendex_fiat::multisig::{EscrowKeyPair, RedemptionScript, MultisigEscrow};
+    use opendex_fiat::multisig::{EscrowKeyPair, MultisigEscrow, RedemptionScript};
     use uuid::Uuid;
 
     /// Verify that repeated key generation produces unique keys.
@@ -277,7 +360,10 @@ mod bitcoin_multisig_escrow {
     fn key_generation_uniqueness() {
         let key1 = EscrowKeyPair::new();
         let key2 = EscrowKeyPair::new();
-        assert!(key1.public_key() != key2.public_key(), "Two generated key pairs should have different public keys");
+        assert!(
+            key1.public_key() != key2.public_key(),
+            "Two generated key pairs should have different public keys"
+        );
     }
 
     /// Verify that from_secret_hex produces the same public key as the original.
@@ -292,9 +378,18 @@ mod bitcoin_multisig_escrow {
     /// Verify that invalid hex strings are rejected.
     #[test]
     fn invalid_secret_hex_rejected() {
-        assert!(EscrowKeyPair::from_secret_hex("ZZZZ").is_err(), "Invalid hex should be rejected");
-        assert!(EscrowKeyPair::from_secret_hex("0123456789abcdef").is_err(), "Too short hex should be rejected");
-        assert!(EscrowKeyPair::from_secret_hex("").is_err(), "Empty hex should be rejected");
+        assert!(
+            EscrowKeyPair::from_secret_hex("ZZZZ").is_err(),
+            "Invalid hex should be rejected"
+        );
+        assert!(
+            EscrowKeyPair::from_secret_hex("0123456789abcdef").is_err(),
+            "Too short hex should be rejected"
+        );
+        assert!(
+            EscrowKeyPair::from_secret_hex("").is_err(),
+            "Empty hex should be rejected"
+        );
     }
 
     /// Verify redemption script determinism.
@@ -312,7 +407,10 @@ mod bitcoin_multisig_escrow {
 
         let hash1 = script1.script_hash_hex();
         let hash2 = script2.script_hash_hex();
-        assert!(hash1 == hash2, "Same keys should produce the same script hash");
+        assert!(
+            hash1 == hash2,
+            "Same keys should produce the same script hash"
+        );
     }
 
     /// Verify that different keys produce different addresses.
@@ -327,7 +425,10 @@ mod bitcoin_multisig_escrow {
 
         let addr_a = script_a.address(bitcoin::Network::Testnet);
         let addr_b = script_b.address(bitcoin::Network::Testnet);
-        assert!(addr_a != addr_b, "Different keys should produce different addresses");
+        assert!(
+            addr_a != addr_b,
+            "Different keys should produce different addresses"
+        );
     }
 
     /// Verify escrow creation works correctly.
@@ -337,9 +438,13 @@ mod bitcoin_multisig_escrow {
         let taker_key = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
 
-        let escrow = MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
+        let escrow =
+            MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
         let address = escrow.deposit_address_str();
-        assert!(address.starts_with("tb"), "Testnet address should start with 'tb'");
+        assert!(
+            address.starts_with("tb"),
+            "Testnet address should start with 'tb'"
+        );
     }
 
     /// Verify network mismatch detection.
@@ -349,9 +454,13 @@ mod bitcoin_multisig_escrow {
         let taker_key = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
 
-        let escrow = MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
+        let escrow =
+            MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
         let address = escrow.deposit_address_str();
-        assert!(address.starts_with("tb"), "Testnet address should start with 'tb'");
+        assert!(
+            address.starts_with("tb"),
+            "Testnet address should start with 'tb'"
+        );
     }
 
     /// Verify secret key zeroization on Drop.
@@ -370,12 +479,14 @@ mod bitcoin_multisig_escrow {
         let taker_key = EscrowKeyPair::new();
         let trade_id = Uuid::new_v4();
 
-        let escrow = MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
+        let escrow =
+            MultisigEscrow::new(trade_id, &maker_key, &taker_key, bitcoin::Network::Testnet);
 
         // Fee (200k) exceeds amount (100k) — should be rejected
         let result = escrow.create_payout_tx(
             "0000000000000000000000000000000000000000000000000000000000000000",
-            0, 100_000,
+            0,
+            100_000,
             &escrow.deposit_address_str(),
             200_000,
         );
@@ -388,8 +499,8 @@ mod bitcoin_multisig_escrow {
 // ==============================
 
 mod peer_id_hashing {
-    use opendex_transport::libp2p_transport::Libp2pTransport;
     use libp2p::identity;
+    use opendex_transport::libp2p_transport::Libp2pTransport;
 
     /// Verify deterministic mapping.
     #[test]
@@ -400,7 +511,10 @@ mod peer_id_hashing {
         let participant1 = Libp2pTransport::peer_id_to_participant(&peer_id);
         let participant2 = Libp2pTransport::peer_id_to_participant(&peer_id);
 
-        assert!(participant1 == participant2, "Same PeerId should always produce the same ParticipantId");
+        assert!(
+            participant1 == participant2,
+            "Same PeerId should always produce the same ParticipantId"
+        );
     }
 
     /// Verify that different PeerIds produce different ParticipantIds.
@@ -415,7 +529,10 @@ mod peer_id_hashing {
         let participant1 = Libp2pTransport::peer_id_to_participant(&peer_id1);
         let participant2 = Libp2pTransport::peer_id_to_participant(&peer_id2);
 
-        assert!(participant1 != participant2, "Different PeerIds should produce different ParticipantIds");
+        assert!(
+            participant1 != participant2,
+            "Different PeerIds should produce different ParticipantIds"
+        );
     }
 
     /// Verify hash distribution quality.
@@ -432,7 +549,11 @@ mod peer_id_hashing {
         }
 
         let max_count = *first_byte_counts.iter().max().unwrap();
-        assert!(max_count < 10, "Hash distribution should be uniform; max count per bucket: {}", max_count);
+        assert!(
+            max_count < 10,
+            "Hash distribution should be uniform; max count per bucket: {}",
+            max_count
+        );
     }
 
     /// Verify truncation collision resistance.
@@ -445,7 +566,10 @@ mod peer_id_hashing {
             let peer_id = libp2p::PeerId::from(key.public());
             let participant = Libp2pTransport::peer_id_to_participant(&peer_id);
 
-            assert!(participants.insert(participant), "Collision detected in 1000 samples");
+            assert!(
+                participants.insert(participant),
+                "Collision detected in 1000 samples"
+            );
         }
     }
 }
@@ -457,6 +581,19 @@ mod peer_id_hashing {
 mod random_number_generation {
     use opendex_user::auth::AuthService;
     use uuid::Uuid;
+
+    /// Helper to register a user with the required 5-argument signature.
+    fn register_user(auth: &mut AuthService, username: &str, password: &str) {
+        let _ = auth
+            .register(
+                username.to_string(),
+                password.to_string(),
+                format!("{}@example.com", username),
+                None,
+                None,
+            )
+            .unwrap();
+    }
 
     /// Verify that UUID v4 generation produces unique values.
     #[test]
@@ -474,13 +611,16 @@ mod random_number_generation {
         let mut auth1 = AuthService::new();
         let mut auth2 = AuthService::new();
 
-        auth1.register("alice".to_string(), "password123".to_string()).unwrap();
-        auth2.register("bob".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth1, "alice", "password123");
+        register_user(&mut auth2, "bob", "password123");
 
         let login1 = auth1.login("alice", "password123").unwrap();
         let login2 = auth2.login("bob", "password123").unwrap();
 
-        assert!(login1.token.token != login2.token.token, "Tokens from different instances should differ");
+        assert!(
+            login1.token.token != login2.token.token,
+            "Tokens from different instances should differ"
+        );
     }
 }
 
@@ -644,12 +784,28 @@ mod integration_crypto_flow {
     use opendex_user::auth::AuthService;
     use uuid::Uuid;
 
+    /// Helper to register a user with the required 5-argument signature.
+    fn register_user(
+        auth: &mut AuthService,
+        username: &str,
+        password: &str,
+    ) -> Result<opendex_user::auth::RegistrationResult, opendex_user::error::UserError> {
+        auth.register(
+            username.to_string(),
+            password.to_string(),
+            format!("{}@example.com", username),
+            None,
+            None,
+        )
+    }
+
     #[test]
     fn complete_auth_flow() {
         let mut auth = AuthService::new();
 
         // 1. Registration with Argon2id password hashing
-        let result = auth.register("alice".to_string(), "securepassword123".to_string()).unwrap();
+        let result = register_user(&mut auth, "alice", "securepassword123")
+            .unwrap();
         assert!(result.user_id.0 != Uuid::nil());
 
         // 2. Login with HMAC-SHA256 token generation
@@ -671,7 +827,7 @@ mod integration_crypto_flow {
     #[test]
     fn concurrent_sessions() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string()).unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login1 = auth.login("alice", "password123").unwrap();
         let login2 = auth.login("alice", "password123").unwrap();
@@ -715,13 +871,10 @@ mod hex_encoding_decoding {
 mod argon2_algorithm_protection {
     #[test]
     fn argon2id_used_for_hashing() {
-        use argon2::{Argon2, Algorithm, Version, Params};
+        use argon2::{Algorithm, Argon2, Params, Version};
 
-        let _explicit_argon2id = Argon2::new(
-            Algorithm::Argon2id,
-            Version::V0x13,
-            Params::default()
-        );
+        let _explicit_argon2id =
+            Argon2::new(Algorithm::Argon2id, Version::V0x13, Params::default());
         // The code explicitly uses Argon2id — verified by the constructor call
     }
 }

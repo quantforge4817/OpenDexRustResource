@@ -3,9 +3,9 @@
 //! Proves properties about the 16-state FiatTradeState machine (256 possible pairs)
 //! using symbolic execution, ensuring correctness for all possible inputs.
 
-use crate::trade::{FiatTrade, FiatTradeState, FeeSchedule, SettlementDeadlines, SettlementMethod};
-use opendex_types::{Asset, FiatCurrency, ParticipantId, TradeId};
 use crate::payment::FiatAmount;
+use crate::trade::{FeeSchedule, FiatTrade, FiatTradeState, SettlementDeadlines, SettlementMethod};
+use opendex_types::{Asset, FiatCurrency, ParticipantId, TradeId};
 use uuid::Uuid;
 
 /// Prove that only valid transitions return `true` among all 256 state pairs (16×16).
@@ -18,11 +18,10 @@ fn verify_fiat_trade_transition_graph() {
 
     // Prove that if valid, the pair is one of the known valid transitions
     if valid {
-        assert!(
-            matches!(
-                (&current, &next),
-                // Normal flow — both paths share the early states
-                (FiatTradeState::Created, FiatTradeState::Accepted)
+        assert!(matches!(
+            (&current, &next),
+            // Normal flow — both paths share the early states
+            (FiatTradeState::Created, FiatTradeState::Accepted)
                     | (FiatTradeState::Accepted, FiatTradeState::CryptoReserved)
                     | (FiatTradeState::CryptoReserved, FiatTradeState::PaymentRequested)
                 // Manual (button-based) flow
@@ -73,8 +72,7 @@ fn verify_fiat_trade_transition_graph() {
                     | (FiatTradeState::Disputed, FiatTradeState::Complete)
                     | (FiatTradeState::Disputed, FiatTradeState::Failed)
                     | (FiatTradeState::Disputed, FiatTradeState::Cancelled)
-            )
-        );
+        ));
     }
 }
 

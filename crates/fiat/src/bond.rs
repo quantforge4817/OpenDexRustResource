@@ -100,10 +100,7 @@ impl SecurityBond {
     /// Lock the bond.
     pub fn lock(&mut self, timestamp: u64) -> anyhow::Result<()> {
         if !self.state.can_transition_to(&BondState::Locked) {
-            return Err(anyhow::anyhow!(
-                "cannot lock bond in state: {}",
-                self.state
-            ));
+            return Err(anyhow::anyhow!("cannot lock bond in state: {}", self.state));
         }
         self.state = BondState::Locked;
         self.updated_at = timestamp;
@@ -151,14 +148,14 @@ impl BondState {
         matches!(
             (self, next),
             (Required, Locked)
-            | (Required, Released)
-            | (Locked, Released)
-            | (Locked, PartiallySlashed)
-            | (Locked, Slashed)
-            | (PartiallySlashed, Released)
-            | (PartiallySlashed, Slashed)
-            | (Slashed, Refunded)
-            | (Released, Refunded)
+                | (Required, Released)
+                | (Locked, Released)
+                | (Locked, PartiallySlashed)
+                | (Locked, Slashed)
+                | (PartiallySlashed, Released)
+                | (PartiallySlashed, Slashed)
+                | (Slashed, Refunded)
+                | (Released, Refunded)
         )
     }
 }

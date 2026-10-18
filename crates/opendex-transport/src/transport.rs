@@ -21,10 +21,13 @@ pub trait Transport: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     /// Send a protocol envelope to a specific peer.
-    async fn send(&self, peer: ParticipantId, envelope: ProtocolEnvelope) -> Result<(), Self::Error>;
+    async fn send(
+        &self,
+        peer: ParticipantId,
+        envelope: ProtocolEnvelope,
+    ) -> Result<(), Self::Error>;
 
     /// Receive the next inbound message from any peer.
     /// Blocks until a message is available or an error occurs.
     async fn receive(&self) -> Result<InboundMessage<ProtocolEnvelope>, Self::Error>;
 }
-

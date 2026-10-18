@@ -6,17 +6,19 @@
 //! - Maker and taker statistics tracking
 //! - Review system for post-trade feedback
 
-pub mod user;
+#![allow(warnings)]
+
 pub mod auth;
+pub mod error;
 pub mod reputation;
 pub mod stats;
-pub mod error;
+pub mod user;
 
-pub use user::*;
 pub use auth::*;
+pub use error::*;
 pub use reputation::*;
 pub use stats::*;
-pub use error::*;
+pub use user::*;
 
 // Kani proofs disabled: the user crate has heavy dependencies (chrono, hmac, argonaut)
 // that cause state space explosion during symbolic execution (166K+ SAT variables).

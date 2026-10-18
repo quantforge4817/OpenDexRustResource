@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use opendex_types::ParticipantId;
 
@@ -63,7 +63,10 @@ impl MockTransportPair {
             receiver: Arc::new(Mutex::new(rx_a)),
         };
 
-        Self { transport_a, transport_b }
+        Self {
+            transport_a,
+            transport_b,
+        }
     }
 }
 
@@ -86,7 +89,11 @@ impl MockTransport {
 impl Transport for MockTransport {
     type Error = MockTransportError;
 
-    async fn send(&self, _peer: ParticipantId, envelope: ProtocolEnvelope) -> Result<(), Self::Error> {
+    async fn send(
+        &self,
+        _peer: ParticipantId,
+        envelope: ProtocolEnvelope,
+    ) -> Result<(), Self::Error> {
         self.sender
             .send((self.participant_id, envelope))
             .await
@@ -108,8 +115,8 @@ impl Transport for MockTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opendex_types::{MessageId, ProtocolVersion, SwapId};
     use uuid::Uuid;
-    use opendex_types::{SwapId, MessageId, ProtocolVersion};
 
     fn test_participant_id() -> ParticipantId {
         ParticipantId(Uuid::new_v4())
@@ -213,4 +220,3 @@ mod tests {
         }
     }
 }
-

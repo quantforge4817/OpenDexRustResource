@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Monero wallet client abstraction layer.
 ///
 /// Connects OpenDex to a running `monero-wallet-rpc` service to perform
@@ -8,9 +9,8 @@
 /// Uses raw JSON-RPC over HTTP via reqwest, avoiding native dependencies.
 /// The wallet RPC must be running externally (e.g., `monero-wallet-rpc`
 /// binary) and reachable at the configured address.
-use anyhow::{Result, Context, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Monero amount scale: 1 XMR = 10^12 atomic units (piconero).
 pub const XMR_SCALE: u64 = 1_000_000_000_000;
@@ -52,10 +52,13 @@ struct GetBalanceResponse {
     balance: u64,
     unlocked_balance: u64,
     #[serde(default)]
+    #[allow(dead_code)]
     blocks_to_unlock: u64,
     #[serde(default)]
+    #[allow(dead_code)]
     multisig_import_needed: bool,
     #[serde(default)]
+    #[allow(dead_code)]
     time_to_unlock: u64,
 }
 
@@ -65,18 +68,21 @@ struct GetAddressResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CreateSubaddressResponse {
     address: String,
     index: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct TransferDestination {
     address: String,
     amount: u64,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct TransferResponse {
     tx_hash: String,
     fee: u64,
@@ -87,6 +93,7 @@ struct TransferResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct PaymentEntry {
     amount: u64,
     lock_time: u64,
@@ -95,11 +102,13 @@ struct PaymentEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetPaymentsResponse {
     payments: Vec<PaymentEntry>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct BulkPaymentEntry {
     amount: u64,
     payment_id: String,
@@ -107,11 +116,13 @@ struct BulkPaymentEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GetBulkPaymentsResponse {
     payments: Vec<BulkPaymentEntry>,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct CheckTxKeyResponse {
     in_pool: bool,
     confirmations: u64,
@@ -126,6 +137,7 @@ struct GetHeightResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct StoreResponse {
     #[serde(default)]
     _dummy: Option<serde_json::Value>,
@@ -169,6 +181,7 @@ pub enum WalletState {
 
 /// A thin wrapper around the Monero wallet RPC providing
 /// OpenDex-specific operations via raw JSON-RPC over HTTP.
+#[allow(dead_code)]
 pub struct MoneroWalletClient {
     http: reqwest::Client,
     config: MoneroWalletConfig,
@@ -190,10 +203,7 @@ impl MoneroWalletClient {
     // -----------------------------------------------------------------------
 
     /// Execute a JSON-RPC call with empty params.
-    async fn call_no_params<T: serde::de::DeserializeOwned>(
-        &self,
-        method: &str,
-    ) -> Result<T> {
+    async fn call_no_params<T: serde::de::DeserializeOwned>(&self, method: &str) -> Result<T> {
         self.call::<(), T>(method, None).await
     }
 
@@ -223,18 +233,15 @@ impl MoneroWalletClient {
             builder = builder.basic_auth(user, Some(pass));
         }
 
-        let response = builder
-            .send()
-            .await
-            .context("Failed to send RPC request")?;
+        let response = builder.send().await.context("Failed to send RPC request")?;
 
         let response_text = response
             .text()
             .await
             .context("Failed to read RPC response")?;
 
-        let response: JsonRpcResponse<T> = serde_json::from_str(&response_text)
-            .context("Failed to parse RPC response")?;
+        let response: JsonRpcResponse<T> =
+            serde_json::from_str(&response_text).context("Failed to parse RPC response")?;
 
         if let Some(err) = response.error {
             Err(anyhow!("RPC error {}: {}", err.code, err.message))
@@ -258,25 +265,27 @@ impl MoneroWalletClient {
         match self.get_height().await {
             Ok(height) => {
                 self.state = WalletState::Connected;
-                tracing::info!(block_height = height, "Successfully connected to Monero wallet RPC");
+                tracing::info!(
+                    block_height = height,
+                    "Successfully connected to Monero wallet RPC"
+                );
                 Ok(())
             }
             Err(e) => {
                 self.state = WalletState::Error(format!("Connection test failed: {}", e));
-                Err(anyhow!(
-                    "Failed to connect to Monero wallet RPC: {}",
-                    e
-                ))
+                Err(anyhow!("Failed to connect to Monero wallet RPC: {}", e))
             }
         }
     }
 
     /// Check if the wallet is currently connected.
+    #[allow(dead_code)]
     pub fn is_connected(&self) -> bool {
         matches!(self.state, WalletState::Connected)
     }
 
     /// Get the current wallet state.
+    #[allow(dead_code)]
     pub fn state(&self) -> &WalletState {
         &self.state
     }
@@ -289,6 +298,7 @@ impl MoneroWalletClient {
 
     /// Create a new subaddress for receiving payments.
     /// Returns the new subaddress string.
+    #[allow(dead_code)]
     pub async fn create_subaddress(
         &self,
         account_index: u32,
@@ -322,8 +332,9 @@ impl MoneroWalletClient {
             account_index: u32,
         }
 
-        let resp: GetBalanceResponse =
-            self.call("get_balance", Some(Params { account_index })).await?;
+        let resp: GetBalanceResponse = self
+            .call("get_balance", Some(Params { account_index }))
+            .await?;
         Ok((resp.balance, resp.unlocked_balance))
     }
 
@@ -470,7 +481,9 @@ impl MoneroWalletClient {
             .await
             .context("Failed to check transaction")?;
 
-        Ok(resp.confirmed.unwrap_or(resp.unlocked && resp.confirmations > 0))
+        Ok(resp
+            .confirmed
+            .unwrap_or(resp.unlocked && resp.confirmations > 0))
     }
 
     /// Get the current blockchain height the wallet is synced to.

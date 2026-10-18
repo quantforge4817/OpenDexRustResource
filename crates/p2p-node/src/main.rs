@@ -46,20 +46,20 @@ mod persistence;
 mod exchange;
 
 // GUI bridge — stays in p2p-node because it references OrderBook, TradeBook, etc.
-mod gui_bridge;
-mod wallet_client;
 mod btc_wallet_client;
+mod gui_bridge;
 #[cfg(feature = "fiat")]
 mod p2p_escrow;
 #[cfg(feature = "fiat")]
 mod p2p_offer_book;
+mod wallet_client;
 
+use btc_wallet_client::{BitcoinWalletClient, BitcoinWalletConfig};
 use gui_bridge::GuiCommand;
 use orderbook::OrderBook;
 #[cfg(feature = "fiat")]
 use p2p_offer_book::P2POfferBook;
 use wallet_client::{MoneroWalletClient, MoneroWalletConfig};
-use btc_wallet_client::{BitcoinWalletClient, BitcoinWalletConfig};
 
 use tokio::io::{self, AsyncBufReadExt};
 
@@ -72,7 +72,7 @@ use std::{fs, path::PathBuf};
 /// Routes logs to separate files based on log level:
 /// - `audit.log` — all logs (info, debug, warn, error)
 /// - `error.log` — warn and error level only
-fn init_audit_logging(node_dir: &PathBuf) -> Result<()> {
+fn init_audit_logging(node_dir: &std::path::Path) -> Result<()> {
     use tracing_subscriber::prelude::*;
 
     let audit_dir = node_dir.join("audit");
@@ -252,7 +252,7 @@ async fn main() -> Result<()> {
     let mut p2p_offer_book = P2POfferBook::load();
 
     // Initialize Monero wallet client if configured
-    let mut monero_wallet = if cli.monero_rpc_url.is_some()
+    let monero_wallet = if cli.monero_rpc_url.is_some()
         || cli.monero_rpc_user.is_some()
         || cli.monero_rpc_pass.is_some()
     {
@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
     };
 
     // Initialize Bitcoin wallet client if configured
-    let mut btc_wallet = if cli.btc_rpc_url.is_some()
+    let btc_wallet = if cli.btc_rpc_url.is_some()
         || cli.btc_rpc_user.is_some()
         || cli.btc_rpc_pass.is_some()
     {
@@ -539,6 +539,7 @@ async fn run_node_loop(
 
 /// Run the node event loop receiving commands from a channel instead of stdin (without fiat)
 #[cfg(not(feature = "fiat"))]
+#[allow(dead_code, clippy::too_many_arguments)]
 async fn run_node_loop(
     mut swarm: libp2p::Swarm<OpenDexBehaviour>,
     topic: gossipsub::IdentTopic,
@@ -602,6 +603,7 @@ async fn run_node_loop(
     }
 }
 
+#[allow(dead_code, clippy::too_many_arguments)]
 async fn handle_gui_command(
     command: gui_bridge::GuiCommand,
     swarm: &mut libp2p::Swarm<OpenDexBehaviour>,
@@ -616,7 +618,12 @@ async fn handle_gui_command(
     use protocol::message::AMOUNT_SCALE;
 
     match command {
-        GuiCommand::PlaceOrder { side, market, price, amount } => {
+        GuiCommand::PlaceOrder {
+            side,
+            market,
+            price,
+            amount,
+        } => {
             let order = crate::order_factory::create_order(
                 local_peer_id.to_string(),
                 market,
@@ -696,25 +703,25 @@ async fn handle_gui_command(
         }
 
         GuiCommand::CancelOrder { order_id } => {
-            if let Some(order) = order_book.get_order(&order_id).cloned() {
-                if order_book.remove_order(order_id) {
-                    let _ = balance_book.unlock_for_order(&order);
-                    let _ = balance_book.save();
-                    let _ = order_book.save_orders();
+            if let Some(order) = order_book.get_order(&order_id).cloned()
+                && order_book.remove_order(order_id)
+            {
+                let _ = balance_book.unlock_for_order(&order);
+                let _ = balance_book.save();
+                let _ = order_book.save_orders();
 
-                    let cancelled = protocol::message::OrderCancelled {
-                        order_id,
-                        trader: order.trader.clone(),
-                    };
-                    let message = protocol::message::Message {
-                        message_type: protocol::message::MessageType::OrderCancelled,
-                        sender: local_peer_id.to_string(),
-                        payload: serde_json::to_string(&cancelled).unwrap_or_default(),
-                        timestamp: chrono::Utc::now().timestamp() as u64,
-                        schema_version: protocol::message::SCHEMA_VERSION,
-                    };
-                    let _ = crate::network::publish_message(swarm, topic, &message);
-                }
+                let cancelled = protocol::message::OrderCancelled {
+                    order_id,
+                    trader: order.trader.clone(),
+                };
+                let message = protocol::message::Message {
+                    message_type: protocol::message::MessageType::OrderCancelled,
+                    sender: local_peer_id.to_string(),
+                    payload: serde_json::to_string(&cancelled).unwrap_or_default(),
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    schema_version: protocol::message::SCHEMA_VERSION,
+                };
+                let _ = crate::network::publish_message(swarm, topic, &message);
             }
         }
 
@@ -730,7 +737,10 @@ async fn handle_gui_command(
                 protocol::message::Asset::BTC => "BTC",
                 protocol::message::Asset::XMR => "XMR",
             };
-            let _ = update_tx.send(GuiUpdate::LogMessage(format!("Funded {} with {}", asset_label, amount)));
+            let _ = update_tx.send(GuiUpdate::LogMessage(format!(
+                "Funded {} with {}",
+                asset_label, amount
+            )));
             // Send updated balances
             let mut balances = Vec::new();
             for a in [protocol::message::Asset::BTC, protocol::message::Asset::XMR] {
@@ -740,20 +750,18 @@ async fn handle_gui_command(
             let _ = update_tx.send(GuiUpdate::BalancesUpdated(balances));
         }
 
-        GuiCommand::ConnectPeer { multiaddr } => {
-            match multiaddr.parse::<Multiaddr>() {
-                Ok(addr) => {
-                    if let Err(e) = swarm.dial(addr.clone()) {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("Dial error: {}", e)));
-                    } else {
-                        let _ = update_tx.send(GuiUpdate::LogMessage(format!("Dialing {}", addr)));
-                    }
-                }
-                Err(e) => {
-                    let _ = update_tx.send(GuiUpdate::Error(format!("Invalid address: {}", e)));
+        GuiCommand::ConnectPeer { multiaddr } => match multiaddr.parse::<Multiaddr>() {
+            Ok(addr) => {
+                if let Err(e) = swarm.dial(addr.clone()) {
+                    let _ = update_tx.send(GuiUpdate::Error(format!("Dial error: {}", e)));
+                } else {
+                    let _ = update_tx.send(GuiUpdate::LogMessage(format!("Dialing {}", addr)));
                 }
             }
-        }
+            Err(e) => {
+                let _ = update_tx.send(GuiUpdate::Error(format!("Invalid address: {}", e)));
+            }
+        },
 
         GuiCommand::RequestBalances => {
             let trader = local_peer_id.to_string();
@@ -783,7 +791,12 @@ async fn handle_gui_command(
                 state = ?state,
                 "GUI: advancing trade state"
             );
-            if let Err(e) = crate::trade_state::advance_trade_to_state(trade_book, trade_id, state.clone(), timestamp) {
+            if let Err(e) = crate::trade_state::advance_trade_to_state(
+                trade_book,
+                trade_id,
+                state.clone(),
+                timestamp,
+            ) {
                 tracing::error!(trade_id = %trade_id, error = %e, "GUI: trade state transition failed");
                 let _ = update_tx.send(GuiUpdate::Error(format!("Trade state error: {}", e)));
                 return;
@@ -792,28 +805,42 @@ async fn handle_gui_command(
                 match &state {
                     protocol::message::TradeState::EscrowFunded => {
                         tracing::info!(trade_id = %trade_id, "GUI: funding escrow");
-                        if let Err(e) = crate::escrow::fund_local_escrow(balance_book, local_peer_id, trade) {
+                        if let Err(e) =
+                            crate::escrow::fund_local_escrow(balance_book, local_peer_id, trade)
+                        {
                             tracing::error!(trade_id = %trade_id, error = %e, "GUI: escrow funding failed");
-                            let _ = update_tx.send(GuiUpdate::Error(format!("Escrow funding error: {}", e)));
+                            let _ = update_tx
+                                .send(GuiUpdate::Error(format!("Escrow funding error: {}", e)));
                         }
                     }
                     protocol::message::TradeState::Settled => {
                         tracing::info!(trade_id = %trade_id, "GUI: releasing escrow and settling");
                         // Release escrow before normal settlement
-                        if let Err(e) = crate::escrow::release_local_escrow(balance_book, local_peer_id, trade) {
+                        if let Err(e) =
+                            crate::escrow::release_local_escrow(balance_book, local_peer_id, trade)
+                        {
                             tracing::error!(trade_id = %trade_id, error = %e, "GUI: escrow release failed");
-                            let _ = update_tx.send(GuiUpdate::Error(format!("Escrow release error: {}", e)));
+                            let _ = update_tx
+                                .send(GuiUpdate::Error(format!("Escrow release error: {}", e)));
                         }
-                        if let Err(e) = crate::settlement::settle_local_trade(balance_book, local_peer_id, trade) {
+                        if let Err(e) = crate::settlement::settle_local_trade(
+                            balance_book,
+                            local_peer_id,
+                            trade,
+                        ) {
                             tracing::error!(trade_id = %trade_id, error = %e, "GUI: settlement failed");
-                            let _ = update_tx.send(GuiUpdate::Error(format!("Settlement error: {}", e)));
+                            let _ = update_tx
+                                .send(GuiUpdate::Error(format!("Settlement error: {}", e)));
                         }
                     }
                     protocol::message::TradeState::Cancelled => {
                         tracing::info!(trade_id = %trade_id, "GUI: returning escrow");
-                        if let Err(e) = crate::escrow::return_local_escrow(balance_book, local_peer_id, trade) {
+                        if let Err(e) =
+                            crate::escrow::return_local_escrow(balance_book, local_peer_id, trade)
+                        {
                             tracing::error!(trade_id = %trade_id, error = %e, "GUI: escrow return failed");
-                            let _ = update_tx.send(GuiUpdate::Error(format!("Escrow return error: {}", e)));
+                            let _ = update_tx
+                                .send(GuiUpdate::Error(format!("Escrow return error: {}", e)));
                         }
                     }
                     _ => {}

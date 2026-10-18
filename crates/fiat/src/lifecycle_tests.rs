@@ -58,7 +58,9 @@ fn complete_trade_lifecycle() {
     assert_eq!(trade.state, FiatTradeState::CryptoReserved);
 
     // 4. Payment instructions sent
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     assert_eq!(trade.state, FiatTradeState::PaymentRequested);
 
     // 5. Taker submits payment
@@ -94,7 +96,9 @@ fn payment_timeout_failure() {
 
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     trade.transition(FiatTradeState::PaymentPending, 5).unwrap();
 
     // Payment deadline expires — trade fails
@@ -110,7 +114,9 @@ fn dispute_from_payment_pending() {
 
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     trade.transition(FiatTradeState::PaymentPending, 5).unwrap();
 
     // Taker opens dispute
@@ -128,7 +134,9 @@ fn dispute_resolved_with_refund() {
 
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     trade.transition(FiatTradeState::PaymentPending, 5).unwrap();
     trade.transition(FiatTradeState::Detected, 6).unwrap();
 
@@ -151,7 +159,9 @@ fn payment_reversal_after_completion() {
     assert_eq!(trade.state, FiatTradeState::Complete);
 
     // Payment reversal detected
-    trade.transition(FiatTradeState::ReversalDetected, 11).unwrap();
+    trade
+        .transition(FiatTradeState::ReversalDetected, 11)
+        .unwrap();
     assert_eq!(trade.state, FiatTradeState::ReversalDetected);
 
     // Dispute opened for reversal
@@ -162,7 +172,9 @@ fn payment_reversal_after_completion() {
 fn complete_trade(trade: &mut FiatTrade) {
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     trade.transition(FiatTradeState::PaymentPending, 5).unwrap();
     trade.transition(FiatTradeState::Detected, 6).unwrap();
     trade.transition(FiatTradeState::Confirming, 7).unwrap();
@@ -265,15 +277,12 @@ fn dispute_with_evidence_collection() {
     let maker = ParticipantId(Uuid::new_v4());
     let taker = ParticipantId(Uuid::new_v4());
 
-    let mut dispute = Dispute::new(
-        trade_id,
-        maker,
-        DisputeReason::IncorrectAmount,
-        1,
-    );
+    let mut dispute = Dispute::new(trade_id, maker, DisputeReason::IncorrectAmount, 1);
 
     // Evidence collection phase
-    dispute.transition(DisputeState::EvidenceCollection, 2).unwrap();
+    dispute
+        .transition(DisputeState::EvidenceCollection, 2)
+        .unwrap();
 
     // Taker submits bank statement
     let evidence = Evidence {
@@ -378,11 +387,15 @@ fn manual_trade_lifecycle() {
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
 
     // 4. Maker sends bank details (payment instructions)
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
     assert_eq!(trade.state, FiatTradeState::PaymentRequested);
 
     // 5. Taker makes payment externally, then clicks "I've paid"
-    trade.transition(FiatTradeState::PaymentSubmitted, 5).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentSubmitted, 5)
+        .unwrap();
     assert_eq!(trade.state, FiatTradeState::PaymentSubmitted);
 
     // 6. Maker checks bank account, clicks "I confirm payment"
@@ -403,8 +416,12 @@ fn manual_flow_cannot_skip_maker_confirm() {
     let mut trade = make_test_trade();
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
-    trade.transition(FiatTradeState::PaymentSubmitted, 5).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
+    trade
+        .transition(FiatTradeState::PaymentSubmitted, 5)
+        .unwrap();
 
     // Cannot skip maker confirmation and go straight to crypto release
     assert!(trade.transition(FiatTradeState::CryptoRelease, 6).is_err());
@@ -417,8 +434,12 @@ fn manual_flow_timeout() {
     let mut trade = make_test_trade();
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
-    trade.transition(FiatTradeState::PaymentSubmitted, 5).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
+    trade
+        .transition(FiatTradeState::PaymentSubmitted, 5)
+        .unwrap();
 
     // Timeout — maker never confirmed
     trade.transition(FiatTradeState::Failed, 6).unwrap();
@@ -431,8 +452,12 @@ fn manual_flow_dispute_from_payment_submitted() {
     let mut trade = make_test_trade();
     trade.transition(FiatTradeState::Accepted, 2).unwrap();
     trade.transition(FiatTradeState::CryptoReserved, 3).unwrap();
-    trade.transition(FiatTradeState::PaymentRequested, 4).unwrap();
-    trade.transition(FiatTradeState::PaymentSubmitted, 5).unwrap();
+    trade
+        .transition(FiatTradeState::PaymentRequested, 4)
+        .unwrap();
+    trade
+        .transition(FiatTradeState::PaymentSubmitted, 5)
+        .unwrap();
 
     // Maker opens dispute — claims no payment received
     trade.transition(FiatTradeState::Disputed, 6).unwrap();

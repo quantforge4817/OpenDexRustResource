@@ -8,10 +8,7 @@ pub enum FiatError {
     /// Payment not found by the adapter.
     PaymentNotFound,
     /// Payment amount does not match the expected amount.
-    AmountMismatch {
-        expected: u64,
-        actual: u64,
-    },
+    AmountMismatch { expected: u64, actual: u64 },
     /// Payment currency does not match the expected currency.
     CurrencyMismatch,
     /// Payment reference does not match the trade reference.
@@ -31,10 +28,7 @@ pub enum FiatError {
     /// Dispute is already open for this trade.
     DisputeAlreadyOpen,
     /// Invalid state transition.
-    InvalidStateTransition {
-        from: String,
-        to: String,
-    },
+    InvalidStateTransition { from: String, to: String },
     /// General settlement error.
     SettlementError(String),
 }
@@ -44,7 +38,11 @@ impl std::fmt::Display for FiatError {
         match self {
             FiatError::PaymentNotFound => write!(f, "payment not found"),
             FiatError::AmountMismatch { expected, actual } => {
-                write!(f, "payment amount mismatch: expected {}, actual {}", expected, actual)
+                write!(
+                    f,
+                    "payment amount mismatch: expected {}, actual {}",
+                    expected, actual
+                )
             }
             FiatError::CurrencyMismatch => write!(f, "payment currency mismatch"),
             FiatError::ReferenceMismatch => write!(f, "payment reference mismatch"),
@@ -95,7 +93,9 @@ impl std::fmt::Display for SettlementError {
             }
             SettlementError::MultisigError(msg) => write!(f, "multisig error: {}", msg),
             SettlementError::Unauthorized => write!(f, "unauthorized: caller not permitted"),
-            SettlementError::RateLimited => write!(f, "rate limit exceeded, please try again later"),
+            SettlementError::RateLimited => {
+                write!(f, "rate limit exceeded, please try again later")
+            }
         }
     }
 }

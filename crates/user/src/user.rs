@@ -263,7 +263,11 @@ impl XmrWalletAddress {
             return Err(UserError::InvalidXmrWalletAddress);
         }
         // Monero addresses start with 4 (mainnet) or 5 (stagenet/testnet)
-        if !(address.starts_with('4') || address.starts_with('5') || address.starts_with('7') || address.starts_with('8')) {
+        if !(address.starts_with('4')
+            || address.starts_with('5')
+            || address.starts_with('7')
+            || address.starts_with('8'))
+        {
             return Err(UserError::InvalidXmrWalletAddress);
         }
         Ok(Self(address))
@@ -442,7 +446,8 @@ impl Reputation {
         // Update running average incrementally
         let new_rating = rating as f64;
         let current_count = self.rating_count as f64;
-        self.average_rating = (self.average_rating * current_count + new_rating) / (current_count + 1.0);
+        self.average_rating =
+            (self.average_rating * current_count + new_rating) / (current_count + 1.0);
         self.rating_count += 1;
         self.last_updated = Utc::now();
         Ok(())
@@ -656,9 +661,7 @@ impl UserAccount {
 
     /// Get the account age in days.
     pub fn age_days(&self, now: DateTime<Utc>) -> u64 {
-        now.signed_duration_since(self.created_at)
-            .num_days()
-            .max(0) as u64
+        now.signed_duration_since(self.created_at).num_days().max(0) as u64
     }
 
     /// Set the Bitcoin wallet address.
@@ -787,24 +790,50 @@ mod tests {
         assert!(Email::new("bob.test@domain.org".to_string()).is_ok());
 
         // Invalid emails
-        assert_eq!(Email::new("".to_string()).unwrap_err(), UserError::InvalidEmail);
-        assert_eq!(Email::new("noatsign".to_string()).unwrap_err(), UserError::InvalidEmail);
-        assert_eq!(Email::new("@nodomain.com".to_string()).unwrap_err(), UserError::InvalidEmail);
-        assert_eq!(Email::new("user@".to_string()).unwrap_err(), UserError::InvalidEmail);
-        assert_eq!(Email::new("user@nodot".to_string()).unwrap_err(), UserError::InvalidEmail);
+        assert_eq!(
+            Email::new("".to_string()).unwrap_err(),
+            UserError::InvalidEmail
+        );
+        assert_eq!(
+            Email::new("noatsign".to_string()).unwrap_err(),
+            UserError::InvalidEmail
+        );
+        assert_eq!(
+            Email::new("@nodomain.com".to_string()).unwrap_err(),
+            UserError::InvalidEmail
+        );
+        assert_eq!(
+            Email::new("user@".to_string()).unwrap_err(),
+            UserError::InvalidEmail
+        );
+        assert_eq!(
+            Email::new("user@nodot".to_string()).unwrap_err(),
+            UserError::InvalidEmail
+        );
     }
 
     #[test]
     fn btc_wallet_address_validation() {
         // Valid Bitcoin addresses
         assert!(BtcWalletAddress::new("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string()).is_ok());
-        assert!(BtcWalletAddress::new("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq".to_string()).is_ok());
+        assert!(
+            BtcWalletAddress::new("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq".to_string()).is_ok()
+        );
         assert!(BtcWalletAddress::new("3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy".to_string()).is_ok());
 
         // Invalid Bitcoin addresses
-        assert_eq!(BtcWalletAddress::new("".to_string()).unwrap_err(), UserError::InvalidBtcWalletAddress);
-        assert_eq!(BtcWalletAddress::new("short".to_string()).unwrap_err(), UserError::InvalidBtcWalletAddress);
-        assert_eq!(BtcWalletAddress::new("4InvalidAddress12345678901234567890".to_string()).unwrap_err(), UserError::InvalidBtcWalletAddress);
+        assert_eq!(
+            BtcWalletAddress::new("".to_string()).unwrap_err(),
+            UserError::InvalidBtcWalletAddress
+        );
+        assert_eq!(
+            BtcWalletAddress::new("short".to_string()).unwrap_err(),
+            UserError::InvalidBtcWalletAddress
+        );
+        assert_eq!(
+            BtcWalletAddress::new("4InvalidAddress12345678901234567890".to_string()).unwrap_err(),
+            UserError::InvalidBtcWalletAddress
+        );
     }
 
     #[test]
@@ -814,11 +843,20 @@ mod tests {
         assert!(XmrWalletAddress::new(valid_xmr.clone()).is_ok());
 
         // Invalid Monero addresses
-        assert_eq!(XmrWalletAddress::new("".to_string()).unwrap_err(), UserError::InvalidXmrWalletAddress);
-        assert_eq!(XmrWalletAddress::new("short".to_string()).unwrap_err(), UserError::InvalidXmrWalletAddress);
+        assert_eq!(
+            XmrWalletAddress::new("".to_string()).unwrap_err(),
+            UserError::InvalidXmrWalletAddress
+        );
+        assert_eq!(
+            XmrWalletAddress::new("short".to_string()).unwrap_err(),
+            UserError::InvalidXmrWalletAddress
+        );
         // Wrong length
         let wrong_len = "4".to_string() + &"a".repeat(93);
-        assert_eq!(XmrWalletAddress::new(wrong_len).unwrap_err(), UserError::InvalidXmrWalletAddress);
+        assert_eq!(
+            XmrWalletAddress::new(wrong_len).unwrap_err(),
+            UserError::InvalidXmrWalletAddress
+        );
     }
 
     #[test]
@@ -826,7 +864,8 @@ mod tests {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
         let participant = ParticipantId(Uuid::new_v4());
-        let account = UserAccount::new(username, "password123", email, None, None, participant).unwrap();
+        let account =
+            UserAccount::new(username, "password123", email, None, None, participant).unwrap();
 
         assert!(account.is_active());
         assert_eq!(account.status, AccountStatus::Active);
@@ -844,7 +883,15 @@ mod tests {
         let btc = BtcWalletAddress::new("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string()).unwrap();
         let xmr = XmrWalletAddress::new("4".to_string() + &"a".repeat(94));
         let participant = ParticipantId(Uuid::new_v4());
-        let account = UserAccount::new(username, "password123", email, Some(btc), xmr.ok(), participant).unwrap();
+        let account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            Some(btc),
+            xmr.ok(),
+            participant,
+        )
+        .unwrap();
 
         assert!(account.btc_wallet.is_some());
         assert!(account.xmr_wallet.is_some());
@@ -854,7 +901,15 @@ mod tests {
     fn email_verification() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         assert!(!account.is_email_verified());
         account.verify_email();
@@ -865,7 +920,15 @@ mod tests {
     fn account_suspension() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         assert!(account.is_active());
         account.suspend();
@@ -879,7 +942,15 @@ mod tests {
     fn account_age_calculation() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         // Fresh account — 0 days old
         assert_eq!(account.age_days(Utc::now()), 0);
@@ -893,7 +964,15 @@ mod tests {
     fn reputation_starts_empty() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         assert_eq!(account.reputation.makes, 0);
         assert_eq!(account.reputation.takes, 0);
@@ -910,7 +989,15 @@ mod tests {
     fn reputation_records_activity() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         account.record_make();
         account.record_make();
@@ -933,7 +1020,15 @@ mod tests {
     fn reputation_rating_average() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         account.record_rating(5).unwrap();
         assert!((account.reputation.average_rating - 5.0).abs() < f64::EPSILON);
@@ -951,10 +1046,24 @@ mod tests {
     fn reputation_rating_validation() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
-        assert_eq!(account.record_rating(0).unwrap_err(), UserError::InvalidRating);
-        assert_eq!(account.record_rating(6).unwrap_err(), UserError::InvalidRating);
+        assert_eq!(
+            account.record_rating(0).unwrap_err(),
+            UserError::InvalidRating
+        );
+        assert_eq!(
+            account.record_rating(6).unwrap_err(),
+            UserError::InvalidRating
+        );
         assert!(account.record_rating(1).is_ok());
         assert!(account.record_rating(5).is_ok());
     }
@@ -963,7 +1072,15 @@ mod tests {
     fn reputation_trust_score_increases_with_trades() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         // Fresh account has low score (no trades, no ratings)
         let initial_score = account.trust_score();
@@ -977,14 +1094,27 @@ mod tests {
         account.record_rating(4).unwrap();
 
         let improved_score = account.trust_score();
-        assert!(improved_score > initial_score, "Score should increase: {} > {}", improved_score, initial_score);
+        assert!(
+            improved_score > initial_score,
+            "Score should increase: {} > {}",
+            improved_score,
+            initial_score
+        );
     }
 
     #[test]
     fn reputation_disputes_lower_score() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         // 10 completed trades
         for _ in 0..10 {
@@ -998,14 +1128,27 @@ mod tests {
         account.record_dispute();
         let bad_score = account.trust_score();
 
-        assert!(bad_score < good_score, "Disputes should lower score: {} < {}", bad_score, good_score);
+        assert!(
+            bad_score < good_score,
+            "Disputes should lower score: {} < {}",
+            bad_score,
+            good_score
+        );
     }
 
     #[test]
     fn reputation_tier_progression() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         // Newcomer: no trades
         assert_eq!(account.reputation_tier(), ReputationTier::Newcomer);
@@ -1017,14 +1160,26 @@ mod tests {
         account.record_rating(5).unwrap();
         // With 5 trades and a 5-star rating, score should be >= 30
         let tier = account.reputation_tier();
-        assert!(tier == ReputationTier::Trader || tier == ReputationTier::Trusted, "Expected Trader or Trusted, got {:?}", tier);
+        assert!(
+            tier == ReputationTier::Trader || tier == ReputationTier::Trusted,
+            "Expected Trader or Trusted, got {:?}",
+            tier
+        );
     }
 
     #[test]
     fn reputation_response_rate() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         // New user starts at 100%
         assert_eq!(account.reputation.response_rate(), 100.0);
@@ -1050,7 +1205,15 @@ mod tests {
     fn reputation_persists_with_account() {
         let username = Username::new("alice".to_string()).unwrap();
         let email = Email::new("alice@example.com".to_string()).unwrap();
-        let mut account = UserAccount::new(username, "password123", email, None, None, ParticipantId(Uuid::new_v4())).unwrap();
+        let mut account = UserAccount::new(
+            username,
+            "password123",
+            email,
+            None,
+            None,
+            ParticipantId(Uuid::new_v4()),
+        )
+        .unwrap();
 
         account.record_completed_trade();
         account.record_completed_trade();
@@ -1071,7 +1234,13 @@ mod tests {
         assert!(rep.reviews.is_empty());
         assert_eq!(rep.review_count(), 0);
 
-        let review = Review::new(trade_id, alice, bob, rating, Some("Great trader!".to_string()));
+        let review = Review::new(
+            trade_id,
+            alice,
+            bob,
+            rating,
+            Some("Great trader!".to_string()),
+        );
         rep.add_review(review);
 
         assert_eq!(rep.review_count(), 1);
@@ -1085,9 +1254,27 @@ mod tests {
         let bob = UserId::new();
         let mut rep = Reputation::new();
 
-        rep.add_review(Review::new(opendex_types::TradeId(Uuid::new_v4()), alice, bob, Rating::new(5).unwrap(), None));
-        rep.add_review(Review::new(opendex_types::TradeId(Uuid::new_v4()), alice, bob, Rating::new(3).unwrap(), None));
-        rep.add_review(Review::new(opendex_types::TradeId(Uuid::new_v4()), alice, bob, Rating::new(4).unwrap(), None));
+        rep.add_review(Review::new(
+            opendex_types::TradeId(Uuid::new_v4()),
+            alice,
+            bob,
+            Rating::new(5).unwrap(),
+            None,
+        ));
+        rep.add_review(Review::new(
+            opendex_types::TradeId(Uuid::new_v4()),
+            alice,
+            bob,
+            Rating::new(3).unwrap(),
+            None,
+        ));
+        rep.add_review(Review::new(
+            opendex_types::TradeId(Uuid::new_v4()),
+            alice,
+            bob,
+            Rating::new(4).unwrap(),
+            None,
+        ));
 
         assert_eq!(rep.review_count(), 3);
         assert!((rep.average_rating - 4.0).abs() < 0.01);
@@ -1128,7 +1315,13 @@ mod tests {
         let alice = UserId::new();
         let bob = UserId::new();
         let mut rep = Reputation::new();
-        rep.add_review(Review::new(opendex_types::TradeId(Uuid::new_v4()), alice, bob, Rating::new(4).unwrap(), None));
+        rep.add_review(Review::new(
+            opendex_types::TradeId(Uuid::new_v4()),
+            alice,
+            bob,
+            Rating::new(4).unwrap(),
+            None,
+        ));
         assert_eq!(rep.average_rating_str(), "4.0/5.0");
     }
 }

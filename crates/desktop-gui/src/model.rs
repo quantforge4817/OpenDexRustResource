@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
+use opendex_user::AuthService;
 use protocol::message::{Asset, Order, Side, Trade, TradeState};
 use uuid::Uuid;
-use opendex_user::AuthService;
 
 /// View model for the order book
 #[derive(Debug, Clone, Default)]
@@ -72,8 +72,8 @@ pub struct PriceAlert {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlertDirection {
-    Above,  // Alert when price goes above target
-    Below,  // Alert when price goes below target
+    Above, // Alert when price goes above target
+    Below, // Alert when price goes below target
 }
 
 /// Trade form state
@@ -112,7 +112,10 @@ pub struct NodeStatus {
 pub enum NodeUpdate {
     OrderBookUpdated(OrderBookView),
     TradeAdded(TradeView),
-    TradeStateChanged { trade_id: Uuid, state: TradeState },
+    TradeStateChanged {
+        trade_id: Uuid,
+        state: TradeState,
+    },
     BalancesUpdated(Vec<BalanceView>),
     PeerConnected(String),
     PeerDisconnected(String),
@@ -124,11 +127,22 @@ pub enum NodeUpdate {
     LogMessage(String),
     Error(String),
     WalletAddress(String),
-    WalletBalance { available: f64, unlocked: f64 },
-    WalletConnected { connected: bool, address: Option<String> },
+    WalletBalance {
+        available: f64,
+        unlocked: f64,
+    },
+    WalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
     BtcWalletAddress(String),
-    BtcWalletBalance { balance: f64 },
-    BtcWalletConnected { connected: bool, address: Option<String> },
+    BtcWalletBalance {
+        balance: f64,
+    },
+    BtcWalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
 }
 
 /// Authentication screen state
@@ -286,7 +300,7 @@ pub struct TradingAnalytics {
     pub total_trades: u32,
     pub completed_trades: u32,
     pub failed_trades: u32,
-    pub win_rate: f64,       // percentage 0-100
+    pub win_rate: f64, // percentage 0-100
     pub profit_loss_xmr: f64,
     pub average_trade_size: f64,
 }
@@ -347,16 +361,18 @@ impl GuiModel {
             btc_wallet_address: None,
             btc_wallet_balance: None,
             // Auth state — persistent storage at ~/.opendex/users.json
-            auth_service: Arc::new(Mutex::new(|| -> anyhow::Result<AuthService> {
+            auth_service: {
                 let home = std::env::var("HOME").unwrap_or_default();
                 let dir = format!("{home}/.opendex");
                 std::fs::create_dir_all(&dir).ok();
                 let path = format!("{dir}/users.json");
-                AuthService::with_storage(&path)
-            }().unwrap_or_else(|e| {
-                tracing::warn!(error = %e, "Failed to load persistent user storage, using in-memory");
-                AuthService::new()
-            }))),
+                Arc::new(Mutex::new(
+                    AuthService::with_storage(&path).unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "Failed to load persistent user storage, using in-memory");
+                        AuthService::new()
+                    }),
+                ))
+            },
             auth_screen: AuthScreen::Login,
             login_username: String::new(),
             login_password: String::new(),
@@ -395,7 +411,9 @@ impl GuiModel {
         if fractional == 0 {
             whole.to_string()
         } else {
-            format!("{whole}.{fractional:08}").trim_end_matches('0').to_string()
+            format!("{whole}.{fractional:08}")
+                .trim_end_matches('0')
+                .to_string()
         }
     }
 
@@ -406,7 +424,9 @@ impl GuiModel {
         if fractional == 0 {
             whole.to_string()
         } else {
-            format!("{whole}.{fractional:08}").trim_end_matches('0').to_string()
+            format!("{whole}.{fractional:08}")
+                .trim_end_matches('0')
+                .to_string()
         }
     }
 }

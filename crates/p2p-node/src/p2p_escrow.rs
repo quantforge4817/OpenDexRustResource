@@ -7,11 +7,11 @@
 /// - Returning crypto to the maker when a trade is cancelled
 ///
 /// Supports both XMR (via Monero wallet RPC) and BTC (via Bitcoin Core RPC).
-use anyhow::{Result, Context, anyhow};
+use anyhow::{Context, Result, anyhow};
 use protocol::p2p::{CryptoAsset, P2PTrade};
 
-use crate::wallet_client::MoneroWalletClient;
 use crate::btc_wallet_client::BitcoinWalletClient;
+use crate::wallet_client::MoneroWalletClient;
 
 /// Wrapper that holds optional references to both wallet clients.
 /// Used to perform on-chain operations for P2P trades.
@@ -39,10 +39,7 @@ impl<'a> P2PEscrowContext<'a> {
                 .monero_wallet
                 .map(|w| w.is_connected())
                 .unwrap_or(false),
-            CryptoAsset::BTC => self
-                .btc_wallet
-                .map(|w| w.is_connected())
-                .unwrap_or(false),
+            CryptoAsset::BTC => self.btc_wallet.map(|w| w.is_connected()).unwrap_or(false),
         }
     }
 
@@ -50,7 +47,11 @@ impl<'a> P2PEscrowContext<'a> {
     ///
     /// For XMR, creates a subaddress labeled with the trade ID.
     /// For BTC, generates a new bech32 address labeled with the trade ID.
-    pub async fn generate_escrow_address(&self, asset: &CryptoAsset, trade_id: &str) -> Result<String> {
+    pub async fn generate_escrow_address(
+        &self,
+        asset: &CryptoAsset,
+        trade_id: &str,
+    ) -> Result<String> {
         match asset {
             CryptoAsset::XMR => {
                 let wallet = self.monero_wallet.ok_or_else(|| {
@@ -248,12 +249,17 @@ impl<'a> P2PEscrowContext<'a> {
     }
 
     /// Verify an escrow deposit transaction has been confirmed.
-    pub async fn verify_escrow_deposit(&self, asset: &CryptoAsset, tx_hash: &str, address: &str) -> Result<bool> {
+    pub async fn verify_escrow_deposit(
+        &self,
+        asset: &CryptoAsset,
+        tx_hash: &str,
+        address: &str,
+    ) -> Result<bool> {
         match asset {
             CryptoAsset::XMR => {
-                let wallet = self.monero_wallet.ok_or_else(|| {
-                    anyhow!("Monero wallet not configured")
-                })?;
+                let wallet = self
+                    .monero_wallet
+                    .ok_or_else(|| anyhow!("Monero wallet not configured"))?;
 
                 let confirmed = wallet
                     .check_transaction(tx_hash, address)
@@ -268,9 +274,9 @@ impl<'a> P2PEscrowContext<'a> {
                 Ok(confirmed)
             }
             CryptoAsset::BTC => {
-                let wallet = self.btc_wallet.ok_or_else(|| {
-                    anyhow!("Bitcoin wallet not configured")
-                })?;
+                let wallet = self
+                    .btc_wallet
+                    .ok_or_else(|| anyhow!("Bitcoin wallet not configured"))?;
 
                 let confirmed = wallet
                     .is_transaction_confirmed(tx_hash, 1)
@@ -295,10 +301,7 @@ impl<'a> P2PEscrowContext<'a> {
 /// 3. Returns the escrow address and transaction hash
 ///
 /// Updates the trade's `escrow_address` and `escrow_tx_hash` fields.
-pub async fn fund_escrow(
-    ctx: &P2PEscrowContext<'_>,
-    trade: &mut P2PTrade,
-) -> Result<()> {
+pub async fn fund_escrow(ctx: &P2PEscrowContext<'_>, trade: &mut P2PTrade) -> Result<()> {
     let trade_id = trade.id.to_string();
 
     // Check wallet connectivity
@@ -358,10 +361,7 @@ pub async fn fund_escrow(
 ///
 /// Sends the trade amount from escrow to the taker's crypto address.
 /// Updates the trade's `release_tx_hash` field.
-pub async fn release_crypto(
-    ctx: &P2PEscrowContext<'_>,
-    trade: &mut P2PTrade,
-) -> Result<()> {
+pub async fn release_crypto(ctx: &P2PEscrowContext<'_>, trade: &mut P2PTrade) -> Result<()> {
     let trade_id = trade.id.to_string();
 
     if !ctx.is_wallet_connected(&trade.crypto_asset) {
@@ -408,10 +408,7 @@ pub async fn release_crypto(
 /// Execute the escrow return flow for a cancelled P2P trade.
 ///
 /// Returns the escrowed crypto back to the maker.
-pub async fn return_escrow(
-    ctx: &P2PEscrowContext<'_>,
-    trade: &P2PTrade,
-) -> Result<()> {
+pub async fn return_escrow(ctx: &P2PEscrowContext<'_>, trade: &P2PTrade) -> Result<()> {
     if !ctx.is_wallet_connected(&trade.crypto_asset) {
         tracing::warn!(
             trade_id = %trade.id,

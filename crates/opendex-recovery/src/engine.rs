@@ -79,13 +79,7 @@ impl RecoveryEngine for DeterministicRecoveryEngine {
         });
 
         match state {
-            SwapState::Funding => {
-                if btc_funded && xmr_funded {
-                    Ok(RecoveryDecision::Wait)
-                } else {
-                    Ok(RecoveryDecision::Wait)
-                }
-            }
+            SwapState::Funding => Ok(RecoveryDecision::Wait),
             SwapState::Funded => {
                 if btc_funded && xmr_funded {
                     Ok(RecoveryDecision::Redeem {
@@ -117,18 +111,14 @@ mod tests {
     #[test]
     fn test_deterministic_wait_on_created() {
         let engine = DeterministicRecoveryEngine::new();
-        let decision = engine
-            .evaluate(&SwapState::Created, &[])
-            .unwrap();
+        let decision = engine.evaluate(&SwapState::Created, &[]).unwrap();
         assert_eq!(decision, RecoveryDecision::Wait);
     }
 
     #[test]
     fn test_deterministic_wait_on_funding() {
         let engine = DeterministicRecoveryEngine::new();
-        let decision = engine
-            .evaluate(&SwapState::Funding, &[])
-            .unwrap();
+        let decision = engine.evaluate(&SwapState::Funding, &[]).unwrap();
         assert_eq!(decision, RecoveryDecision::Wait);
     }
 
@@ -211,9 +201,7 @@ mod tests {
     #[test]
     fn test_deterministic_abort_on_completed() {
         let engine = DeterministicRecoveryEngine::new();
-        let decision = engine
-            .evaluate(&SwapState::Completed, &[])
-            .unwrap();
+        let decision = engine.evaluate(&SwapState::Completed, &[]).unwrap();
         assert_eq!(decision, RecoveryDecision::Abort);
     }
 

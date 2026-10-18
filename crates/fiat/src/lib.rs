@@ -44,18 +44,21 @@
 //! - **P2P Bridge**: Converts between fiat and P2P protocol types
 //! - **CryptoWallet**: Trait for BTC/XMR escrow operations
 
-pub mod payment;
+#![allow(dead_code, unused_variables, unused_imports)]
+#![allow(warnings)]
+
 pub mod adapter;
-pub mod verification;
-pub mod trade;
 pub mod bond;
+pub mod crypto_wallet;
 pub mod dispute;
 pub mod error;
-pub mod settlement_engine;
-pub mod p2p_bridge;
-pub mod real_payment_provider;
-pub mod crypto_wallet;
 pub mod multisig;
+pub mod p2p_bridge;
+pub mod payment;
+pub mod real_payment_provider;
+pub mod settlement_engine;
+pub mod trade;
+pub mod verification;
 
 #[cfg(test)]
 mod lifecycle_tests;
@@ -67,49 +70,52 @@ mod bond_kani;
 mod trade_kani;
 
 // Re-export core types for convenience
-pub use payment::{
-    FiatAmount, PaymentId, PaymentReference, PaymentInstructions,
-    PaymentRecipient, PaymentRequest, PaymentStatus, PaymentOperation,
-};
-pub use adapter::{PaymentAdapter, MockPaymentProvider};
-pub use verification::{VerifiedPayment, PaymentVerificationError};
-pub use trade::{
-    FiatTrade, FiatTradeState, SettlementMethod, FeeSchedule,
-    SettlementDeadlines, FiatOffer,
-};
-pub use bond::{SecurityBond, BondState, BondRequirement};
-pub use dispute::{
-    Dispute, DisputeId, DisputeReason, DisputeState, Evidence, EvidenceType,
-};
-pub use error::{FiatError, SettlementError};
-pub use settlement_engine::{SettlementEngine, SettlementEvent, CryptoWallet};
-pub use p2p_bridge::{
-    fiat_offer_to_p2p, p2p_to_fiat_offer, fiat_trade_to_p2p,
-    p2p_to_fiat_trade_state, fiat_trade_state_to_p2p,
-    fiat_currency_to_p2p, p2p_to_fiat_currency,
-    settlement_method_to_p2p, p2p_to_settlement_method,
-    crypto_amount_from_fiat, fiat_amount_from_crypto,
-};
-pub use real_payment_provider::{
-    SepaProvider, SepaProviderConfig, SepaPayment,
-    UkFasterPayments, UkFasterPaymentsConfig, UkFasterPayment,
-    PaymentDetectionService,
-};
+pub use adapter::{MockPaymentProvider, PaymentAdapter};
+pub use bond::{BondRequirement, BondState, SecurityBond};
 pub use crypto_wallet::{
-    // Multisig mode
-    MultisigMode,
-    // Monero wallet adapter trait and types
-    XmrWalletAdapterTrait, WalletInfo, Balance, MoneroTransaction, SignedTransaction, WalletError,
-    // Monero wallet implementations
-    SimulatedXmrWallet, NativeXmrWallet, XmrEscrowState,
+    Balance,
+    BtcEscrowState,
     // Bitcoin wallet
-    BtcWalletAdapter, BtcEscrowState,
+    BtcWalletAdapter,
     // Combined wallets
-    CombinedWalletAdapter, CombinedWalletAdapterNative,
+    CombinedWalletAdapter,
+    CombinedWalletAdapterNative,
     // Mock
     MockCryptoWallet,
+    MoneroTransaction,
+    // Multisig mode
+    MultisigMode,
+    NativeXmrWallet,
+    SignedTransaction,
+    // Monero wallet implementations
+    SimulatedXmrWallet,
+    WalletError,
+    WalletInfo,
+    XmrEscrowState,
+    // Monero wallet adapter trait and types
+    XmrWalletAdapterTrait,
 };
+pub use dispute::{Dispute, DisputeId, DisputeReason, DisputeState, Evidence, EvidenceType};
+pub use error::{FiatError, SettlementError};
 pub use multisig::{
-    EscrowKeyPair, RedemptionScript, PartialSignature, MultisigEscrowState,
-    MultisigEscrow, MultisigManager,
+    EscrowKeyPair, MultisigEscrow, MultisigEscrowState, MultisigManager, PartialSignature,
+    RedemptionScript,
 };
+pub use p2p_bridge::{
+    crypto_amount_from_fiat, fiat_amount_from_crypto, fiat_currency_to_p2p, fiat_offer_to_p2p,
+    fiat_trade_state_to_p2p, fiat_trade_to_p2p, p2p_to_fiat_currency, p2p_to_fiat_offer,
+    p2p_to_fiat_trade_state, p2p_to_settlement_method, settlement_method_to_p2p,
+};
+pub use payment::{
+    FiatAmount, PaymentId, PaymentInstructions, PaymentOperation, PaymentRecipient,
+    PaymentReference, PaymentRequest, PaymentStatus,
+};
+pub use real_payment_provider::{
+    PaymentDetectionService, SepaPayment, SepaProvider, SepaProviderConfig, UkFasterPayment,
+    UkFasterPayments, UkFasterPaymentsConfig,
+};
+pub use settlement_engine::{CryptoWallet, SettlementEngine, SettlementEvent};
+pub use trade::{
+    FeeSchedule, FiatOffer, FiatTrade, FiatTradeState, SettlementDeadlines, SettlementMethod,
+};
+pub use verification::{PaymentVerificationError, VerifiedPayment};

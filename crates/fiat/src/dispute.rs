@@ -177,11 +177,7 @@ impl Dispute {
     }
 
     /// Resolve the dispute with a decision.
-    pub fn resolve(
-        &mut self,
-        resolution: impl Into<String>,
-        timestamp: u64,
-    ) -> anyhow::Result<()> {
+    pub fn resolve(&mut self, resolution: impl Into<String>, timestamp: u64) -> anyhow::Result<()> {
         self.transition(DisputeState::Resolved, timestamp)?;
         self.resolution = Some(resolution.into());
         Ok(())
@@ -195,11 +191,11 @@ impl DisputeState {
         matches!(
             (self, next),
             (Open, EvidenceCollection)
-            | (EvidenceCollection, UnderReview)
-            | (UnderReview, Resolved)
-            | (Resolved, Appealed)
-            | (Appealed, UnderReview)
-            | (Resolved, Closed)
+                | (EvidenceCollection, UnderReview)
+                | (UnderReview, Resolved)
+                | (Resolved, Appealed)
+                | (Appealed, UnderReview)
+                | (Resolved, Closed)
         )
     }
 }
@@ -222,13 +218,17 @@ mod tests {
         let mut dispute = make_dispute();
         assert_eq!(dispute.state, DisputeState::Open);
 
-        dispute.transition(DisputeState::EvidenceCollection, 2).unwrap();
+        dispute
+            .transition(DisputeState::EvidenceCollection, 2)
+            .unwrap();
         assert_eq!(dispute.state, DisputeState::EvidenceCollection);
 
         dispute.transition(DisputeState::UnderReview, 3).unwrap();
         assert_eq!(dispute.state, DisputeState::UnderReview);
 
-        dispute.resolve("Payment confirmed, trade completed", 4).unwrap();
+        dispute
+            .resolve("Payment confirmed, trade completed", 4)
+            .unwrap();
         assert_eq!(dispute.state, DisputeState::Resolved);
     }
 

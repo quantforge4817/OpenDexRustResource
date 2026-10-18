@@ -14,18 +14,22 @@
 //! - `platforms::windows` — Windows-specific configuration and settings
 //! - `platforms::macos` — macOS-specific configuration and settings
 
-pub mod model;
 pub mod app;
+pub mod model;
 pub mod style;
 pub mod view;
 
 /// Platform-specific modules — extend as needed for each OS.
 pub mod platforms {
     pub mod linux;
-    pub mod windows;
     pub mod macos;
+    pub mod windows;
 }
 
 // Re-exports for convenience
-pub use model::{GuiModel, NodeUpdate, OrderBookView, TradeView, BalanceView, PeerView, TradeForm, NodeStatus};
-pub use app::{Message, Flags, launch_gui, launch_gui_on_main, GuiCommand, GuiUpdate, BalanceUpdate};
+pub use app::{
+    BalanceUpdate, Flags, GuiCommand, GuiUpdate, Message, launch_gui, launch_gui_on_main,
+};
+pub use model::{
+    BalanceView, GuiModel, NodeStatus, NodeUpdate, OrderBookView, PeerView, TradeForm, TradeView,
+};

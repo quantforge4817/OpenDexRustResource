@@ -78,7 +78,10 @@ mod balance_manipulation {
 
         // Try to unlock from locked (should fail - it's in escrow)
         let result = balances.unlock(trader, Asset::BTC, 1000);
-        assert!(result.is_err(), "Unlocking escrowed funds from locked should fail");
+        assert!(
+            result.is_err(),
+            "Unlocking escrowed funds from locked should fail"
+        );
     }
 
     /// Test balance invariant: available + locked + escrowed = total
@@ -154,13 +157,25 @@ mod trade_state_machine {
     #[test]
     fn terminal_states_have_no_transitions() {
         let all_states = vec![
-            TradeState::Created, TradeState::Accepted, TradeState::EscrowFunding,
-            TradeState::EscrowFunded, TradeState::PaymentPending, TradeState::PaymentSent,
-            TradeState::PaymentConfirmed, TradeState::PayoutPending, TradeState::Settled,
-            TradeState::Cancelled, TradeState::Expired, TradeState::Disputed,
+            TradeState::Created,
+            TradeState::Accepted,
+            TradeState::EscrowFunding,
+            TradeState::EscrowFunded,
+            TradeState::PaymentPending,
+            TradeState::PaymentSent,
+            TradeState::PaymentConfirmed,
+            TradeState::PayoutPending,
+            TradeState::Settled,
+            TradeState::Cancelled,
+            TradeState::Expired,
+            TradeState::Disputed,
         ];
 
-        for terminal in &[TradeState::Settled, TradeState::Cancelled, TradeState::Expired] {
+        for terminal in &[
+            TradeState::Settled,
+            TradeState::Cancelled,
+            TradeState::Expired,
+        ] {
             for target in &all_states {
                 if target != terminal {
                     assert!(
@@ -200,7 +215,9 @@ mod trade_state_machine {
     fn cancellation_from_allowed_states() {
         // States that CAN cancel
         let can_cancel = vec![
-            TradeState::Created, TradeState::Accepted, TradeState::EscrowFunding,
+            TradeState::Created,
+            TradeState::Accepted,
+            TradeState::EscrowFunding,
             TradeState::Disputed,
         ];
         for state in can_cancel {
@@ -213,8 +230,11 @@ mod trade_state_machine {
 
         // States that CANNOT cancel (must go through Disputed first)
         let cannot_cancel = vec![
-            TradeState::EscrowFunded, TradeState::PaymentPending, TradeState::PaymentSent,
-            TradeState::PaymentConfirmed, TradeState::PayoutPending,
+            TradeState::EscrowFunded,
+            TradeState::PaymentPending,
+            TradeState::PaymentSent,
+            TradeState::PaymentConfirmed,
+            TradeState::PayoutPending,
         ];
         for state in cannot_cancel {
             assert!(

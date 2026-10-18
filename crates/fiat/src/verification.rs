@@ -3,11 +3,11 @@
 //! A fiat payment requires verification before crypto can be released.
 //! This module defines the verified payment structure and verification errors.
 
-use serde::{Deserialize, Serialize};
 use chrono::DateTime;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
-use crate::payment::{PaymentId, FiatAmount, PaymentReference, PaymentStatus};
+use crate::payment::{FiatAmount, PaymentId, PaymentReference, PaymentStatus};
 use opendex_types::FiatCurrency;
 
 /// Result of a successful payment verification.
@@ -38,7 +38,10 @@ pub enum PaymentVerificationError {
     /// Payment amount does not match expected.
     AmountMismatch { expected: u64, actual: u64 },
     /// Payment currency does not match expected.
-    CurrencyMismatch { expected: FiatCurrency, actual: FiatCurrency },
+    CurrencyMismatch {
+        expected: FiatCurrency,
+        actual: FiatCurrency,
+    },
     /// Payment reference does not match the trade reference.
     ReferenceMismatch,
     /// Payment status is not confirmed.
@@ -53,10 +56,18 @@ impl std::fmt::Display for PaymentVerificationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PaymentVerificationError::AmountMismatch { expected, actual } => {
-                write!(f, "amount mismatch: expected {}, actual {}", expected, actual)
+                write!(
+                    f,
+                    "amount mismatch: expected {}, actual {}",
+                    expected, actual
+                )
             }
             PaymentVerificationError::CurrencyMismatch { expected, actual } => {
-                write!(f, "currency mismatch: expected {}, actual {}", expected, actual)
+                write!(
+                    f,
+                    "currency mismatch: expected {}, actual {}",
+                    expected, actual
+                )
             }
             PaymentVerificationError::ReferenceMismatch => {
                 write!(f, "payment reference mismatch")

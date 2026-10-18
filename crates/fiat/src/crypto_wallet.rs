@@ -239,9 +239,10 @@ impl CryptoWallet for SimulatedXmrWallet {
         amount: u64,
     ) -> Result<String, SettlementError> {
         if *asset != Asset::Xmr {
-            return Err(SettlementError::CryptoWalletError(
-                format!("XMR wallet cannot escrow {}: use XMR wallet for XMR trades", asset)
-            ));
+            return Err(SettlementError::CryptoWalletError(format!(
+                "XMR wallet cannot escrow {}: use XMR wallet for XMR trades",
+                asset
+            )));
         }
 
         let subaddress_index = 1000 + trade_id.0.as_u128() as u32;
@@ -268,10 +269,7 @@ impl CryptoWallet for SimulatedXmrWallet {
         Ok(tx_hash)
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         Ok(format!("xmr_return_{}", trade_id.0.as_hyphenated()))
     }
 }
@@ -342,14 +340,14 @@ impl XmrWalletAdapterTrait for NativeXmrWallet {
         match info.as_ref() {
             Some(w) => Ok(w.address.clone()),
             None => Err(WalletError::ConnectionFailed(
-                "Wallet not connected — call connect() first".to_string()
+                "Wallet not connected — call connect() first".to_string(),
             )),
         }
     }
 
     async fn get_balance(&self) -> Result<Balance, WalletError> {
         Err(WalletError::RpcError(
-            "Native Monero RPC not yet implemented — requires running daemon".to_string()
+            "Native Monero RPC not yet implemented — requires running daemon".to_string(),
         ))
     }
 
@@ -359,7 +357,7 @@ impl XmrWalletAdapterTrait for NativeXmrWallet {
     ) -> Result<SignedTransaction, WalletError> {
         let _ = tx;
         Err(WalletError::SigningFailed(
-            "Native Monero signing not yet implemented — requires running daemon".to_string()
+            "Native Monero signing not yet implemented — requires running daemon".to_string(),
         ))
     }
 
@@ -376,14 +374,15 @@ impl CryptoWallet for NativeXmrWallet {
         amount: u64,
     ) -> Result<String, SettlementError> {
         if *asset != Asset::Xmr {
-            return Err(SettlementError::CryptoWalletError(
-                format!("XMR wallet cannot escrow {}: use XMR wallet for XMR trades", asset)
-            ));
+            return Err(SettlementError::CryptoWalletError(format!(
+                "XMR wallet cannot escrow {}: use XMR wallet for XMR trades",
+                asset
+            )));
         }
 
         if !self.is_connected() {
             return Err(SettlementError::CryptoWalletError(
-                "Native Monero wallet not connected — call connect() first".to_string()
+                "Native Monero wallet not connected — call connect() first".to_string(),
             ));
         }
 
@@ -408,17 +407,14 @@ impl CryptoWallet for NativeXmrWallet {
     ) -> Result<String, SettlementError> {
         let _ = (trade_id, recipient_address);
         Err(SettlementError::CryptoWalletError(
-            "Native Monero release not yet implemented — requires running daemon".to_string()
+            "Native Monero release not yet implemented — requires running daemon".to_string(),
         ))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         let _ = trade_id;
         Err(SettlementError::CryptoWalletError(
-            "Native Monero return not yet implemented — requires running daemon".to_string()
+            "Native Monero return not yet implemented — requires running daemon".to_string(),
         ))
     }
 }
@@ -496,12 +492,16 @@ impl BtcWalletAdapter {
 
     /// Get the multisig deposit address for a trade.
     pub fn get_deposit_address(&self, trade_id: TradeId) -> Option<String> {
-        rlock_read!(&self.escrow).get(&trade_id.0).map(|s| s.escrow_address.clone())
+        rlock_read!(&self.escrow)
+            .get(&trade_id.0)
+            .map(|s| s.escrow_address.clone())
     }
 
     /// Get the witness script hex for a trade.
     pub fn get_witness_script_hex(&self, trade_id: TradeId) -> Option<String> {
-        rlock_read!(&self.escrow).get(&trade_id.0).map(|s| s.witness_script_hex.clone())
+        rlock_read!(&self.escrow)
+            .get(&trade_id.0)
+            .map(|s| s.witness_script_hex.clone())
     }
 
     /// Record that the maker has deposited funds to the multisig address.
@@ -534,14 +534,15 @@ impl BtcWalletAdapter {
     ) -> Result<String, SettlementError> {
         let (amount, deposit_txid, vout) = {
             let escrow = rlock_read!(&self.escrow);
-            let state = escrow.get(&trade_id.0)
-                .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
+            let state = escrow.get(&trade_id.0).ok_or_else(|| {
+                SettlementError::CryptoWalletError("Escrow not found".to_string())
+            })?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
         };
 
         if deposit_txid.is_empty() {
             return Err(SettlementError::CryptoWalletError(
-                "No deposit recorded".to_string()
+                "No deposit recorded".to_string(),
             ));
         }
 
@@ -550,7 +551,8 @@ impl BtcWalletAdapter {
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
         // Return the partial signature as JSON for P2P exchange
-        partial_sig.to_json()
+        partial_sig
+            .to_json()
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))
     }
 
@@ -560,27 +562,30 @@ impl BtcWalletAdapter {
         trade_id: TradeId,
         maker_partial_sig_json: &str,
     ) -> Result<String, SettlementError> {
-        let maker_sig = PartialSignature::from_json(maker_partial_sig_json)
-            .map_err(|e| SettlementError::CryptoWalletError(format!("Invalid maker signature: {}", e)))?;
+        let maker_sig = PartialSignature::from_json(maker_partial_sig_json).map_err(|e| {
+            SettlementError::CryptoWalletError(format!("Invalid maker signature: {}", e))
+        })?;
 
         let (amount, deposit_txid, vout) = {
             let escrow = rlock_read!(&self.escrow);
-            let state = escrow.get(&trade_id.0)
-                .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
+            let state = escrow.get(&trade_id.0).ok_or_else(|| {
+                SettlementError::CryptoWalletError("Escrow not found".to_string())
+            })?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
         };
 
         if deposit_txid.is_empty() {
             return Err(SettlementError::CryptoWalletError(
-                "No deposit recorded".to_string()
+                "No deposit recorded".to_string(),
             ));
         }
 
         // Store the maker's signature in the escrow
         {
             let mut manager = rlock_write!(&self.multisig_manager);
-            let escrow = manager.get_escrow_mut(trade_id.0)
-                .ok_or_else(|| SettlementError::CryptoWalletError("Multisig escrow not found".to_string()))?;
+            let escrow = manager.get_escrow_mut(trade_id.0).ok_or_else(|| {
+                SettlementError::CryptoWalletError("Multisig escrow not found".to_string())
+            })?;
             escrow.maker_partial_sig = Some(maker_sig);
         }
 
@@ -592,8 +597,9 @@ impl BtcWalletAdapter {
         // Store the taker's signature
         {
             let mut manager = rlock_write!(&self.multisig_manager);
-            let escrow = manager.get_escrow_mut(trade_id.0)
-                .ok_or_else(|| SettlementError::CryptoWalletError("Multisig escrow not found".to_string()))?;
+            let escrow = manager.get_escrow_mut(trade_id.0).ok_or_else(|| {
+                SettlementError::CryptoWalletError("Multisig escrow not found".to_string())
+            })?;
             escrow.taker_partial_sig = Some(taker_sig);
         }
 
@@ -621,19 +627,26 @@ impl BtcWalletAdapter {
     ) -> Result<String, SettlementError> {
         let (amount, deposit_txid, vout) = {
             let escrow = rlock_read!(&self.escrow);
-            let state = escrow.get(&trade_id.0)
-                .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
+            let state = escrow.get(&trade_id.0).ok_or_else(|| {
+                SettlementError::CryptoWalletError("Escrow not found".to_string())
+            })?;
             (state.amount, state.deposit_txid.clone(), state.deposit_vout)
         };
 
         if deposit_txid.is_empty() {
             return Err(SettlementError::CryptoWalletError(
-                "No deposit recorded".to_string()
+                "No deposit recorded".to_string(),
             ));
         }
 
         let tx_hex = rlock_write!(&self.multisig_manager)
-            .create_return_tx(trade_id.0, &deposit_txid, vout, amount, maker_return_address)
+            .create_return_tx(
+                trade_id.0,
+                &deposit_txid,
+                vout,
+                amount,
+                maker_return_address,
+            )
             .map_err(|e| SettlementError::CryptoWalletError(e.to_string()))?;
 
         {
@@ -656,9 +669,10 @@ impl CryptoWallet for BtcWalletAdapter {
     ) -> Result<String, SettlementError> {
         // Verify the asset is BTC
         if *asset != Asset::Btc {
-            return Err(SettlementError::CryptoWalletError(
-                format!("BTC wallet cannot escrow {}: use BTC wallet for BTC trades", asset)
-            ));
+            return Err(SettlementError::CryptoWalletError(format!(
+                "BTC wallet cannot escrow {}: use BTC wallet for BTC trades",
+                asset
+            )));
         }
 
         // Generate 2-of-2 multisig key pairs for this trade
@@ -710,7 +724,8 @@ impl CryptoWallet for BtcWalletAdapter {
         // otherwise indicates that co-signing is required.
 
         let guard = rlock_read!(&self.escrow);
-        let escrow_state = guard.get(&trade_id.0)
+        let escrow_state = guard
+            .get(&trade_id.0)
             .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
 
         if let Some(ref tx_hex) = escrow_state.payout_tx_hex {
@@ -721,23 +736,22 @@ impl CryptoWallet for BtcWalletAdapter {
         // Check if we have a deposit to work with
         if escrow_state.deposit_txid.is_empty() {
             return Err(SettlementError::CryptoWalletError(
-                "No deposit recorded — call record_deposit() first".to_string()
+                "No deposit recorded — call record_deposit() first".to_string(),
             ));
         }
 
         // Return a descriptive message indicating co-signing is needed
         let _ = (recipient_address, guard);
         Err(SettlementError::CryptoWalletError(
-            "Co-signing required: use maker_sign_payout() and taker_sign_and_finalize()".to_string()
+            "Co-signing required: use maker_sign_payout() and taker_sign_and_finalize()"
+                .to_string(),
         ))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         let guard = rlock_read!(&self.escrow);
-        let escrow_state = guard.get(&trade_id.0)
+        let escrow_state = guard
+            .get(&trade_id.0)
             .ok_or_else(|| SettlementError::CryptoWalletError("Escrow not found".to_string()))?;
 
         if let Some(ref tx_hex) = escrow_state.return_tx_hex {
@@ -746,7 +760,7 @@ impl CryptoWallet for BtcWalletAdapter {
 
         drop(guard);
         Err(SettlementError::CryptoWalletError(
-            "Return transaction not yet created — call create_return_tx()".to_string()
+            "Return transaction not yet created — call create_return_tx()".to_string(),
         ))
     }
 }
@@ -797,7 +811,7 @@ impl CryptoWallet for CombinedWalletAdapter {
             Asset::Xmr => self.xmr.reserve_escrow(trade_id, asset, amount),
             Asset::Btc => self.btc.reserve_escrow(trade_id, asset, amount),
             Asset::Fiat(_) => Err(SettlementError::CryptoWalletError(
-                "Cannot escrow fiat assets — use crypto assets for escrow".to_string()
+                "Cannot escrow fiat assets — use crypto assets for escrow".to_string(),
             )),
         }
     }
@@ -814,10 +828,7 @@ impl CryptoWallet for CombinedWalletAdapter {
             .or_else(|_| self.btc.release_escrow(trade_id, recipient_address))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         self.xmr
             .return_escrow(trade_id)
             .or_else(|_| self.btc.return_escrow(trade_id))
@@ -848,7 +859,7 @@ impl CryptoWallet for CombinedWalletAdapterNative {
             Asset::Xmr => self.xmr.reserve_escrow(trade_id, asset, amount),
             Asset::Btc => self.btc.reserve_escrow(trade_id, asset, amount),
             Asset::Fiat(_) => Err(SettlementError::CryptoWalletError(
-                "Cannot escrow fiat assets — use crypto assets for escrow".to_string()
+                "Cannot escrow fiat assets — use crypto assets for escrow".to_string(),
             )),
         }
     }
@@ -863,10 +874,7 @@ impl CryptoWallet for CombinedWalletAdapterNative {
             .or_else(|_| self.btc.release_escrow(trade_id, recipient_address))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         self.xmr
             .return_escrow(trade_id)
             .or_else(|_| self.btc.return_escrow(trade_id))
@@ -909,10 +917,7 @@ impl CryptoWallet for MockCryptoWallet {
         Ok(format!("mock_release_{}", trade_id.0.as_hyphenated()))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         Ok(format!("mock_return_{}", trade_id.0.as_hyphenated()))
     }
 }
@@ -981,7 +986,9 @@ mod tests {
         let wallet = SimulatedXmrWallet::new("http://127.0.0.1:18082".to_string());
         let trade_id = TradeId(Uuid::new_v4());
 
-        wallet.reserve_escrow(trade_id, &Asset::Xmr, 1_000_000).unwrap();
+        wallet
+            .reserve_escrow(trade_id, &Asset::Xmr, 1_000_000)
+            .unwrap();
 
         let state = wallet.get_escrow_state(trade_id).unwrap();
         assert_eq!(state.amount, 1_000_000);
@@ -1067,9 +1074,7 @@ mod tests {
             .unwrap();
         assert!(escrow.starts_with("mock_escrow_"));
 
-        let release = wallet
-            .release_escrow(trade_id, "1Address")
-            .unwrap();
+        let release = wallet.release_escrow(trade_id, "1Address").unwrap();
         assert!(release.starts_with("mock_release_"));
 
         let return_tx = wallet.return_escrow(trade_id).unwrap();

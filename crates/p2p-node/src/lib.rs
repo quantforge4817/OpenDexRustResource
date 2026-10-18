@@ -1,3 +1,5 @@
+#![allow(unreachable_code)]
+
 pub mod balances;
 pub mod btc_wallet_client;
 pub mod cli;
@@ -36,6 +38,7 @@ use libp2p::{gossipsub, identify, kad, ping, swarm::NetworkBehaviour};
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "OpenDexBehaviourEvent")]
+#[allow(clippy::large_enum_variant)]
 pub struct OpenDexBehaviour {
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
     pub ping: ping::Behaviour,
@@ -44,6 +47,7 @@ pub struct OpenDexBehaviour {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum OpenDexBehaviourEvent {
     Kademlia(kad::Event),
     Ping(ping::Event),
@@ -76,7 +80,7 @@ impl From<gossipsub::Event> for OpenDexBehaviourEvent {
 }
 
 // Re-exports needed by external callers (e.g., desktop-gui)
-pub use libp2p::{identity, PeerId};
+pub use libp2p::{PeerId, identity};
 pub use network::build_swarm;
 
 /// Configuration for running the P2P node with a GUI.
@@ -161,9 +165,7 @@ pub struct GuiNodeHandle {
 ///
 /// The caller is responsible for launching the GUI with the returned channels.
 pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHandle> {
-    use std::collections::HashMap;
     use std::fs;
-    use std::path::PathBuf;
     use uuid::Uuid;
 
     let port = config.port;
@@ -213,7 +215,7 @@ pub async fn run_with_gui(mut config: GuiNodeConfig) -> anyhow::Result<GuiNodeHa
     let trade_book = trades::TradeBook::load_trades(trades_path)?;
     let balance_book = balances::BalanceBook::load(balances_path)?;
 
-    let pending_trade_states: HashMap<Uuid, message_handler::PendingTradeState> = HashMap::new();
+    let pending_trade_states: std::collections::HashMap<Uuid, message_handler::PendingTradeState> = std::collections::HashMap::new();
     #[cfg(feature = "fiat")]
     let p2p_offer_book = p2p_offer_book::P2POfferBook::load();
 
@@ -345,7 +347,10 @@ async fn run_node_loop_inner(
     mut order_book: orderbook::OrderBook,
     mut trade_book: trades::TradeBook,
     mut balance_book: balances::BalanceBook,
-    mut pending_trade_states: std::collections::HashMap<uuid::Uuid, message_handler::PendingTradeState>,
+    mut pending_trade_states: std::collections::HashMap<
+        uuid::Uuid,
+        message_handler::PendingTradeState,
+    >,
     mut p2p_offer_book: p2p_offer_book::P2POfferBook,
     mut monero_wallet: Option<wallet_client::MoneroWalletClient>,
     mut btc_wallet: Option<btc_wallet_client::BitcoinWalletClient>,
@@ -409,6 +414,7 @@ async fn run_node_loop_inner(
 
 /// Internal node event loop for GUI mode (without fiat support).
 #[cfg(not(feature = "fiat"))]
+#[allow(clippy::too_many_arguments)]
 async fn run_node_loop_inner(
     mut swarm: libp2p::Swarm<OpenDexBehaviour>,
     topic: gossipsub::IdentTopic,
@@ -416,7 +422,10 @@ async fn run_node_loop_inner(
     mut order_book: orderbook::OrderBook,
     mut trade_book: trades::TradeBook,
     mut balance_book: balances::BalanceBook,
-    mut pending_trade_states: std::collections::HashMap<uuid::Uuid, message_handler::PendingTradeState>,
+    mut pending_trade_states: std::collections::HashMap<
+        uuid::Uuid,
+        message_handler::PendingTradeState,
+    >,
     mut monero_wallet: Option<wallet_client::MoneroWalletClient>,
     mut btc_wallet: Option<btc_wallet_client::BitcoinWalletClient>,
     cmd_rx: flume::Receiver<gui_bridge::GuiCommand>,
@@ -494,14 +503,14 @@ async fn handle_gui_command_inner(
     use protocol::message::AMOUNT_SCALE;
 
     match command {
-        gui_bridge::GuiCommand::PlaceOrder { side, market, price, amount } => {
-            let order = order_factory::create_order(
-                local_peer_id.to_string(),
-                market,
-                side,
-                price,
-                amount,
-            );
+        gui_bridge::GuiCommand::PlaceOrder {
+            side,
+            market,
+            price,
+            amount,
+        } => {
+            let order =
+                order_factory::create_order(local_peer_id.to_string(), market, side, price, amount);
             let order_id = order.id;
 
             if let Err(e) = balance_book.lock_for_order(&order) {
@@ -546,28 +555,28 @@ async fn handle_gui_command_inner(
             });
         }
         gui_bridge::GuiCommand::CancelOrder { order_id } => {
-            if let Some(order) = order_book.get_order(&order_id).cloned() {
-                if order_book.remove_order(order_id) {
-                    let _ = balance_book.unlock_for_order(&order);
-                    let _ = balance_book.save();
-                    let _ = order_book.save_orders();
+            if let Some(order) = order_book.get_order(&order_id).cloned()
+                && order_book.remove_order(order_id)
+            {
+                let _ = balance_book.unlock_for_order(&order);
+                let _ = balance_book.save();
+                let _ = order_book.save_orders();
 
-                    let cancelled = protocol::message::OrderCancelled {
-                        order_id,
-                        trader: order.trader.clone(),
-                    };
-                    let message = protocol::message::Message {
-                        message_type: protocol::message::MessageType::OrderCancelled,
-                        sender: local_peer_id.to_string(),
-                        payload: serde_json::to_string(&cancelled).unwrap_or_default(),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                        schema_version: protocol::message::SCHEMA_VERSION,
-                    };
-                    let _ = network::publish_message(swarm, topic, &message);
-                }
+                let cancelled = protocol::message::OrderCancelled {
+                    order_id,
+                    trader: order.trader.clone(),
+                };
+                let message = protocol::message::Message {
+                    message_type: protocol::message::MessageType::OrderCancelled,
+                    sender: local_peer_id.to_string(),
+                    payload: serde_json::to_string(&cancelled).unwrap_or_default(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    schema_version: protocol::message::SCHEMA_VERSION,
+                };
+                let _ = network::publish_message(swarm, topic, &message);
             }
         }
         gui_bridge::GuiCommand::Fund { asset, amount } => {
@@ -582,7 +591,10 @@ async fn handle_gui_command_inner(
                 protocol::message::Asset::BTC => "BTC",
                 protocol::message::Asset::XMR => "XMR",
             };
-            let _ = update_tx.send(GuiUpdate::LogMessage(format!("Funded {} with {}", asset_label, amount)));
+            let _ = update_tx.send(GuiUpdate::LogMessage(format!(
+                "Funded {} with {}",
+                asset_label, amount
+            )));
             let mut balances = Vec::new();
             for a in [protocol::message::Asset::BTC, protocol::message::Asset::XMR] {
                 let b = balance_book.balance(&trader, &a);
@@ -637,21 +649,29 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::WalletAddress(addr));
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet address error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("Wallet address error: {}", e)));
                     }
                 }
             } else {
-                let _ = update_tx.send(GuiUpdate::WalletConnected { connected: false, address: None });
+                let _ = update_tx.send(GuiUpdate::WalletConnected {
+                    connected: false,
+                    address: None,
+                });
             }
         }
         gui_bridge::GuiCommand::RequestWalletBalance => {
             if let Some(wallet) = monero_wallet {
                 match wallet.get_balance_xmr(0).await {
                     Ok((available, unlocked)) => {
-                        let _ = update_tx.send(GuiUpdate::WalletBalance { available, unlocked });
+                        let _ = update_tx.send(GuiUpdate::WalletBalance {
+                            available,
+                            unlocked,
+                        });
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet balance error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("Wallet balance error: {}", e)));
                     }
                 }
             }
@@ -663,11 +683,15 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::BtcWalletAddress(addr));
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet address error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("BTC wallet address error: {}", e)));
                     }
                 }
             } else {
-                let _ = update_tx.send(GuiUpdate::BtcWalletConnected { connected: false, address: None });
+                let _ = update_tx.send(GuiUpdate::BtcWalletConnected {
+                    connected: false,
+                    address: None,
+                });
             }
         }
         gui_bridge::GuiCommand::RequestBtcWalletBalance => {
@@ -677,7 +701,8 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::BtcWalletBalance { balance });
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet balance error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("BTC wallet balance error: {}", e)));
                     }
                 }
             }
@@ -687,6 +712,7 @@ async fn handle_gui_command_inner(
 
 /// Handle a GUI command within the node event loop (without fiat support).
 #[cfg(not(feature = "fiat"))]
+#[allow(clippy::too_many_arguments)]
 async fn handle_gui_command_inner(
     command: gui_bridge::GuiCommand,
     swarm: &mut libp2p::Swarm<OpenDexBehaviour>,
@@ -703,14 +729,14 @@ async fn handle_gui_command_inner(
     use protocol::message::AMOUNT_SCALE;
 
     match command {
-        gui_bridge::GuiCommand::PlaceOrder { side, market, price, amount } => {
-            let order = order_factory::create_order(
-                local_peer_id.to_string(),
-                market,
-                side,
-                price,
-                amount,
-            );
+        gui_bridge::GuiCommand::PlaceOrder {
+            side,
+            market,
+            price,
+            amount,
+        } => {
+            let order =
+                order_factory::create_order(local_peer_id.to_string(), market, side, price, amount);
             let order_id = order.id;
 
             if let Err(e) = balance_book.lock_for_order(&order) {
@@ -755,28 +781,28 @@ async fn handle_gui_command_inner(
             });
         }
         gui_bridge::GuiCommand::CancelOrder { order_id } => {
-            if let Some(order) = order_book.get_order(&order_id).cloned() {
-                if order_book.remove_order(order_id) {
-                    let _ = balance_book.unlock_for_order(&order);
-                    let _ = balance_book.save();
-                    let _ = order_book.save_orders();
+            if let Some(order) = order_book.get_order(&order_id).cloned()
+                && order_book.remove_order(order_id)
+            {
+                let _ = balance_book.unlock_for_order(&order);
+                let _ = balance_book.save();
+                let _ = order_book.save_orders();
 
-                    let cancelled = protocol::message::OrderCancelled {
-                        order_id,
-                        trader: order.trader.clone(),
-                    };
-                    let message = protocol::message::Message {
-                        message_type: protocol::message::MessageType::OrderCancelled,
-                        sender: local_peer_id.to_string(),
-                        payload: serde_json::to_string(&cancelled).unwrap_or_default(),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                        schema_version: protocol::message::SCHEMA_VERSION,
-                    };
-                    let _ = network::publish_message(swarm, topic, &message);
-                }
+                let cancelled = protocol::message::OrderCancelled {
+                    order_id,
+                    trader: order.trader.clone(),
+                };
+                let message = protocol::message::Message {
+                    message_type: protocol::message::MessageType::OrderCancelled,
+                    sender: local_peer_id.to_string(),
+                    payload: serde_json::to_string(&cancelled).unwrap_or_default(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    schema_version: protocol::message::SCHEMA_VERSION,
+                };
+                let _ = network::publish_message(swarm, topic, &message);
             }
         }
         gui_bridge::GuiCommand::Fund { asset, amount } => {
@@ -791,7 +817,10 @@ async fn handle_gui_command_inner(
                 protocol::message::Asset::BTC => "BTC",
                 protocol::message::Asset::XMR => "XMR",
             };
-            let _ = update_tx.send(GuiUpdate::LogMessage(format!("Funded {} with {}", asset_label, amount)));
+            let _ = update_tx.send(GuiUpdate::LogMessage(format!(
+                "Funded {} with {}",
+                asset_label, amount
+            )));
             let mut balances = Vec::new();
             for a in [protocol::message::Asset::BTC, protocol::message::Asset::XMR] {
                 let b = balance_book.balance(&trader, &a);
@@ -846,21 +875,29 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::WalletAddress(addr));
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet address error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("Wallet address error: {}", e)));
                     }
                 }
             } else {
-                let _ = update_tx.send(GuiUpdate::WalletConnected { connected: false, address: None });
+                let _ = update_tx.send(GuiUpdate::WalletConnected {
+                    connected: false,
+                    address: None,
+                });
             }
         }
         gui_bridge::GuiCommand::RequestWalletBalance => {
             if let Some(wallet) = monero_wallet {
                 match wallet.get_balance_xmr(0).await {
                     Ok((available, unlocked)) => {
-                        let _ = update_tx.send(GuiUpdate::WalletBalance { available, unlocked });
+                        let _ = update_tx.send(GuiUpdate::WalletBalance {
+                            available,
+                            unlocked,
+                        });
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("Wallet balance error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("Wallet balance error: {}", e)));
                     }
                 }
             }
@@ -872,11 +909,15 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::BtcWalletAddress(addr));
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet address error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("BTC wallet address error: {}", e)));
                     }
                 }
             } else {
-                let _ = update_tx.send(GuiUpdate::BtcWalletConnected { connected: false, address: None });
+                let _ = update_tx.send(GuiUpdate::BtcWalletConnected {
+                    connected: false,
+                    address: None,
+                });
             }
         }
         gui_bridge::GuiCommand::RequestBtcWalletBalance => {
@@ -886,7 +927,8 @@ async fn handle_gui_command_inner(
                         let _ = update_tx.send(GuiUpdate::BtcWalletBalance { balance });
                     }
                     Err(e) => {
-                        let _ = update_tx.send(GuiUpdate::Error(format!("BTC wallet balance error: {}", e)));
+                        let _ = update_tx
+                            .send(GuiUpdate::Error(format!("BTC wallet balance error: {}", e)));
                     }
                 }
             }
@@ -917,9 +959,9 @@ mod internal {
     /// Initialize structured logging with file-based audit output.
     /// L31: A log redaction layer masks sensitive field values (password, secret,
     /// token, key) so that accidental logging of credentials is prevented.
-    pub fn init_audit_logging(node_dir: &PathBuf) -> anyhow::Result<()> {
-        use tracing_subscriber::prelude::*;
+    pub fn init_audit_logging(node_dir: &std::path::Path) -> anyhow::Result<()> {
         use std::fs;
+        use tracing_subscriber::prelude::*;
 
         let audit_dir = node_dir.join("audit");
         fs::create_dir_all(&audit_dir)?;
@@ -998,7 +1040,7 @@ fn data_dir(port: &u16) -> std::path::PathBuf {
 }
 
 /// Initialize structured logging with file-based audit output.
-fn init_audit_logging(node_dir: &std::path::PathBuf) -> anyhow::Result<()> {
+fn init_audit_logging(node_dir: &std::path::Path) -> anyhow::Result<()> {
     internal::init_audit_logging(node_dir)
 }
 

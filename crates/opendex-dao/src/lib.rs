@@ -124,10 +124,7 @@ pub enum DaoProposal {
         upgrade_schedule: UpgradeSchedule,
     },
     /// Add or remove a supported asset
-    AssetChange {
-        asset: Asset,
-        action: AssetAction,
-    },
+    AssetChange { asset: Asset, action: AssetAction },
 }
 
 /// DAO proposal state machine.
@@ -432,8 +429,7 @@ impl DaoEngine {
             new_value,
         } = &p.proposal
         {
-            self.parameters
-                .insert(parameter.clone(), new_value.clone());
+            self.parameters.insert(parameter.clone(), new_value.clone());
         }
 
         let p = self.proposals.get_mut(&proposal_id).unwrap();
@@ -635,8 +631,7 @@ mod tests {
         for p in params {
             assert!(matches!(
                 p,
-                ProtocolParameter::PeerDiscoveryInterval
-                    | ProtocolParameter::HeartbeatInterval
+                ProtocolParameter::PeerDiscoveryInterval | ProtocolParameter::HeartbeatInterval
             ));
         }
         // No ApproveNode or RejectNode variant exists
@@ -689,12 +684,7 @@ mod tests {
     fn test_dnc_012_dao_cannot_control_commercial_treasury() {
         // DNC-012: DAO cannot control commercial treasury.
         // Verification: DaoProposal has no treasury-related variants.
-        let config = DaoConfig::new(
-            86400,
-            604800,
-            0.1,
-            "fee_recipient_address".to_string(),
-        );
+        let config = DaoConfig::new(86400, 604800, 0.1, "fee_recipient_address".to_string());
         // Fee recipient is set at init and cannot be changed via DAO proposal
         assert_eq!(config.fee_recipient(), "fee_recipient_address");
         // No TreasuryWithdrawal, TreasuryTransfer, or FeeRecipientChange variants exist
@@ -737,7 +727,10 @@ mod tests {
         };
         // Fee and trade proposals are separate
         assert!(matches!(fee_proposal, DaoProposal::ParameterChange { .. }));
-        assert!(matches!(trade_proposal, DaoProposal::ParameterChange { .. }));
+        assert!(matches!(
+            trade_proposal,
+            DaoProposal::ParameterChange { .. }
+        ));
     }
 
     #[test]
@@ -795,8 +788,7 @@ mod tests {
         for p in params {
             assert!(matches!(
                 p,
-                ProtocolParameter::PeerDiscoveryInterval
-                    | ProtocolParameter::HeartbeatInterval
+                ProtocolParameter::PeerDiscoveryInterval | ProtocolParameter::HeartbeatInterval
             ));
         }
         // No CentralizeStateStorage variant exists
@@ -891,12 +883,7 @@ mod tests {
 
     #[test]
     fn test_dao_config_fee_recipient_immutable() {
-        let config = DaoConfig::new(
-            86400,
-            604800,
-            0.1,
-            "fee_recipient_address".to_string(),
-        );
+        let config = DaoConfig::new(86400, 604800, 0.1, "fee_recipient_address".to_string());
         assert_eq!(config.fee_recipient(), "fee_recipient_address");
     }
 
@@ -998,8 +985,7 @@ mod tests {
         for p in params {
             assert!(matches!(
                 p,
-                ProtocolParameter::PeerDiscoveryInterval
-                    | ProtocolParameter::HeartbeatInterval
+                ProtocolParameter::PeerDiscoveryInterval | ProtocolParameter::HeartbeatInterval
             ));
         }
         // No ApproveNode or RejectNode variant exists
@@ -1267,7 +1253,10 @@ mod tests {
 
         // Now voting should fail
         let result = engine.cast_vote(p.id, Vote::For);
-        assert!(matches!(result, Err(DaoError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            result,
+            Err(DaoError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]
@@ -1286,7 +1275,10 @@ mod tests {
 
         // 3. Close voting
         engine.close_voting(p.id).unwrap();
-        assert_eq!(engine.get_proposal(p.id).unwrap().state, ProposalState::Approved);
+        assert_eq!(
+            engine.get_proposal(p.id).unwrap().state,
+            ProposalState::Approved
+        );
 
         // 4. Execute
         engine.execute_proposal(p.id).unwrap();
@@ -1322,7 +1314,10 @@ mod tests {
 
         // Cannot execute a rejected proposal
         let result = engine.execute_proposal(p.id);
-        assert!(matches!(result, Err(DaoError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            result,
+            Err(DaoError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]
@@ -1337,10 +1332,7 @@ mod tests {
 
         // No votes cast — participation is 0
         let result = engine.close_voting(p.id);
-        assert!(matches!(
-            result,
-            Err(DaoError::ParticipationTooLow { .. })
-        ));
+        assert!(matches!(result, Err(DaoError::ParticipationTooLow { .. })));
     }
 
     #[test]
@@ -1372,7 +1364,10 @@ mod tests {
         engine.close_voting(p.id).unwrap();
 
         let result = engine.execute_proposal(p.id);
-        assert!(matches!(result, Err(DaoError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            result,
+            Err(DaoError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]
@@ -1386,7 +1381,10 @@ mod tests {
 
         // Cannot execute while still voting
         let result = engine.execute_proposal(p.id);
-        assert!(matches!(result, Err(DaoError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            result,
+            Err(DaoError::InvalidStateTransition { .. })
+        ));
     }
 
     #[test]
@@ -1494,6 +1492,9 @@ mod tests {
 
         // Cannot close voting again
         let result = engine.close_voting(p.id);
-        assert!(matches!(result, Err(DaoError::InvalidStateTransition { .. })));
+        assert!(matches!(
+            result,
+            Err(DaoError::InvalidStateTransition { .. })
+        ));
     }
 }

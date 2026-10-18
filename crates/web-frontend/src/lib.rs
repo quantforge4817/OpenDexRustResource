@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use leptos_meta::*;
-use leptos_router::components::{Router, Routes, Route};
+use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
 mod source_browser;
@@ -275,12 +275,30 @@ fn ManifestosSection() -> impl IntoView {
 #[allow(non_snake_case)]
 fn FeaturesSection() -> impl IntoView {
     let features = vec![
-        ("Peer-to-Peer Network", "No central server — every node is equal. Connect directly to other traders via libp2p with encrypted, authenticated communication."),
-        ("Atomic Swaps", "BTC ↔ XMR swaps using DLEQ proofs — pure cryptography, no escrow. OpenDex holds and controls no assets: your assets move directly between your wallets, guaranteed by cross-chain cryptographic proofs."),
-        ("Decentralized Order Book", "Orders are broadcast across the P2P network using GossipSub. Every node maintains its own copy of the order book — no central matching engine."),
-        ("Privacy-First", "Monero-native privacy. No KYC, no central logs, no tracking. Your trading activity stays between you and the network."),
-        ("Open Source", "Fully open-source codebase under MIT/Apache-2.0 licenses. Audit all components, run your own node, verify every transaction."),
-        ("Cross-Platform", "Native desktop app for Linux, macOS, and Windows. Run your own P2P node and trade from anywhere."),
+        (
+            "Peer-to-Peer Network",
+            "No central server — every node is equal. Connect directly to other traders via libp2p with encrypted, authenticated communication.",
+        ),
+        (
+            "Atomic Swaps",
+            "BTC ↔ XMR swaps using DLEQ proofs — pure cryptography, no escrow. OpenDex holds and controls no assets: your assets move directly between your wallets, guaranteed by cross-chain cryptographic proofs.",
+        ),
+        (
+            "Decentralized Order Book",
+            "Orders are broadcast across the P2P network using GossipSub. Every node maintains its own copy of the order book — no central matching engine.",
+        ),
+        (
+            "Privacy-First",
+            "Monero-native privacy. No KYC, no central logs, no tracking. Your trading activity stays between you and the network.",
+        ),
+        (
+            "Open Source",
+            "Fully open-source codebase under MIT/Apache-2.0 licenses. Audit all components, run your own node, verify every transaction.",
+        ),
+        (
+            "Cross-Platform",
+            "Native desktop app for Linux, macOS, and Windows. Run your own P2P node and trade from anywhere.",
+        ),
     ];
 
     view! {
@@ -1100,9 +1118,9 @@ fn SecurityAuditSection() -> impl IntoView {
 fn BugBountySection() -> impl IntoView {
     view! {
         <section id="bug-bounty" class="section bug-bounty-section">
-            <h2>"Bug Bounty Program"</h2>
+            <h2>"Vulnerability Rewards and Recognition"</h2>
             <p class="section-subtitle">
-                "Help us make OpenDex more secure. We reward responsible disclosure of vulnerabilities."
+                "We recognize security researchers and community members who help us improve the security and reliability of our software."
             </p>
 
             <div class="bug-bounty-content">
@@ -1137,24 +1155,50 @@ fn BugBountySection() -> impl IntoView {
                 </div>
 
                 <div class="bounty-block">
-                    <h3>"Rewards"</h3>
+                    <h3>"Vulnerability Rewards"</h3>
                     <p>
-                        "Rewards are based on the severity and impact of the vulnerability:"</p>
+                        "As an open-source project, we recognize security researchers and community members who help us improve the security and reliability of our software. While we do not offer monetary rewards, we provide non-monetary recognition and opportunities based on the severity, impact, and quality of each vulnerability report."
+                    </p>
                     <ul>
-                        <li>"<strong>"Critical"</strong> — Remote code execution, cryptographic break: up to 1 BTC or 500 XMR"</li>
-                        <li>"<strong>"High"</strong> — Authentication bypass, data corruption: up to 0.5 BTC or 250 XMR"</li>
-                        <li>"<strong>"Medium"</strong> — Denial of service, privilege escalation: up to 0.1 BTC or 50 XMR"</li>
-                        <li>"<strong>"Low"</strong> — Minor issues with limited impact: up to 0.01 BTC or 10 XMR"</li>
+                        <li>
+                            <strong>"Critical — Remote Code Execution or Cryptographic Compromise"</strong>
+                            <br/>"Featured placement in our Security Hall of Fame, permanent contributor recognition, and priority opportunities to collaborate with the security team."
+                        </li>
+                        <li>
+                            <strong>"High — Authentication Bypass or Significant Data Corruption"</strong>
+                            <br/>"Security Hall of Fame recognition, permanent contributor credit, and early access to selected new features."
+                        </li>
+                        <li>
+                            <strong>"Medium — Denial of Service or Privilege Escalation"</strong>
+                            <br/>"Public acknowledgment, a contributor badge, and recognition across our community channels."
+                        </li>
+                        <li>
+                            <strong>"Low — Minor Issues with Limited Impact"</strong>
+                            <br/>"Acknowledgment in release notes and contributor credits where appropriate."
+                        </li>
                     </ul>
+                </div>
+
+                <div class="bounty-block">
+                    <h3>"Contributor Recognition"</h3>
                     <p>
-                        "All rewards are paid in cryptocurrency to your provided wallet address. We also publicly acknowledge contributors (with permission) in our release notes."
+                        "We value the contributions of security researchers and community members who help improve our project's security. With their permission, we publicly acknowledge responsible vulnerability disclosures in our release notes, documentation, and on our website."
+                    </p>
+                    <p>
+                        "Contributors who demonstrate exceptional commitment may also be invited to collaborate on development, receive recognition for code reviews, and help shape the project's future direction."
+                    </p>
+                    <p>
+                        "All reports are evaluated individually. Recognition is based on the validity, severity, and impact of the reported vulnerability, the quality of the report, and adherence to responsible disclosure practices."
                     </p>
                 </div>
 
                 <div class="bounty-block">
                     <h3>"Responsible Disclosure"</h3>
                     <p>
-                        "We ask that you do not publicly disclose vulnerabilities until we have had a reasonable opportunity to investigate and release a fix. We will work with you to coordinate a responsible disclosure timeline. We do not take legal action against researchers who follow responsible disclosure practices."
+                        "We ask security researchers to allow us a reasonable amount of time to investigate reported vulnerabilities and develop and release a fix before making them public. We are committed to working collaboratively with researchers to establish a fair and mutually agreed disclosure timeline."
+                    </p>
+                    <p>
+                        "We will not pursue legal action against researchers who act in good faith, follow this responsible disclosure policy, and make a genuine effort to avoid disrupting our services or compromising user data."
                     </p>
                 </div>
 

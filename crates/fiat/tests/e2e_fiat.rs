@@ -4,10 +4,10 @@
 //! → payment confirm → crypto release → complete.
 
 use opendex_fiat::adapter::MockPaymentProvider;
-use opendex_fiat::settlement_engine::{CryptoWallet, SettlementEngine};
-use opendex_fiat::trade::{FiatOffer, FiatTradeState, SettlementMethod};
 use opendex_fiat::error::SettlementError;
 use opendex_fiat::payment::FiatAmount;
+use opendex_fiat::settlement_engine::{CryptoWallet, SettlementEngine};
+use opendex_fiat::trade::{FiatOffer, FiatTradeState, SettlementMethod};
 use opendex_types::{Asset, FiatCurrency, ParticipantId, Price, TradeId};
 use uuid::Uuid;
 
@@ -33,10 +33,7 @@ impl CryptoWallet for MockCryptoWallet {
         Ok(format!("mock_release_{}", trade_id.0))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         Ok(format!("mock_return_{}", trade_id.0))
     }
 }
@@ -47,9 +44,19 @@ fn make_offer(maker: ParticipantId) -> FiatOffer {
         maker,
         currency: FiatCurrency::GBP,
         crypto_asset: Asset::Btc,
-        amount: FiatAmount { minor_units: 100_000, currency: FiatCurrency::GBP },
-        price: Price { base: Asset::Btc, quote: Asset::Fiat(FiatCurrency::GBP), numerator: 100_000_000, denominator: 1 },
-        settlement_method: SettlementMethod::BankTransfer { currency: FiatCurrency::GBP },
+        amount: FiatAmount {
+            minor_units: 100_000,
+            currency: FiatCurrency::GBP,
+        },
+        price: Price {
+            base: Asset::Btc,
+            quote: Asset::Fiat(FiatCurrency::GBP),
+            numerator: 100_000_000,
+            denominator: 1,
+        },
+        settlement_method: SettlementMethod::BankTransfer {
+            currency: FiatCurrency::GBP,
+        },
         settlement_window: 3600,
         bond_requirement: 1000,
     }
@@ -93,7 +100,9 @@ fn e2e_fiat_trade_lifecycle() {
         iban: None,
         swift_code: None,
     };
-    let _instructions = engine.request_payment(trade_id, bank_details, 1003).unwrap();
+    let _instructions = engine
+        .request_payment(trade_id, bank_details, 1003)
+        .unwrap();
     let trade = engine.get_trade_public(trade_id).unwrap();
     assert_eq!(trade.state, FiatTradeState::PaymentRequested);
 

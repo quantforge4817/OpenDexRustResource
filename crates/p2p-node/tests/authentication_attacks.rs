@@ -5,9 +5,21 @@
 //!
 //! Run with: `cargo test --test authentication_attacks`
 
-use opendex_user::auth::AuthService;
-use opendex_user::error::UserError;
 use chrono::Duration;
+use opendex_user::auth::AuthService;
+
+/// Helper to register a user with the required 5-argument signature.
+fn register_user(auth: &mut AuthService, username: &str, password: &str) {
+    let _ = auth
+        .register(
+            username.to_string(),
+            password.to_string(),
+            format!("{}@example.com", username),
+            None,
+            None,
+        )
+        .unwrap();
+}
 
 // ==============================
 // 2.1 Brute Force / Credential Stuffing
@@ -21,8 +33,7 @@ mod brute_force {
     #[test]
     fn rate_limiter_blocks_after_max_attempts() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         // 5 failed attempts should be allowed (rate limit is 5 per minute)
         for i in 0..5 {
@@ -42,10 +53,8 @@ mod brute_force {
     #[test]
     fn rate_limiter_per_user_isolation() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
-        auth.register("bob".to_string(), "password456".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
+        register_user(&mut auth, "bob", "password456");
 
         // Exhaust alice's rate limit
         for _ in 0..10 {
@@ -64,8 +73,7 @@ mod brute_force {
     #[test]
     fn correct_password_works_after_failed_attempts() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         // Several failed attempts
         for _ in 0..3 {
@@ -85,18 +93,14 @@ mod brute_force {
     fn login_non_existent_user() {
         let mut auth = AuthService::new();
         let result = auth.login("nonexistent", "password123");
-        assert!(
-            result.is_err(),
-            "Login with non-existent user should fail"
-        );
+        assert!(result.is_err(), "Login with non-existent user should fail");
     }
 
     /// Test multiple rapid login attempts don't cause panic
     #[test]
     fn rapid_login_attempts_no_panic() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         for _ in 0..100 {
             let _ = auth.login("alice", "wrongpassword");
@@ -117,8 +121,7 @@ mod token_manipulation {
     #[test]
     fn expired_token_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
 
@@ -139,10 +142,7 @@ mod token_manipulation {
         let auth = AuthService::new();
 
         let result = auth.validate_token("not_a_valid_token");
-        assert!(
-            result.is_err(),
-            "Malformed token should be rejected"
-        );
+        assert!(result.is_err(), "Malformed token should be rejected");
     }
 
     /// Test token validation with empty token
@@ -150,27 +150,20 @@ mod token_manipulation {
     fn empty_token_rejected() {
         let auth = AuthService::new();
         let result = auth.validate_token("");
-        assert!(
-            result.is_err(),
-            "Empty token should be rejected"
-        );
+        assert!(result.is_err(), "Empty token should be rejected");
     }
 
     /// Test token validation with truncated token
     #[test]
     fn truncated_token_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let truncated = &login.token.token[..login.token.token.len() / 2];
 
         let result = auth.validate_token(truncated);
-        assert!(
-            result.is_err(),
-            "Truncated token should be rejected"
-        );
+        assert!(result.is_err(), "Truncated token should be rejected");
     }
 
     /// Test that token from one auth service is rejected by another
@@ -179,10 +172,8 @@ mod token_manipulation {
         let mut auth1 = AuthService::new();
         let mut auth2 = AuthService::new();
 
-        auth1.register("alice".to_string(), "password123".to_string())
-            .unwrap();
-        auth2.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth1, "alice", "password123");
+        register_user(&mut auth2, "alice", "password123");
 
         let login = auth1.login("alice", "password123").unwrap();
 
@@ -197,8 +188,7 @@ mod token_manipulation {
     #[test]
     fn modified_user_id_token_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let token = login.token.token.clone();
@@ -210,18 +200,14 @@ mod token_manipulation {
         }
 
         let result = auth.validate_token(&modified);
-        assert!(
-            result.is_err(),
-            "Modified user_id token should be rejected"
-        );
+        assert!(result.is_err(), "Modified user_id token should be rejected");
     }
 
     /// Test token with modified expiration
     #[test]
     fn modified_expiration_token_rejected() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let token = login.token.token.clone();
@@ -256,8 +242,7 @@ mod session_management {
     #[test]
     fn multiple_tokens_same_user() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login1 = auth.login("alice", "password123").unwrap();
         let login2 = auth.login("alice", "password123").unwrap();
@@ -277,8 +262,7 @@ mod session_management {
     #[test]
     fn token_ttl_is_24_hours() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
 
@@ -298,8 +282,7 @@ mod session_management {
     #[test]
     fn validate_token_returns_correct_user() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         let login = auth.login("alice", "password123").unwrap();
         let validated = auth.validate_token(&login.token.token).unwrap();
@@ -348,7 +331,13 @@ mod registration_edge_cases {
     #[test]
     fn register_empty_username() {
         let mut auth = AuthService::new();
-        let result = auth.register("".to_string(), "password123".to_string());
+        let result = auth.register(
+            "".to_string(),
+            "password123".to_string(),
+            "test@example.com".to_string(),
+            None,
+            None,
+        );
         // May succeed or fail depending on implementation
         let _ = result;
     }
@@ -358,7 +347,13 @@ mod registration_edge_cases {
     fn register_long_username() {
         let mut auth = AuthService::new();
         let long_username = "a".repeat(1000);
-        let result = auth.register(long_username, "password123".to_string());
+        let result = auth.register(
+            long_username.clone(),
+            "password123".to_string(),
+            format!("{}@example.com", long_username),
+            None,
+            None,
+        );
         let _ = result;
     }
 
@@ -366,7 +361,13 @@ mod registration_edge_cases {
     #[test]
     fn register_unicode_username() {
         let mut auth = AuthService::new();
-        let result = auth.register("тестирование🔐测试".to_string(), "password123".to_string());
+        let result = auth.register(
+            "тестирование🔐测试".to_string(),
+            "password123".to_string(),
+            "unicode@example.com".to_string(),
+            None,
+            None,
+        );
         // Unicode usernames may or may not be accepted depending on validation
         // The key test is that the system doesn't panic
         let _ = result;
@@ -376,25 +377,32 @@ mod registration_edge_cases {
     #[test]
     fn duplicate_registration() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
-        let result = auth.register("alice".to_string(), "differentpassword".to_string());
-        assert!(
-            result.is_err(),
-            "Duplicate registration should fail"
+        let result = auth.register(
+            "alice".to_string(),
+            "differentpassword".to_string(),
+            "alice2@example.com".to_string(),
+            None,
+            None,
         );
+        assert!(result.is_err(), "Duplicate registration should fail");
     }
 
     /// Test that re-registering with different password fails
     #[test]
     fn re_register_different_password() {
         let mut auth = AuthService::new();
-        auth.register("alice".to_string(), "password123".to_string())
-            .unwrap();
+        register_user(&mut auth, "alice", "password123");
 
         // Re-registering should fail
-        let result = auth.register("alice".to_string(), "differentpassword".to_string());
+        let result = auth.register(
+            "alice".to_string(),
+            "differentpassword".to_string(),
+            "alice2@example.com".to_string(),
+            None,
+            None,
+        );
         assert!(result.is_err(), "Re-registration should fail");
 
         // Original password should still work

@@ -20,7 +20,6 @@
 /// 6. Maker confirms receipt of fiat
 /// 7. XMR is released from escrow to taker's address
 /// 8. Trade is settled
-
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -369,7 +368,10 @@ mod tests {
     fn payment_method_display() {
         assert_eq!(PaymentMethod::BankTransfer.to_string(), "Bank Transfer");
         assert_eq!(PaymentMethod::Cash.to_string(), "Cash");
-        assert_eq!(PaymentMethod::Custom("Crypto ATM".to_string()).to_string(), "Crypto ATM");
+        assert_eq!(
+            PaymentMethod::Custom("Crypto ATM".to_string()).to_string(),
+            "Crypto ATM"
+        );
     }
 
     #[test]

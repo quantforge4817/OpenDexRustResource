@@ -21,7 +21,11 @@ pub struct InboundMessage<T> {
 
 impl<T> InboundMessage<T> {
     pub fn new(peer: ParticipantId, message: T, received_at: String) -> Self {
-        Self { peer, message, received_at }
+        Self {
+            peer,
+            message,
+            received_at,
+        }
     }
 }
 
@@ -138,4 +142,3 @@ mod tests {
         assert_eq!(deserialized.sequence, 42);
     }
 }
-

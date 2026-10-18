@@ -67,7 +67,9 @@ impl fmt::Display for UserError {
             UserError::AccountSuspended => write!(f, "account is suspended"),
             UserError::AccountExists => write!(f, "account already exists"),
             UserError::InvalidToken => write!(f, "invalid or expired token"),
-            UserError::ReviewAlreadySubmitted => write!(f, "review already submitted for this trade"),
+            UserError::ReviewAlreadySubmitted => {
+                write!(f, "review already submitted for this trade")
+            }
             UserError::SelfReview => write!(f, "cannot review yourself"),
             UserError::InvalidRating => write!(f, "rating must be between 1 and 5"),
             UserError::PasswordHashError(msg) => write!(f, "password hashing failed: {}", msg),

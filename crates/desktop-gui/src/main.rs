@@ -17,11 +17,9 @@
 //! ```
 
 use anyhow::Result;
-use desktop_gui::app::{GuiCommand, GuiUpdate, BalanceUpdate};
+use desktop_gui::app::{BalanceUpdate, GuiCommand, GuiUpdate};
 use p2p_node::gui_bridge::{GuiCommand as BridgeCmd, GuiUpdate as BridgeUpd};
 use p2p_node::{GuiNodeConfig, run_with_gui};
-use protocol::message::TradeState;
-use uuid::Uuid;
 
 /// Parse command-line arguments for the desktop application.
 struct DesktopArgs {
@@ -178,10 +176,7 @@ fn main() -> Result<()> {
     });
 
     // Launch the GUI on the main thread (required by winit)
-    desktop_gui::launch_gui_on_main(
-        gui_cmd_tx,
-        gui_upd_rx,
-    );
+    desktop_gui::launch_gui_on_main(gui_cmd_tx, gui_upd_rx);
 
     Ok(())
 }
@@ -209,18 +204,20 @@ async fn node_main(
     tokio::spawn(async move {
         while let Ok(gui_cmd) = gui_cmd_rx.recv_async().await {
             let bridge_cmd = match gui_cmd {
-                GuiCommand::PlaceOrder { side, market, price, amount } => {
-                    BridgeCmd::PlaceOrder { side, market, price, amount }
-                }
-                GuiCommand::CancelOrder { order_id } => {
-                    BridgeCmd::CancelOrder { order_id }
-                }
-                GuiCommand::Fund { asset, amount } => {
-                    BridgeCmd::Fund { asset, amount }
-                }
-                GuiCommand::ConnectPeer { multiaddr } => {
-                    BridgeCmd::ConnectPeer { multiaddr }
-                }
+                GuiCommand::PlaceOrder {
+                    side,
+                    market,
+                    price,
+                    amount,
+                } => BridgeCmd::PlaceOrder {
+                    side,
+                    market,
+                    price,
+                    amount,
+                },
+                GuiCommand::CancelOrder { order_id } => BridgeCmd::CancelOrder { order_id },
+                GuiCommand::Fund { asset, amount } => BridgeCmd::Fund { asset, amount },
+                GuiCommand::ConnectPeer { multiaddr } => BridgeCmd::ConnectPeer { multiaddr },
                 GuiCommand::RequestBalances => BridgeCmd::RequestBalances,
                 GuiCommand::RequestOrderBook => BridgeCmd::RequestOrderBook,
                 GuiCommand::RequestTrades => BridgeCmd::RequestTrades,
@@ -246,38 +243,45 @@ async fn node_main(
                     GuiUpdate::TradeStateChanged { trade_id, state }
                 }
                 BridgeUpd::BalancesUpdated(balances) => {
-                    let converted: Vec<BalanceUpdate> = balances.into_iter().map(|(_, asset, bal)| {
-                        BalanceUpdate {
+                    let converted: Vec<BalanceUpdate> = balances
+                        .into_iter()
+                        .map(|(_, asset, bal)| BalanceUpdate {
                             asset,
                             available: bal.available,
                             locked: bal.locked,
                             escrowed: bal.escrowed,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     GuiUpdate::BalancesUpdated(converted)
                 }
-                BridgeUpd::PeerConnected(peer_id) => {
-                    GuiUpdate::PeerConnected(peer_id.to_string())
-                }
+                BridgeUpd::PeerConnected(peer_id) => GuiUpdate::PeerConnected(peer_id.to_string()),
                 BridgeUpd::PeerDisconnected(peer_id) => {
                     GuiUpdate::PeerDisconnected(peer_id.to_string())
                 }
-                BridgeUpd::OrderResult { order_id, success, error } => {
-                    GuiUpdate::OrderResult { order_id, success, error }
-                }
+                BridgeUpd::OrderResult {
+                    order_id,
+                    success,
+                    error,
+                } => GuiUpdate::OrderResult {
+                    order_id,
+                    success,
+                    error,
+                },
                 BridgeUpd::LogMessage(msg) => GuiUpdate::LogMessage(msg),
                 BridgeUpd::Error(msg) => GuiUpdate::Error(msg),
                 BridgeUpd::WalletAddress(addr) => GuiUpdate::WalletAddress(addr),
-                BridgeUpd::WalletBalance { available, unlocked } => {
-                    GuiUpdate::WalletBalance { available, unlocked }
-                }
+                BridgeUpd::WalletBalance {
+                    available,
+                    unlocked,
+                } => GuiUpdate::WalletBalance {
+                    available,
+                    unlocked,
+                },
                 BridgeUpd::WalletConnected { connected, address } => {
                     GuiUpdate::WalletConnected { connected, address }
                 }
                 BridgeUpd::BtcWalletAddress(addr) => GuiUpdate::BtcWalletAddress(addr),
-                BridgeUpd::BtcWalletBalance { balance } => {
-                    GuiUpdate::BtcWalletBalance { balance }
-                }
+                BridgeUpd::BtcWalletBalance { balance } => GuiUpdate::BtcWalletBalance { balance },
                 BridgeUpd::BtcWalletConnected { connected, address } => {
                     GuiUpdate::BtcWalletConnected { connected, address }
                 }

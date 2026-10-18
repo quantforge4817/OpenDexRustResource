@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use libp2p::{Multiaddr, PeerId, gossipsub, identity, multiaddr::Protocol, swarm::SwarmEvent};
 use p2p_node::network::build_swarm;
-use protocol::message::{Asset, Market, MessageType, Message, Order, Side};
+use protocol::message::{Asset, Market, Message, MessageType, Order, Side};
 use std::time::Duration;
 use tokio::time::timeout;
 use uuid::Uuid;

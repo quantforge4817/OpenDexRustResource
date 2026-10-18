@@ -148,9 +148,7 @@ pub fn plan_local_escrow(
                     required = format_amount(trade.amount),
                     "Insufficient escrowed balance for release"
                 );
-                return Err(anyhow!(
-                    "insufficient escrowed base balance for release"
-                ));
+                return Err(anyhow!("insufficient escrowed base balance for release"));
             }
 
             tracing::info!(
@@ -202,9 +200,7 @@ pub fn plan_local_escrow(
                     required = format_amount(trade.amount),
                     "Insufficient escrowed balance for return"
                 );
-                return Err(anyhow!(
-                    "insufficient escrowed base balance for return"
-                ));
+                return Err(anyhow!("insufficient escrowed base balance for return"));
             }
 
             tracing::info!(
@@ -278,10 +274,7 @@ fn apply_escrow_plan(balance_book: &mut BalanceBook, plan: &EscrowPlan) -> Resul
 
 /// Commits an escrow plan using the plan-then-commit atomicity pattern:
 /// clone → apply → save → swap.
-pub fn commit_local_escrow(
-    balance_book: &mut BalanceBook,
-    plan: &EscrowPlan,
-) -> Result<()> {
+pub fn commit_local_escrow(balance_book: &mut BalanceBook, plan: &EscrowPlan) -> Result<()> {
     tracing::debug!(
         trade_id = %plan.trade_id,
         "Committing escrow plan (clone → apply → save → swap)"
@@ -340,8 +333,7 @@ pub fn release_local_escrow(
     local_peer_id: &PeerId,
     trade: &Trade,
 ) -> Result<bool> {
-    let Some(plan) =
-        plan_local_escrow(balance_book, local_peer_id, trade, EscrowAction::Release)?
+    let Some(plan) = plan_local_escrow(balance_book, local_peer_id, trade, EscrowAction::Release)?
     else {
         return Ok(false);
     };
@@ -370,8 +362,7 @@ pub fn return_local_escrow(
     local_peer_id: &PeerId,
     trade: &Trade,
 ) -> Result<bool> {
-    let Some(plan) =
-        plan_local_escrow(balance_book, local_peer_id, trade, EscrowAction::Return)?
+    let Some(plan) = plan_local_escrow(balance_book, local_peer_id, trade, EscrowAction::Return)?
     else {
         return Ok(false);
     };

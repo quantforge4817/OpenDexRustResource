@@ -210,27 +210,27 @@ pub struct OrderCancelled {
 mod tests {
     use super::*;
 
-fn trade() -> Trade {
-    Trade {
-        id: Uuid::new_v4(),
-        buy_order: Uuid::new_v4(),
-        sell_order: Uuid::new_v4(),
-        maker: "seller".to_string(),
-        taker: "buyer".to_string(),
-        buyer: "buyer".to_string(),
-        seller: "seller".to_string(),
-        market: Market {
-            base: Asset::BTC,
-            quote: Asset::XMR,
-        },
-        price: 100 * PRICE_SCALE,
-        amount: AMOUNT_SCALE,
-        fill_sequence: 0,
-        state: TradeState::Created,
-        created_at: 1,
-        updated_at: 1,
+    fn trade() -> Trade {
+        Trade {
+            id: Uuid::new_v4(),
+            buy_order: Uuid::new_v4(),
+            sell_order: Uuid::new_v4(),
+            maker: "seller".to_string(),
+            taker: "buyer".to_string(),
+            buyer: "buyer".to_string(),
+            seller: "seller".to_string(),
+            market: Market {
+                base: Asset::BTC,
+                quote: Asset::XMR,
+            },
+            price: 100 * PRICE_SCALE,
+            amount: AMOUNT_SCALE,
+            fill_sequence: 0,
+            state: TradeState::Created,
+            created_at: 1,
+            updated_at: 1,
+        }
     }
-}
 
     #[test]
     fn valid_trade_transition() {

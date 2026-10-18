@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use p2p_node::orderbook::OrderBook;
 use protocol::message::{Asset, Market, Order, Side};
 use std::path::PathBuf;
@@ -26,10 +26,8 @@ fn bench_order_matching(c: &mut Criterion) {
             BenchmarkId::new("upsert_order", order_count),
             &order_count,
             |b, &n| {
-                let tmp_dir = std::env::temp_dir().join(format!(
-                    "opendex-bench-{}",
-                    Uuid::new_v4().hyphenated()
-                ));
+                let tmp_dir = std::env::temp_dir()
+                    .join(format!("opendex-bench-{}", Uuid::new_v4().hyphenated()));
                 let mut book = OrderBook::new(tmp_dir.clone());
 
                 // Pre-populate with resting sell orders
@@ -45,12 +43,8 @@ fn bench_order_matching(c: &mut Criterion) {
 
                 b.iter(|| {
                     // Insert a buy order that may match against resting sells
-                    let buy_order = create_order(
-                        Uuid::new_v4(),
-                        Side::Buy,
-                        100 * 100_000_000,
-                        100_000_000,
-                    );
+                    let buy_order =
+                        create_order(Uuid::new_v4(), Side::Buy, 100 * 100_000_000, 100_000_000);
                     book.upsert_order(buy_order)
                 });
 

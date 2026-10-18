@@ -1,7 +1,7 @@
 //! Authentication screens: login, registration, and email verification.
 
-use iced::widget::{Column, Container, Row, Text, TextInput, Button};
-use iced::{Length, Element};
+use iced::widget::{Button, Column, Container, Row, Text, TextInput};
+use iced::{Element, Length};
 
 use crate::app::Message;
 use crate::model::GuiModel;
@@ -12,7 +12,9 @@ pub fn auth_panel<'a>(model: &'a GuiModel) -> Element<'a, Message> {
         crate::model::AuthScreen::Login => login_form(model),
         crate::model::AuthScreen::Register => register_form(model),
         crate::model::AuthScreen::VerifyEmail => verify_email_form(model),
-        crate::model::AuthScreen::Profile | crate::model::AuthScreen::ResetPassword => login_form(model),
+        crate::model::AuthScreen::Profile | crate::model::AuthScreen::ResetPassword => {
+            login_form(model)
+        }
     };
 
     let centered = Container::new(content)
@@ -41,8 +43,7 @@ fn login_form<'a>(model: &'a GuiModel) -> Column<'a, Message> {
     }
 
     column = column.push(
-        TextInput::new("Username", &model.login_username)
-            .on_input(Message::LoginUsernameChanged),
+        TextInput::new("Username", &model.login_username).on_input(Message::LoginUsernameChanged),
     );
 
     column = column.push(
@@ -62,10 +63,7 @@ fn login_form<'a>(model: &'a GuiModel) -> Column<'a, Message> {
         Row::new()
             .spacing(10)
             .push(Text::new("Don't have an account?"))
-            .push(
-                Button::new(Text::new("Register"))
-                    .on_press(Message::SwitchToRegister),
-            ),
+            .push(Button::new(Text::new("Register")).on_press(Message::SwitchToRegister)),
     );
 
     column
@@ -94,10 +92,8 @@ fn register_form<'a>(model: &'a GuiModel) -> Column<'a, Message> {
             .secure(true),
     );
 
-    column = column.push(
-        TextInput::new("Email address", &model.reg_email)
-            .on_input(Message::RegEmailChanged),
-    );
+    column = column
+        .push(TextInput::new("Email address", &model.reg_email).on_input(Message::RegEmailChanged));
 
     column = column.push(Text::new("Wallet Addresses (optional)").size(14));
 
@@ -121,10 +117,7 @@ fn register_form<'a>(model: &'a GuiModel) -> Column<'a, Message> {
         Row::new()
             .spacing(10)
             .push(Text::new("Already have an account?"))
-            .push(
-                Button::new(Text::new("Login"))
-                    .on_press(Message::SwitchToLogin),
-            ),
+            .push(Button::new(Text::new("Login")).on_press(Message::SwitchToLogin)),
     );
 
     column

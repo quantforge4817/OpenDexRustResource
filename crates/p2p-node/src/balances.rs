@@ -223,7 +223,9 @@ impl BalanceBook {
         if current < amount {
             return Err(anyhow!(
                 "order {} reservation ({}) insufficient for consumption ({})",
-                order_id, current, amount
+                order_id,
+                current,
+                amount
             ));
         }
 
@@ -283,7 +285,9 @@ impl BalanceBook {
         if current < amount {
             return Err(anyhow!(
                 "order {} reservation ({}) insufficient for escrow ({})",
-                order_id, current, amount
+                order_id,
+                current,
+                amount
             ));
         }
 

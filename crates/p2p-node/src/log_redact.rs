@@ -18,11 +18,10 @@
 ///     .with(/* your fmt layer */)
 ///     .init();
 /// ```
-
 use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
-use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
 
 /// Keywords that identify sensitive field names.
 const SENSITIVE_KEYWORDS: &[&str] = &[

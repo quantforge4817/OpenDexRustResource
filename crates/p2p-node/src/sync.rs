@@ -205,10 +205,7 @@ pub fn validate_state_snapshot(
     // Do not allow the remote snapshot to claim that a trade was applied
     // without that trade actually being present in the snapshot or locally.
     for trade_id in &state.applied_trades {
-        if !state
-            .trades
-            .iter()
-            .any(|trade| trade.id == *trade_id)
+        if !state.trades.iter().any(|trade| trade.id == *trade_id)
             && !trade_book.has_trade(trade_id)
         {
             anyhow::bail!(
@@ -253,10 +250,7 @@ pub fn apply_snapshot(
         return Ok(());
     }
 
-    tracing::info!(
-        version = state.version,
-        "=== State Sync Received ==="
-    );
+    tracing::info!(version = state.version, "=== State Sync Received ===");
 
     // Remote snapshots are reconciliation data, not an authority over
     // already-known local state.
@@ -319,10 +313,7 @@ pub fn apply_snapshot(
     order_book.print_orders();
     trade_book.print_trades();
 
-    tracing::info!(
-        version = state.version,
-        "=== State Sync Complete ==="
-    );
+    tracing::info!(version = state.version, "=== State Sync Complete ===");
 
     Ok(())
 }

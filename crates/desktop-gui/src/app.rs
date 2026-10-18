@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use crate::model::{
+    AlertDirection, AuthScreen, GuiModel, NodeUpdate, OrderHistoryEntry, PeerView,
+    PriceAlert, ThemeMode,
+};
+use crate::view::{auth, order_book, peers, reputation, status_bar, trade_form, trades, wallet};
 use iced::widget::{Column, Row};
-use iced::{Length, Task, Element};
-use crate::model::{GuiModel, NodeUpdate, OrderHistoryEntry, PeerView, AuthScreen, PriceAlert, AlertDirection, ThemeMode, TradingAnalytics, NetworkStats};
-use crate::view::{order_book, trade_form, trades, wallet, peers, status_bar, auth, reputation};
+use iced::{Element, Length, Task};
 use protocol::message::{Asset, Market, Side, TradeState};
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Commands sent from the GUI to the P2P node.
@@ -70,11 +73,22 @@ pub enum GuiUpdate {
     LogMessage(String),
     Error(String),
     WalletAddress(String),
-    WalletBalance { available: f64, unlocked: f64 },
-    WalletConnected { connected: bool, address: Option<String> },
+    WalletBalance {
+        available: f64,
+        unlocked: f64,
+    },
+    WalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
     BtcWalletAddress(String),
-    BtcWalletBalance { balance: f64 },
-    BtcWalletConnected { connected: bool, address: Option<String> },
+    BtcWalletBalance {
+        balance: f64,
+    },
+    BtcWalletConnected {
+        connected: bool,
+        address: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -166,11 +180,7 @@ pub struct App {
 }
 
 fn boot(flags: Flags) -> (App, Task<Message>) {
-    let model = GuiModel::new(
-        flags.cmd_tx.clone(),
-        flags.peer_id,
-        flags.listen_addr,
-    );
+    let model = GuiModel::new(flags.cmd_tx.clone(), flags.peer_id, flags.listen_addr);
     let app = App { model: Some(model) };
 
     let cmd_tx = flags.cmd_tx.clone();
@@ -187,15 +197,26 @@ fn boot(flags: Flags) -> (App, Task<Message>) {
 }
 
 fn update(app: &mut App, message: Message) -> Task<Message> {
-    let model = if let Some(m) = app.model.as_mut() { m } else { return Task::none() };
+    let model = if let Some(m) = app.model.as_mut() {
+        m
+    } else {
+        return Task::none();
+    };
 
     match message {
         Message::SideSelected(label) => {
-            model.trade_form.side = if label == "Buy" { Side::Buy } else { Side::Sell };
+            model.trade_form.side = if label == "Buy" {
+                Side::Buy
+            } else {
+                Side::Sell
+            };
         }
         Message::MarketSelected(label) => {
             model.trade_form.market = if label == "BTC/XMR" {
-                Market { base: Asset::BTC, quote: Asset::XMR }
+                Market {
+                    base: Asset::BTC,
+                    quote: Asset::XMR,
+                }
             } else {
                 model.trade_form.market.clone()
             };
@@ -236,16 +257,28 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             // Record in order history
             let entry = OrderHistoryEntry {
                 id: format!("{}", uuid::Uuid::new_v4()),
-                side: match side { Side::Buy => "Buy".to_string(), Side::Sell => "Sell".to_string() },
+                side: match side {
+                    Side::Buy => "Buy".to_string(),
+                    Side::Sell => "Sell".to_string(),
+                },
                 price: model.trade_form.price.clone(),
                 amount: model.trade_form.amount.clone(),
-                timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
                 status: "Placed".to_string(),
             };
             model.order_history.push(entry);
             return Task::perform(
-                async move { let _ = tx.send(cmd); },
-                |_| Message::NodeUpdate(NodeUpdate::LogMessage("Order confirmed and submitted".to_string())),
+                async move {
+                    let _ = tx.send(cmd);
+                },
+                |_| {
+                    Message::NodeUpdate(NodeUpdate::LogMessage(
+                        "Order confirmed and submitted".to_string(),
+                    ))
+                },
             );
         }
         Message::CancelConfirmOrder => {
@@ -263,7 +296,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let cmd = GuiCommand::ConnectPeer { multiaddr: addr };
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(cmd); },
+                async move {
+                    let _ = tx.send(cmd);
+                },
                 |_| Message::NodeUpdate(NodeUpdate::LogMessage("Connect command sent".to_string())),
             );
         }
@@ -273,12 +308,22 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let cmd = GuiCommand::ConnectPeer { multiaddr: addr };
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(cmd); },
-                |_| Message::NodeUpdate(NodeUpdate::LogMessage("Connecting to bootstrap node...".to_string())),
+                async move {
+                    let _ = tx.send(cmd);
+                },
+                |_| {
+                    Message::NodeUpdate(NodeUpdate::LogMessage(
+                        "Connecting to bootstrap node...".to_string(),
+                    ))
+                },
             );
         }
         Message::FundAssetSelected(label) => {
-            model.fund_asset = if label == "BTC" { Asset::BTC } else { Asset::XMR };
+            model.fund_asset = if label == "BTC" {
+                Asset::BTC
+            } else {
+                Asset::XMR
+            };
         }
         Message::FundAmountChanged(value) => {
             model.fund_amount = value;
@@ -289,31 +334,50 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 model.status_message = Some("Invalid amount".to_string());
                 return Task::none();
             }
-            let cmd = GuiCommand::Fund { asset: model.fund_asset.clone(), amount };
+            let cmd = GuiCommand::Fund {
+                asset: model.fund_asset.clone(),
+                amount,
+            };
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(cmd); },
+                async move {
+                    let _ = tx.send(cmd);
+                },
                 |_| Message::NodeUpdate(NodeUpdate::LogMessage("Fund command sent".to_string())),
             );
         }
         Message::RefreshBalances => {
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(GuiCommand::RequestBalances); },
-                |_| Message::NodeUpdate(NodeUpdate::LogMessage("Refreshing balances...".to_string())),
+                async move {
+                    let _ = tx.send(GuiCommand::RequestBalances);
+                },
+                |_| {
+                    Message::NodeUpdate(NodeUpdate::LogMessage(
+                        "Refreshing balances...".to_string(),
+                    ))
+                },
             );
         }
         Message::RefreshOrderBook => {
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(GuiCommand::RequestOrderBook); },
-                |_| Message::NodeUpdate(NodeUpdate::LogMessage("Refreshing order book...".to_string())),
+                async move {
+                    let _ = tx.send(GuiCommand::RequestOrderBook);
+                },
+                |_| {
+                    Message::NodeUpdate(NodeUpdate::LogMessage(
+                        "Refreshing order book...".to_string(),
+                    ))
+                },
             );
         }
         Message::RefreshTrades => {
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(GuiCommand::RequestTrades); },
+                async move {
+                    let _ = tx.send(GuiCommand::RequestTrades);
+                },
                 |_| Message::NodeUpdate(NodeUpdate::LogMessage("Refreshing trades...".to_string())),
             );
         }
@@ -321,103 +385,115 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let cmd = GuiCommand::AdvanceTradeState { trade_id, state };
             let tx = model.command_tx.clone();
             return Task::perform(
-                async move { let _ = tx.send(cmd); },
-                |_| Message::NodeUpdate(NodeUpdate::LogMessage("Trade state advance sent".to_string())),
+                async move {
+                    let _ = tx.send(cmd);
+                },
+                |_| {
+                    Message::NodeUpdate(NodeUpdate::LogMessage(
+                        "Trade state advance sent".to_string(),
+                    ))
+                },
             );
         }
-        Message::NodeUpdate(update) => {
-            match update {
-                NodeUpdate::OrderBookUpdated(ob) => {
-                    model.order_book = ob;
-                }
-                NodeUpdate::TradeAdded(trade) => {
-                    if !model.trades.iter().any(|t| t.id == trade.id) {
-                        model.trades.push(trade);
-                    }
-                }
-                NodeUpdate::TradeStateChanged { trade_id, state } => {
-                    if let Some(trade) = model.trades.iter_mut().find(|t| t.id == trade_id) {
-                        trade.state = state;
-                    }
-                }
-                NodeUpdate::BalancesUpdated(balances) => {
-                    model.balances = balances;
-                }
-                NodeUpdate::PeerConnected(addr) => {
-                    if !model.peers.iter().any(|p| p.address == addr) {
-                        model.peers.push(PeerView { address: addr.clone(), connected: true });
-                    }
-                    model.node_status.peer_count = model.peers.len();
-                }
-                NodeUpdate::PeerDisconnected(addr) => {
-                    model.peers.retain(|p| p.address != addr);
-                    model.node_status.peer_count = model.peers.len();
-                }
-                NodeUpdate::OrderResult { order_id, success, error } => {
-                    if success {
-                        model.status_message = Some(format!("Order {} placed", &order_id.to_string()[..8]));
-                        model.trade_form.price.clear();
-                        model.trade_form.amount.clear();
-                    } else {
-                        model.status_message = Some(format!("Order failed: {:?}", error));
-                    }
-                }
-                NodeUpdate::LogMessage(msg) => {
-                    model.logs.push(msg.clone());
-                    if model.logs.len() > 100 {
-                        model.logs.drain(..10);
-                    }
-                    model.status_message = Some(msg);
-                }
-                NodeUpdate::Error(msg) => {
-                    model.logs.push(format!("ERROR: {}", msg));
-                    model.status_message = Some(format!("Error: {}", msg));
-                }
-                NodeUpdate::WalletAddress(addr) => {
-                    model.wallet_address = Some(addr.clone());
-                    model.wallet_connected = true;
-                    model.status_message = Some(format!("Wallet address: {}", &addr[..20]));
-                }
-                NodeUpdate::WalletBalance { available, unlocked } => {
-                    model.wallet_balance_available = Some(available);
-                    model.wallet_balance_unlocked = Some(unlocked);
-                    model.status_message = Some(format!(
-                        "Wallet balance: {:.4} XMR (unlocked: {:.4})",
-                        available, unlocked
-                    ));
-                }
-                NodeUpdate::WalletConnected { connected, address } => {
-                    model.wallet_connected = connected;
-                    model.wallet_address = address;
-                    model.status_message = Some(if connected {
-                        "Monero wallet connected".to_string()
-                    } else {
-                        "Monero wallet disconnected".to_string()
-                    });
-                }
-                NodeUpdate::BtcWalletAddress(addr) => {
-                    model.btc_wallet_address = Some(addr.clone());
-                    model.btc_wallet_connected = true;
-                    model.status_message = Some(format!("BTC wallet address: {}", &addr[..20]));
-                }
-                NodeUpdate::BtcWalletBalance { balance } => {
-                    model.btc_wallet_balance = Some(balance);
-                    model.status_message = Some(format!(
-                        "BTC wallet balance: {:.8} BTC",
-                        balance
-                    ));
-                }
-                NodeUpdate::BtcWalletConnected { connected, address } => {
-                    model.btc_wallet_connected = connected;
-                    model.btc_wallet_address = address;
-                    model.status_message = Some(if connected {
-                        "Bitcoin wallet connected".to_string()
-                    } else {
-                        "Bitcoin wallet disconnected".to_string()
-                    });
+        Message::NodeUpdate(update) => match update {
+            NodeUpdate::OrderBookUpdated(ob) => {
+                model.order_book = ob;
+            }
+            NodeUpdate::TradeAdded(trade) => {
+                if !model.trades.iter().any(|t| t.id == trade.id) {
+                    model.trades.push(trade);
                 }
             }
-        }
+            NodeUpdate::TradeStateChanged { trade_id, state } => {
+                if let Some(trade) = model.trades.iter_mut().find(|t| t.id == trade_id) {
+                    trade.state = state;
+                }
+            }
+            NodeUpdate::BalancesUpdated(balances) => {
+                model.balances = balances;
+            }
+            NodeUpdate::PeerConnected(addr) => {
+                if !model.peers.iter().any(|p| p.address == addr) {
+                    model.peers.push(PeerView {
+                        address: addr.clone(),
+                        connected: true,
+                    });
+                }
+                model.node_status.peer_count = model.peers.len();
+            }
+            NodeUpdate::PeerDisconnected(addr) => {
+                model.peers.retain(|p| p.address != addr);
+                model.node_status.peer_count = model.peers.len();
+            }
+            NodeUpdate::OrderResult {
+                order_id,
+                success,
+                error,
+            } => {
+                if success {
+                    model.status_message =
+                        Some(format!("Order {} placed", &order_id.to_string()[..8]));
+                    model.trade_form.price.clear();
+                    model.trade_form.amount.clear();
+                } else {
+                    model.status_message = Some(format!("Order failed: {:?}", error));
+                }
+            }
+            NodeUpdate::LogMessage(msg) => {
+                model.logs.push(msg.clone());
+                if model.logs.len() > 100 {
+                    model.logs.drain(..10);
+                }
+                model.status_message = Some(msg);
+            }
+            NodeUpdate::Error(msg) => {
+                model.logs.push(format!("ERROR: {}", msg));
+                model.status_message = Some(format!("Error: {}", msg));
+            }
+            NodeUpdate::WalletAddress(addr) => {
+                model.wallet_address = Some(addr.clone());
+                model.wallet_connected = true;
+                model.status_message = Some(format!("Wallet address: {}", &addr[..20]));
+            }
+            NodeUpdate::WalletBalance {
+                available,
+                unlocked,
+            } => {
+                model.wallet_balance_available = Some(available);
+                model.wallet_balance_unlocked = Some(unlocked);
+                model.status_message = Some(format!(
+                    "Wallet balance: {:.4} XMR (unlocked: {:.4})",
+                    available, unlocked
+                ));
+            }
+            NodeUpdate::WalletConnected { connected, address } => {
+                model.wallet_connected = connected;
+                model.wallet_address = address;
+                model.status_message = Some(if connected {
+                    "Monero wallet connected".to_string()
+                } else {
+                    "Monero wallet disconnected".to_string()
+                });
+            }
+            NodeUpdate::BtcWalletAddress(addr) => {
+                model.btc_wallet_address = Some(addr.clone());
+                model.btc_wallet_connected = true;
+                model.status_message = Some(format!("BTC wallet address: {}", &addr[..20]));
+            }
+            NodeUpdate::BtcWalletBalance { balance } => {
+                model.btc_wallet_balance = Some(balance);
+                model.status_message = Some(format!("BTC wallet balance: {:.8} BTC", balance));
+            }
+            NodeUpdate::BtcWalletConnected { connected, address } => {
+                model.btc_wallet_connected = connected;
+                model.btc_wallet_address = address;
+                model.status_message = Some(if connected {
+                    "Bitcoin wallet connected".to_string()
+                } else {
+                    "Bitcoin wallet disconnected".to_string()
+                });
+            }
+        },
         // === Auth Messages ===
         Message::LoginUsernameChanged(v) => {
             model.login_username = v;
@@ -434,14 +510,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             return Task::perform(
                 async move {
                     let mut auth = auth.lock().unwrap();
-                    let result = auth.login(&username, &password);
-                    result
+                    auth.login(&username, &password)
                 },
-                move |result| {
-                    match result {
-                        Ok(login_result) => Message::LoginSuccess(login_result),
-                        Err(e) => Message::LoginError(format!("{}", e)),
-                    }
+                move |result| match result {
+                    Ok(login_result) => Message::LoginSuccess(login_result),
+                    Err(e) => Message::LoginError(format!("{}", e)),
                 },
             );
         }
@@ -493,11 +566,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     let mut auth = auth.lock().unwrap();
                     auth.register(username, password, email, btc_wallet, xmr_wallet)
                 },
-                move |result| {
-                    match result {
-                        Ok(reg_result) => Message::RegisterSuccess(reg_result),
-                        Err(e) => Message::RegisterError(format!("{}", e)),
-                    }
+                move |result| match result {
+                    Ok(reg_result) => Message::RegisterSuccess(reg_result),
+                    Err(e) => Message::RegisterError(format!("{}", e)),
                 },
             );
         }
@@ -512,17 +583,15 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 async move {
                     let user_id = {
                         let auth = auth.lock().unwrap();
-                        auth.first_user_id().unwrap_or(opendex_user::UserId(uuid::Uuid::nil()))
+                        auth.first_user_id()
+                            .unwrap_or(opendex_user::UserId(uuid::Uuid::nil()))
                     };
                     let mut auth = auth.lock().unwrap();
-                    let result = auth.verify_email(user_id, &code);
-                    result
+                    auth.verify_email(user_id, &code)
                 },
-                move |result| {
-                    match result {
-                        Ok(()) => Message::VerifySuccess,
-                        Err(e) => Message::VerifyError(format!("{}", e)),
-                    }
+                move |result| match result {
+                    Ok(()) => Message::VerifySuccess,
+                    Err(e) => Message::VerifyError(format!("{}", e)),
                 },
             );
         }
@@ -626,12 +695,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             model.reset_new_password = value;
         }
         Message::SendResetCode => {
-            if let Some(user_id) = model.logged_in_user_id {
-                if let Ok(mut auth) = model.auth_service.lock() {
-                    match auth.resend_verification_code(user_id) {
-                        Ok(code) => model.auth_message = Some(format!("Reset code sent: {}", code)),
-                        Err(e) => model.auth_message = Some(format!("Reset failed: {}", e)),
-                    }
+            if let Some(user_id) = model.logged_in_user_id
+                && let Ok(mut auth) = model.auth_service.lock()
+            {
+                match auth.resend_verification_code(user_id) {
+                    Ok(code) => model.auth_message = Some(format!("Reset code sent: {}", code)),
+                    Err(e) => model.auth_message = Some(format!("Reset failed: {}", e)),
                 }
             }
         }
@@ -640,7 +709,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 model.auth_message = Some("Password must be at least 8 characters".to_string());
                 return Task::none();
             }
-            model.auth_message = Some("Password reset functionality requires email backend".to_string());
+            model.auth_message =
+                Some("Password reset functionality requires email backend".to_string());
         }
         Message::ToggleTheme => {
             model.theme_override = match model.theme_override {
@@ -672,15 +742,30 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         // Analytics
         Message::ToggleAnalytics => {
             model.show_analytics = !model.show_analytics;
-            model.status_message = Some(format!("Analytics: {}", if model.show_analytics { "shown" } else { "hidden" }));
+            model.status_message = Some(format!(
+                "Analytics: {}",
+                if model.show_analytics {
+                    "shown"
+                } else {
+                    "hidden"
+                }
+            ));
         }
         Message::ToggleNetworkStats => {
             model.show_network_stats = !model.show_network_stats;
             // Update network stats from current state
             model.network_stats.total_peers = model.peers.len();
-            model.network_stats.total_orders = model.order_book.bids.len() + model.order_book.asks.len();
+            model.network_stats.total_orders =
+                model.order_book.bids.len() + model.order_book.asks.len();
             model.network_stats.active_trades = model.trades.len();
-            model.status_message = Some(format!("Network stats: {}", if model.show_network_stats { "shown" } else { "hidden" }));
+            model.status_message = Some(format!(
+                "Network stats: {}",
+                if model.show_network_stats {
+                    "shown"
+                } else {
+                    "hidden"
+                }
+            ));
         }
         Message::ExportTradeHistoryCsv => {
             let csv = generate_trade_history_csv(&model.order_history);
@@ -698,12 +783,18 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         // Blockchain explorer links
         Message::OpenBtcExplorer(trade_id) => {
             let url = format!("https://mempool.space/tx/{}", trade_id);
-            model.status_message = Some(format!("Opening Bitcoin explorer: {}", &trade_id.to_string()[..8]));
+            model.status_message = Some(format!(
+                "Opening Bitcoin explorer: {}",
+                &trade_id.to_string()[..8]
+            ));
             let _ = open::that(&url);
         }
         Message::OpenXmrExplorer(trade_id) => {
             let url = format!("https://xmrchain.net/search?value={}", trade_id);
-            model.status_message = Some(format!("Opening Monero explorer: {}", &trade_id.to_string()[..8]));
+            model.status_message = Some(format!(
+                "Opening Monero explorer: {}",
+                &trade_id.to_string()[..8]
+            ));
             let _ = open::that(&url);
         }
     }
@@ -711,7 +802,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
 }
 
 fn view(app: &App) -> Element<'_, Message> {
-    let model = if let Some(m) = &app.model { m } else {
+    let model = if let Some(m) = &app.model {
+        m
+    } else {
         return iced::widget::text("Loading").into();
     };
 
@@ -751,19 +844,13 @@ fn view(app: &App) -> Element<'_, Message> {
     // Overlay confirmation dialog if needed
     if model.show_confirm_dialog {
         let dialog = confirm_order_dialog(model);
-        return iced::widget::Stack::new()
-            .push(base)
-            .push(dialog)
-            .into();
+        return iced::widget::Stack::new().push(base).push(dialog).into();
     }
 
     // Overlay profile panel if needed
     if model.show_profile {
         let dialog = profile_panel(model);
-        return iced::widget::Stack::new()
-            .push(base)
-            .push(dialog)
-            .into();
+        return iced::widget::Stack::new().push(base).push(dialog).into();
     }
 
     base.into()
@@ -773,7 +860,13 @@ fn view(app: &App) -> Element<'_, Message> {
 fn subscription(app: &App) -> iced::Subscription<Message> {
     let _ = app; // subscription is active regardless of model state
     iced::event::listen_with(|event, _status, _window_id| {
-        if let iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, text, .. }) = &event {
+        if let iced::event::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key,
+            modifiers,
+            text,
+            ..
+        }) = &event
+        {
             if modifiers.control() {
                 // Use the character produced by the key press for reliable detection
                 let c = text.as_ref().map(|t| t.as_str()).unwrap_or("");
@@ -814,17 +907,26 @@ pub fn launch_gui(
     listen_addr: String,
 ) {
     std::thread::spawn(move || {
-        let flags = Arc::new(Flags { cmd_tx, update_rx, peer_id, listen_addr });
-        let _ = iced::application({
-            let flags = flags.clone();
-            move || boot((*flags).clone())
-        }, update, view)
-            .subscription(|app| subscription(app))
-            .window(iced::window::Settings {
-                size: iced::Size::new(1200.0, 800.0),
-                ..Default::default()
-            })
-            .run();
+        let flags = Arc::new(Flags {
+            cmd_tx,
+            update_rx,
+            peer_id,
+            listen_addr,
+        });
+        let _ = iced::application(
+            {
+                let flags = flags.clone();
+                move || boot((*flags).clone())
+            },
+            update,
+            view,
+        )
+        .subscription(subscription)
+        .window(iced::window::Settings {
+            size: iced::Size::new(1200.0, 800.0),
+            ..Default::default()
+        })
+        .run();
     });
 }
 
@@ -834,23 +936,32 @@ pub fn launch_gui_on_main(
     cmd_tx: flume::Sender<GuiCommand>,
     update_rx: flume::Receiver<GuiUpdate>,
 ) {
-    let flags = Arc::new(Flags { cmd_tx, update_rx, peer_id: String::new(), listen_addr: String::new() });
-    let _ = iced::application({
-        let flags = flags.clone();
-        move || boot((*flags).clone())
-    }, update, view)
-        .subscription(|app| subscription(app))
-        .window(iced::window::Settings {
-            size: iced::Size::new(1200.0, 800.0),
-            ..Default::default()
-        })
-        .run();
+    let flags = Arc::new(Flags {
+        cmd_tx,
+        update_rx,
+        peer_id: String::new(),
+        listen_addr: String::new(),
+    });
+    let _ = iced::application(
+        {
+            let flags = flags.clone();
+            move || boot((*flags).clone())
+        },
+        update,
+        view,
+    )
+    .subscription(subscription)
+    .window(iced::window::Settings {
+        size: iced::Size::new(1200.0, 800.0),
+        ..Default::default()
+    })
+    .run();
 }
 
 /// Order history panel showing past orders
 fn order_history_panel(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, Scrollable};
     use crate::style::{BG_PANEL, TEXT_SECONDARY};
+    use iced::widget::{Column, Container, Row, Scrollable, Text};
 
     let title = Container::new(Text::new("Order History").size(14))
         .padding(iced::Padding::new(8.0).left(10).bottom(4));
@@ -858,15 +969,42 @@ fn order_history_panel(model: &GuiModel) -> Element<'_, Message> {
     let header = Row::new()
         .spacing(6)
         .padding(iced::Padding::new(4.0).left(10).right(10))
-        .push(Text::new("Side").size(11).width(Length::Fixed(35.0)).color(TEXT_SECONDARY))
-        .push(Text::new("Price").size(11).width(Length::Fixed(60.0)).color(TEXT_SECONDARY))
-        .push(Text::new("Amount").size(11).width(Length::Fixed(55.0)).color(TEXT_SECONDARY))
-        .push(Text::new("Status").size(11).width(Length::Fixed(50.0)).color(TEXT_SECONDARY))
-        .push(Text::new("Time").size(11).width(Length::Fill).color(TEXT_SECONDARY));
+        .push(
+            Text::new("Side")
+                .size(11)
+                .width(Length::Fixed(35.0))
+                .color(TEXT_SECONDARY),
+        )
+        .push(
+            Text::new("Price")
+                .size(11)
+                .width(Length::Fixed(60.0))
+                .color(TEXT_SECONDARY),
+        )
+        .push(
+            Text::new("Amount")
+                .size(11)
+                .width(Length::Fixed(55.0))
+                .color(TEXT_SECONDARY),
+        )
+        .push(
+            Text::new("Status")
+                .size(11)
+                .width(Length::Fixed(50.0))
+                .color(TEXT_SECONDARY),
+        )
+        .push(
+            Text::new("Time")
+                .size(11)
+                .width(Length::Fill)
+                .color(TEXT_SECONDARY),
+        );
 
-    let list = model.order_history.iter().rev().fold(
-        Column::new().spacing(0),
-        |col, entry| {
+    let list = model
+        .order_history
+        .iter()
+        .rev()
+        .fold(Column::new().spacing(0), |col, entry| {
             let time = chrono::DateTime::<chrono::Utc>::from_timestamp(entry.timestamp as i64, 0)
                 .map(|dt| format!("{}", dt.format("%H:%M:%S")))
                 .unwrap_or_else(|| "??:??:??".to_string());
@@ -875,16 +1013,27 @@ fn order_history_panel(model: &GuiModel) -> Element<'_, Message> {
                 "Failed" => iced::Color::from([1.0, 0.3, 0.3, 1.0]),
                 _ => TEXT_SECONDARY,
             };
-            col.push(Row::new()
-                .spacing(6)
-                .padding(iced::Padding::new(3.0).left(10).right(10))
-                .push(Text::new(&entry.side).size(10).width(Length::Fixed(35.0)))
-                .push(Text::new(&entry.price).size(10).width(Length::Fixed(60.0)))
-                .push(Text::new(&entry.amount).size(10).width(Length::Fixed(55.0)))
-                .push(Text::new(&entry.status).size(10).width(Length::Fixed(50.0)).color(status_color))
-                .push(Text::new(time).size(10).width(Length::Fill).color(TEXT_SECONDARY)))
-        }
-    );
+            col.push(
+                Row::new()
+                    .spacing(6)
+                    .padding(iced::Padding::new(3.0).left(10).right(10))
+                    .push(Text::new(&entry.side).size(10).width(Length::Fixed(35.0)))
+                    .push(Text::new(&entry.price).size(10).width(Length::Fixed(60.0)))
+                    .push(Text::new(&entry.amount).size(10).width(Length::Fixed(55.0)))
+                    .push(
+                        Text::new(&entry.status)
+                            .size(10)
+                            .width(Length::Fixed(50.0))
+                            .color(status_color),
+                    )
+                    .push(
+                        Text::new(time)
+                            .size(10)
+                            .width(Length::Fill)
+                            .color(TEXT_SECONDARY),
+                    ),
+            )
+        });
 
     let content = Column::new()
         .spacing(0)
@@ -903,8 +1052,8 @@ fn order_history_panel(model: &GuiModel) -> Element<'_, Message> {
 
 /// Confirmation dialog overlay before placing an order
 fn confirm_order_dialog(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, Button};
-    use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
+    use crate::style::{ACCENT_COLOR, BG_PANEL, TEXT_SECONDARY};
+    use iced::widget::{Button, Column, Container, Row, Text};
 
     let side_label = match model.trade_form.side {
         Side::Buy => "Buy",
@@ -930,16 +1079,25 @@ fn confirm_order_dialog(model: &GuiModel) -> Element<'_, Message> {
             .spacing(12)
             .padding(24)
             .push(Text::new("Confirm Order").size(18))
-            .push(Text::new("Review your order details before submitting.").size(12).color(TEXT_SECONDARY))
+            .push(
+                Text::new("Review your order details before submitting.")
+                    .size(12)
+                    .color(TEXT_SECONDARY),
+            )
             .push(Text::new(format!("Side: {}", side_label)).size(14))
             .push(Text::new(format!("Price: {}", model.trade_form.price)).size(14))
             .push(Text::new(format!("Amount: {}", model.trade_form.amount)).size(14))
-            .push(Text::new(format!("Total (est.): {} XMR", total)).size(14).color(ACCENT_COLOR))
-            .push(Text::new(format!("Market: {}", model.trade_form.market)).size(12).color(TEXT_SECONDARY))
-            .push(Row::new()
-                .spacing(12)
-                .push(confirm_btn)
-                .push(cancel_btn))
+            .push(
+                Text::new(format!("Total (est.): {} XMR", total))
+                    .size(14)
+                    .color(ACCENT_COLOR),
+            )
+            .push(
+                Text::new(format!("Market: {}", model.trade_form.market))
+                    .size(12)
+                    .color(TEXT_SECONDARY),
+            )
+            .push(Row::new().spacing(12).push(confirm_btn).push(cancel_btn)),
     )
     .width(Length::Fixed(350.0))
     .style(|_theme| iced::widget::container::Style {
@@ -959,8 +1117,8 @@ fn confirm_order_dialog(model: &GuiModel) -> Element<'_, Message> {
 
 /// Profile panel showing user info, wallet addresses, and settings
 fn profile_panel(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, Button};
-    use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
+    use crate::style::{ACCENT_COLOR, BG_PANEL, TEXT_SECONDARY};
+    use iced::widget::{Button, Column, Container, Row, Text};
 
     let username = if let Some(user_id) = model.logged_in_user_id {
         if let Ok(auth) = model.auth_service.lock() {
@@ -986,8 +1144,14 @@ fn profile_panel(model: &GuiModel) -> Element<'_, Message> {
         "Not set".to_string()
     };
 
-    let btc_wallet = model.btc_wallet_address.clone().unwrap_or_else(|| "Not connected".to_string());
-    let xmr_wallet = model.wallet_address.clone().unwrap_or_else(|| "Not connected".to_string());
+    let btc_wallet = model
+        .btc_wallet_address
+        .clone()
+        .unwrap_or_else(|| "Not connected".to_string());
+    let xmr_wallet = model
+        .wallet_address
+        .clone()
+        .unwrap_or_else(|| "Not connected".to_string());
 
     let theme_label = match &model.theme_override {
         None => "Auto (System)",
@@ -1002,15 +1166,36 @@ fn profile_panel(model: &GuiModel) -> Element<'_, Message> {
             .push(Text::new("User Profile").size(18))
             .push(Text::new(format!("Username: {}", username)).size(14))
             .push(Text::new(format!("Email: {}", email)).size(14))
-            .push(Text::new(format!("BTC Wallet: {}", btc_wallet)).size(12).color(TEXT_SECONDARY))
-            .push(Text::new(format!("XMR Wallet: {}", xmr_wallet)).size(12).color(TEXT_SECONDARY))
-            .push(Text::new(format!("Theme: {}", theme_label)).size(12).color(TEXT_SECONDARY))
-            .push(Text::new(format!("Reputation: {} ({})", model.reputation.tier, model.reputation.trust_score)).size(14).color(ACCENT_COLOR))
-            .push(Row::new()
-                .spacing(12)
-                .push(Button::new(Text::new("Close").size(12))
-                    .on_press(Message::ToggleProfile)
-                    .padding(iced::Padding::new(12.0).top(8).bottom(8))))
+            .push(
+                Text::new(format!("BTC Wallet: {}", btc_wallet))
+                    .size(12)
+                    .color(TEXT_SECONDARY),
+            )
+            .push(
+                Text::new(format!("XMR Wallet: {}", xmr_wallet))
+                    .size(12)
+                    .color(TEXT_SECONDARY),
+            )
+            .push(
+                Text::new(format!("Theme: {}", theme_label))
+                    .size(12)
+                    .color(TEXT_SECONDARY),
+            )
+            .push(
+                Text::new(format!(
+                    "Reputation: {} ({})",
+                    model.reputation.tier, model.reputation.trust_score
+                ))
+                .size(14)
+                .color(ACCENT_COLOR),
+            )
+            .push(
+                Row::new().spacing(12).push(
+                    Button::new(Text::new("Close").size(12))
+                        .on_press(Message::ToggleProfile)
+                        .padding(iced::Padding::new(12.0).top(8).bottom(8)),
+                ),
+            ),
     )
     .width(Length::Fixed(400.0))
     .style(|_theme| iced::widget::container::Style {
@@ -1029,8 +1214,8 @@ fn profile_panel(model: &GuiModel) -> Element<'_, Message> {
 
 /// Price alerts panel
 fn price_alerts_panel(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, TextInput, Button, Scrollable};
-    use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
+    use crate::style::{ACCENT_COLOR, BG_PANEL};
+    use iced::widget::{Button, Column, Container, Row, Scrollable, Text, TextInput};
 
     let title = Container::new(Text::new("Price Alerts").size(14))
         .padding(iced::Padding::new(8.0).left(10).bottom(4));
@@ -1043,34 +1228,44 @@ fn price_alerts_panel(model: &GuiModel) -> Element<'_, Message> {
         .on_press(Message::AddPriceAlert)
         .padding(iced::Padding::new(8.0).top(4).bottom(4));
 
-    let alerts_list = model.price_alerts.iter().enumerate().fold(
-        Column::new().spacing(0),
-        |col, (i, alert)| {
-            let dir = match alert.direction {
-                AlertDirection::Above => "↑ Above",
-                AlertDirection::Below => "↓ Below",
-            };
-            let status = if alert.triggered { " 🔔" } else { "" };
-            let row = Row::new()
-                .spacing(6)
-                .padding(iced::Padding::new(3.0).left(10).right(10))
-                .push(Text::new(format!("{} {:.2}{}", dir, alert.target_price, status))
-                    .size(10).width(Length::Fill).color(ACCENT_COLOR))
-                .push(Button::new(Text::new("✕").size(10))
-                    .on_press(Message::RemovePriceAlert(i))
-                    .padding(iced::Padding::new(4.0)));
-            col.push(row)
-        }
-    );
+    let alerts_list =
+        model
+            .price_alerts
+            .iter()
+            .enumerate()
+            .fold(Column::new().spacing(0), |col, (i, alert)| {
+                let dir = match alert.direction {
+                    AlertDirection::Above => "↑ Above",
+                    AlertDirection::Below => "↓ Below",
+                };
+                let status = if alert.triggered { " 🔔" } else { "" };
+                let row = Row::new()
+                    .spacing(6)
+                    .padding(iced::Padding::new(3.0).left(10).right(10))
+                    .push(
+                        Text::new(format!("{} {:.2}{}", dir, alert.target_price, status))
+                            .size(10)
+                            .width(Length::Fill)
+                            .color(ACCENT_COLOR),
+                    )
+                    .push(
+                        Button::new(Text::new("✕").size(10))
+                            .on_press(Message::RemovePriceAlert(i))
+                            .padding(iced::Padding::new(4.0)),
+                    );
+                col.push(row)
+            });
 
     let content = Column::new()
         .spacing(4)
         .push(title)
-        .push(Row::new()
-            .spacing(6)
-            .padding(iced::Padding::new(4.0).left(10).right(10))
-            .push(alert_input.width(Length::Fill))
-            .push(add_btn))
+        .push(
+            Row::new()
+                .spacing(6)
+                .padding(iced::Padding::new(4.0).left(10).right(10))
+                .push(alert_input.width(Length::Fill))
+                .push(add_btn),
+        )
         .push(Scrollable::new(alerts_list).height(Length::Fixed(60.0)));
 
     Container::new(content)
@@ -1099,13 +1294,20 @@ fn generate_trade_history_csv(history: &[OrderHistoryEntry]) -> String {
 
 /// Analytics panel showing personal trading statistics
 fn analytics_panel(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, Button};
-    use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
+    use crate::style::{ACCENT_COLOR, BG_PANEL, TEXT_SECONDARY};
+    use iced::widget::{Button, Column, Container, Row, Text};
 
     let a = &model.analytics;
-    let toggle_btn = Button::new(Text::new(if model.show_analytics { "▼ Hide" } else { "▶ Show" }).size(11))
-        .on_press(Message::ToggleAnalytics)
-        .padding(iced::Padding::new(4.0).left(10).right(10));
+    let toggle_btn = Button::new(
+        Text::new(if model.show_analytics {
+            "▼ Hide"
+        } else {
+            "▶ Show"
+        })
+        .size(11),
+    )
+    .on_press(Message::ToggleAnalytics)
+    .padding(iced::Padding::new(4.0).left(10).right(10));
 
     let export_btn = Button::new(Text::new("📥 Export CSV").size(10))
         .on_press(Message::ExportTradeHistoryCsv)
@@ -1123,31 +1325,70 @@ fn analytics_panel(model: &GuiModel) -> Element<'_, Message> {
         Column::new()
             .spacing(4)
             .padding(iced::Padding::new(4.0).left(10).right(10).bottom(8))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Total Trades:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", a.total_trades)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Completed:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", a.completed_trades)).size(11).color(ACCENT_COLOR)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Failed:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", a.failed_trades)).size(11).color(crate::style::WARNING_COLOR)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Win Rate:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.1}%", a.win_rate)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Volume (BTC):").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.6}", a.total_volume_btc)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Volume (XMR):").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.4}", a.total_volume_xmr)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("P/L (XMR):").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:+.4}", a.profit_loss_xmr)).size(11)
-                    .color(if a.profit_loss_xmr >= 0.0 { ACCENT_COLOR } else { crate::style::WARNING_COLOR })))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Avg Trade:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.4} XMR", a.average_trade_size)).size(11)))
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Total Trades:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{}", a.total_trades)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Completed:").size(10).color(TEXT_SECONDARY))
+                    .push(
+                        Text::new(format!("{}", a.completed_trades))
+                            .size(11)
+                            .color(ACCENT_COLOR),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Failed:").size(10).color(TEXT_SECONDARY))
+                    .push(
+                        Text::new(format!("{}", a.failed_trades))
+                            .size(11)
+                            .color(crate::style::WARNING_COLOR),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Win Rate:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.1}%", a.win_rate)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Volume (BTC):").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.6}", a.total_volume_btc)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Volume (XMR):").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.4}", a.total_volume_xmr)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("P/L (XMR):").size(10).color(TEXT_SECONDARY))
+                    .push(
+                        Text::new(format!("{:+.4}", a.profit_loss_xmr))
+                            .size(11)
+                            .color(if a.profit_loss_xmr >= 0.0 {
+                                ACCENT_COLOR
+                            } else {
+                                crate::style::WARNING_COLOR
+                            }),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Avg Trade:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.4} XMR", a.average_trade_size)).size(11)),
+            )
     } else {
         Column::new()
     };
@@ -1165,13 +1406,20 @@ fn analytics_panel(model: &GuiModel) -> Element<'_, Message> {
 
 /// Network statistics dashboard panel
 fn network_stats_panel(model: &GuiModel) -> Element<'_, Message> {
-    use iced::widget::{Text, Container, Column, Row, Button};
-    use crate::style::{BG_PANEL, TEXT_SECONDARY, ACCENT_COLOR};
+    use crate::style::{ACCENT_COLOR, BG_PANEL, TEXT_SECONDARY};
+    use iced::widget::{Button, Column, Container, Row, Text};
 
     let ns = &model.network_stats;
-    let toggle_btn = Button::new(Text::new(if model.show_network_stats { "▼ Hide" } else { "▶ Show" }).size(11))
-        .on_press(Message::ToggleNetworkStats)
-        .padding(iced::Padding::new(4.0).left(10).right(10));
+    let toggle_btn = Button::new(
+        Text::new(if model.show_network_stats {
+            "▼ Hide"
+        } else {
+            "▶ Show"
+        })
+        .size(11),
+    )
+    .on_press(Message::ToggleNetworkStats)
+    .padding(iced::Padding::new(4.0).left(10).right(10));
 
     let title = Row::new()
         .spacing(6)
@@ -1183,21 +1431,40 @@ fn network_stats_panel(model: &GuiModel) -> Element<'_, Message> {
         Column::new()
             .spacing(4)
             .padding(iced::Padding::new(4.0).left(10).right(10).bottom(8))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Total Peers:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", ns.total_peers)).size(11).color(ACCENT_COLOR)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Active Trades:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", ns.active_trades)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Total Orders:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{}", ns.total_orders)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("24h Volume:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.2} XMR", ns.volume_24h_xmr)).size(11)))
-            .push(Row::new().spacing(10)
-                .push(Text::new("Avg Trade:").size(10).color(TEXT_SECONDARY))
-                .push(Text::new(format!("{:.4} XMR", ns.average_trade_size)).size(11)))
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Total Peers:").size(10).color(TEXT_SECONDARY))
+                    .push(
+                        Text::new(format!("{}", ns.total_peers))
+                            .size(11)
+                            .color(ACCENT_COLOR),
+                    ),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Active Trades:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{}", ns.active_trades)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Total Orders:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{}", ns.total_orders)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("24h Volume:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.2} XMR", ns.volume_24h_xmr)).size(11)),
+            )
+            .push(
+                Row::new()
+                    .spacing(10)
+                    .push(Text::new("Avg Trade:").size(10).color(TEXT_SECONDARY))
+                    .push(Text::new(format!("{:.4} XMR", ns.average_trade_size)).size(11)),
+            )
     } else {
         Column::new()
     };

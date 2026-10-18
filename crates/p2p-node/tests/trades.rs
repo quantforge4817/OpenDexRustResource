@@ -837,9 +837,7 @@ fn duplicate_settlement_after_restart_does_not_move_balances_again() {
             TradeState::Settled
         );
 
-        assert!(balance_book
-            .settled_trades
-            .contains(&trade.id));
+        assert!(balance_book.settled_trades.contains(&trade.id));
 
         // Replay the same remote settlement after restart.
         handle_trade_state_changed(

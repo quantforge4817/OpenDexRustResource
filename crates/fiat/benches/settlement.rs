@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use opendex_fiat::{
     FeeSchedule, FiatAmount, FiatOffer, FiatTrade, FiatTradeState, SettlementDeadlines,
     SettlementMethod,
@@ -13,12 +13,7 @@ fn make_offer() -> FiatOffer {
         currency: FiatCurrency::GBP,
         crypto_asset: Asset::Btc,
         amount: FiatAmount::new(7_500_000, FiatCurrency::GBP),
-        price: Price::new(
-            Asset::Btc,
-            Asset::Fiat(FiatCurrency::GBP),
-            75_000,
-            1,
-        ),
+        price: Price::new(Asset::Btc, Asset::Fiat(FiatCurrency::GBP), 75_000, 1),
         settlement_method: SettlementMethod::BankTransfer {
             currency: FiatCurrency::GBP,
         },

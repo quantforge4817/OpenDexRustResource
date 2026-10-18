@@ -3,12 +3,12 @@
 //! Converts between the fiat crate's FiatOffer/FiatTrade and the P2P protocol's
 //! P2POffer/P2PTrade, enabling fiat trades to flow through the existing P2P network.
 
-use uuid::Uuid;
-use protocol::message::{Side, AMOUNT_SCALE};
+use protocol::message::{AMOUNT_SCALE, Side};
 use protocol::p2p::{
-    CryptoAsset, FiatCurrency as P2PFiatCurrency, PaymentMethod as P2PPaymentMethod,
-    P2POffer, P2PTrade, P2PTradeState, FIAT_SCALE,
+    CryptoAsset, FIAT_SCALE, FiatCurrency as P2PFiatCurrency, P2POffer, P2PTrade, P2PTradeState,
+    PaymentMethod as P2PPaymentMethod,
 };
+use uuid::Uuid;
 
 use opendex_types::{Asset, FiatCurrency, ParticipantId, TradeId};
 
@@ -118,7 +118,7 @@ pub fn fiat_trade_to_p2p(trade: &FiatTrade) -> P2PTrade {
         payment_method,
         state,
         taker_crypto_address: "".to_string(), // Set by caller
-        escrow_address: "".to_string(), // Set by caller
+        escrow_address: "".to_string(),       // Set by caller
         escrow_tx_hash: None,
         payment_id: trade.payment_id.map(|p| p.0.to_string()),
         fiat_payment_proof: None,
@@ -204,33 +204,20 @@ pub fn p2p_to_settlement_method(
     currency: FiatCurrency,
 ) -> SettlementMethod {
     match method {
-        P2PPaymentMethod::BankTransfer => SettlementMethod::BankTransfer {
-            currency,
-        },
-        P2PPaymentMethod::Cash => SettlementMethod::CashInPerson {
-            currency,
-        },
+        P2PPaymentMethod::BankTransfer => SettlementMethod::BankTransfer { currency },
+        P2PPaymentMethod::Cash => SettlementMethod::CashInPerson { currency },
         P2PPaymentMethod::Revolut
         | P2PPaymentMethod::Wise
         | P2PPaymentMethod::PayPal
         | P2PPaymentMethod::Zelle
-        | P2PPaymentMethod::WesternUnion => SettlementMethod::BankTransfer {
-            currency,
-        },
-        P2PPaymentMethod::CashByMail => SettlementMethod::CashDeposit {
-            currency,
-        },
-        P2PPaymentMethod::Custom(_) => SettlementMethod::BankTransfer {
-            currency,
-        },
+        | P2PPaymentMethod::WesternUnion => SettlementMethod::BankTransfer { currency },
+        P2PPaymentMethod::CashByMail => SettlementMethod::CashDeposit { currency },
+        P2PPaymentMethod::Custom(_) => SettlementMethod::BankTransfer { currency },
     }
 }
 
 /// Calculate the crypto amount from fiat amount and price.
-pub fn crypto_amount_from_fiat(
-    fiat_amount: u64,
-    price: u64,
-) -> u64 {
+pub fn crypto_amount_from_fiat(fiat_amount: u64, price: u64) -> u64 {
     if price == 0 {
         return 0;
     }
@@ -239,10 +226,7 @@ pub fn crypto_amount_from_fiat(
 }
 
 /// Calculate the fiat amount from crypto amount and price.
-pub fn fiat_amount_from_crypto(
-    crypto_amount: u64,
-    price: u64,
-) -> u64 {
+pub fn fiat_amount_from_crypto(crypto_amount: u64, price: u64) -> u64 {
     // fiat_amount = crypto_amount * price / AMOUNT_SCALE
     (crypto_amount as u128 * price as u128 / AMOUNT_SCALE as u128) as u64
 }

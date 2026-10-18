@@ -75,10 +75,7 @@ pub trait CryptoWallet: Send + Sync {
     ) -> Result<String, SettlementError>;
 
     /// Return crypto from escrow back to the maker.
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError>;
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError>;
 }
 
 /// Events emitted by the settlement engine.
@@ -95,13 +92,9 @@ pub enum SettlementEvent {
         payment_reference: crate::payment::PaymentReference,
     },
     /// Taker confirmed payment (clicked "I've paid").
-    TakerPaymentConfirmed {
-        trade_id: TradeId,
-    },
+    TakerPaymentConfirmed { trade_id: TradeId },
     /// Maker confirmed receiving payment (clicked "I confirm payment").
-    MakerPaymentConfirmed {
-        trade_id: TradeId,
-    },
+    MakerPaymentConfirmed { trade_id: TradeId },
     /// Payment detected.
     PaymentDetected {
         trade_id: TradeId,
@@ -113,14 +106,9 @@ pub enum SettlementEvent {
         payment_id: PaymentId,
     },
     /// Crypto released to taker.
-    CryptoReleased {
-        trade_id: TradeId,
-        tx_hash: String,
-    },
+    CryptoReleased { trade_id: TradeId, tx_hash: String },
     /// Trade completed.
-    TradeCompleted {
-        trade_id: TradeId,
-    },
+    TradeCompleted { trade_id: TradeId },
     /// Dispute opened.
     DisputeOpened {
         trade_id: TradeId,
@@ -172,7 +160,7 @@ where
             crypto_wallet,
             events: Vec::new(),
             trade_creation_limiter: RateLimiter::new(10, 3600), // 10 per hour
-            payment_confirm_limiter: RateLimiter::new(5, 60), // 5 per minute
+            payment_confirm_limiter: RateLimiter::new(5, 60),   // 5 per minute
         }
     }
 
@@ -210,22 +198,25 @@ where
                 {
                     return Ok(());
                 }
-                Err(SettlementError::VerificationFailed(
-                    format!("Invalid Bitcoin address: {}", address),
-                ))
+                Err(SettlementError::VerificationFailed(format!(
+                    "Invalid Bitcoin address: {}",
+                    address
+                )))
             }
             Asset::Xmr => {
                 // Validate Monero address: mainnet starts with '4', testnet with '8'
                 // Length is 95 characters
                 if address.len() != 95 {
-                    return Err(SettlementError::VerificationFailed(
-                        format!("Invalid Monero address length: {}", address.len()),
-                    ));
+                    return Err(SettlementError::VerificationFailed(format!(
+                        "Invalid Monero address length: {}",
+                        address.len()
+                    )));
                 }
                 if !address.starts_with('4') && !address.starts_with('8') {
-                    return Err(SettlementError::VerificationFailed(
-                        format!("Invalid Monero address prefix: {}", address.chars().next().unwrap_or(' ')),
-                    ));
+                    return Err(SettlementError::VerificationFailed(format!(
+                        "Invalid Monero address prefix: {}",
+                        address.chars().next().unwrap_or(' ')
+                    )));
                 }
                 Ok(())
             }
@@ -245,7 +236,10 @@ where
         timestamp: u64,
     ) -> Result<TradeId, SettlementError> {
         // Rate limit: 10 trades per hour per taker
-        if !self.trade_creation_limiter.is_allowed(&taker.0.to_string(), timestamp) {
+        if !self
+            .trade_creation_limiter
+            .is_allowed(&taker.0.to_string(), timestamp)
+        {
             return Err(SettlementError::RateLimited);
         }
 
@@ -326,12 +320,12 @@ where
 
         // Lock bonds
         if let Some((maker_bond, taker_bond)) = self.bonds.get_mut(&trade_id.0) {
-            maker_bond.lock(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
-            taker_bond.lock(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
+            maker_bond
+                .lock(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
+            taker_bond
+                .lock(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
         }
 
         self.emit(SettlementEvent::TradeStateChanged {
@@ -354,11 +348,9 @@ where
             (trade.crypto_asset.clone(), trade.crypto_amount)
         };
 
-        let escrow_tx = self.crypto_wallet.reserve_escrow(
-            trade_id,
-            &crypto_asset,
-            crypto_amount,
-        )?;
+        let escrow_tx =
+            self.crypto_wallet
+                .reserve_escrow(trade_id, &crypto_asset, crypto_amount)?;
 
         self.emit(SettlementEvent::TradeStateChanged {
             trade_id,
@@ -432,7 +424,10 @@ where
         timestamp: u64,
     ) -> Result<(), SettlementError> {
         // Rate limit: 5 payment confirmations per minute per user
-        if !self.payment_confirm_limiter.is_allowed(&caller.0.to_string(), timestamp) {
+        if !self
+            .payment_confirm_limiter
+            .is_allowed(&caller.0.to_string(), timestamp)
+        {
             return Err(SettlementError::RateLimited);
         }
 
@@ -509,7 +504,9 @@ where
 
         if let Some(ref payment_id) = trade.payment_id {
             // Check the payment adapter for status updates
-            if let Some(status) = self.payment_adapter.check_payment_status(&payment_id.0)
+            if let Some(status) = self
+                .payment_adapter
+                .check_payment_status(&payment_id.0)
                 .map_err(|e| SettlementError::AdapterError(e.to_string()))?
             {
                 if status == crate::payment::PaymentStatus::Confirmed {
@@ -593,10 +590,7 @@ where
         });
 
         // Release crypto from escrow
-        let tx_hash = self.crypto_wallet.release_escrow(
-            trade_id,
-            &taker_addr,
-        )?;
+        let tx_hash = self.crypto_wallet.release_escrow(trade_id, &taker_addr)?;
 
         self.emit(SettlementEvent::CryptoReleased {
             trade_id,
@@ -624,12 +618,12 @@ where
 
         // Release bonds
         if let Some((maker_bond, taker_bond)) = self.bonds.get_mut(&trade_id.0) {
-            maker_bond.release(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
-            taker_bond.release(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
+            maker_bond
+                .release(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
+            taker_bond
+                .release(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
         }
 
         self.emit(SettlementEvent::TradeCompleted { trade_id });
@@ -710,12 +704,12 @@ where
 
         // Release bonds — works for both Required and Locked states
         if let Some((maker_bond, taker_bond)) = self.bonds.get_mut(&trade_id.0) {
-            maker_bond.release(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
-            taker_bond.release(timestamp).map_err(|e| {
-                SettlementError::Fiat(FiatError::BondError(e.to_string()))
-            })?;
+            maker_bond
+                .release(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
+            taker_bond
+                .release(timestamp)
+                .map_err(|e| SettlementError::Fiat(FiatError::BondError(e.to_string())))?;
         }
 
         self.emit(SettlementEvent::TradeStateChanged {
@@ -811,9 +805,9 @@ where
 mod tests {
     use super::*;
     use crate::adapter::MockPaymentProvider;
-    use opendex_types::{FiatCurrency, ParticipantId, TradeId};
     use crate::payment::{FiatAmount, PaymentId, PaymentReference, PaymentStatus};
     use crate::trade::{FiatOffer, SettlementMethod};
+    use opendex_types::{FiatCurrency, ParticipantId, TradeId};
 
     /// Mock crypto wallet for testing.
     #[derive(Default)]
@@ -822,7 +816,6 @@ mod tests {
     }
 
     impl CryptoWallet for MockCryptoWallet {
-
         fn reserve_escrow(
             &self,
             trade_id: TradeId,
@@ -842,16 +835,17 @@ mod tests {
             Ok("mock_release_tx".to_string())
         }
 
-        fn return_escrow(
-            &self,
-            trade_id: TradeId,
-        ) -> Result<String, SettlementError> {
+        fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
             let _ = trade_id;
             Ok("mock_return_tx".to_string())
         }
     }
 
-    fn make_engine() -> (SettlementEngine<MockPaymentProvider, MockCryptoWallet>, ParticipantId, ParticipantId) {
+    fn make_engine() -> (
+        SettlementEngine<MockPaymentProvider, MockCryptoWallet>,
+        ParticipantId,
+        ParticipantId,
+    ) {
         let maker = ParticipantId(Uuid::new_v4());
         let taker = ParticipantId(Uuid::new_v4());
         (
@@ -871,12 +865,7 @@ mod tests {
             currency: FiatCurrency::GBP,
             crypto_asset: Asset::Btc,
             amount: FiatAmount::new(100000, FiatCurrency::GBP),
-            price: opendex_types::Price::new(
-                Asset::Btc,
-                Asset::Fiat(FiatCurrency::GBP),
-                50000,
-                1,
-            ),
+            price: opendex_types::Price::new(Asset::Btc, Asset::Fiat(FiatCurrency::GBP), 50000, 1),
             settlement_method: SettlementMethod::BankTransfer {
                 currency: FiatCurrency::GBP,
             },
@@ -896,7 +885,13 @@ mod tests {
 
         assert!(engine.get_trade_public(trade_id).is_some());
         let events = engine.take_events();
-        assert!(events.iter().any(|e| matches!(e, SettlementEvent::TradeStateChanged { state: FiatTradeState::Created, .. })));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            SettlementEvent::TradeStateChanged {
+                state: FiatTradeState::Created,
+                ..
+            }
+        )));
     }
 
     #[test]
@@ -919,7 +914,9 @@ mod tests {
             iban: None,
             swift_code: None,
         };
-        engine.request_payment(trade_id, bank_details, 1003).unwrap();
+        engine
+            .request_payment(trade_id, bank_details, 1003)
+            .unwrap();
         engine.mark_payment_pending(trade_id, 1004).unwrap();
 
         // Transition through Detected state (required by state machine)
@@ -967,7 +964,9 @@ mod tests {
             iban: None,
             swift_code: None,
         };
-        let instructions = engine.request_payment(trade_id, bank_details.clone(), 1003).unwrap();
+        let instructions = engine
+            .request_payment(trade_id, bank_details.clone(), 1003)
+            .unwrap();
         assert_eq!(instructions.recipient.name, "Maker");
         assert!(!instructions.reference.0.is_empty());
 
@@ -992,10 +991,26 @@ mod tests {
 
         // Verify events
         let events = engine.take_events();
-        assert!(events.iter().any(|e| matches!(e, SettlementEvent::PaymentInstructionsSent { .. })));
-        assert!(events.iter().any(|e| matches!(e, SettlementEvent::TakerPaymentConfirmed { .. })));
-        assert!(events.iter().any(|e| matches!(e, SettlementEvent::MakerPaymentConfirmed { .. })));
-        assert!(events.iter().any(|e| matches!(e, SettlementEvent::TradeCompleted { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SettlementEvent::PaymentInstructionsSent { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SettlementEvent::TakerPaymentConfirmed { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SettlementEvent::MakerPaymentConfirmed { .. }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SettlementEvent::TradeCompleted { .. }))
+        );
     }
 
     #[test]
@@ -1019,7 +1034,9 @@ mod tests {
             iban: None,
             swift_code: None,
         };
-        engine.request_payment(trade_id, bank_details, 1003).unwrap();
+        engine
+            .request_payment(trade_id, bank_details, 1003)
+            .unwrap();
         engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
 
         // Cannot release crypto without maker confirmation
@@ -1080,7 +1097,9 @@ mod tests {
             iban: None,
             swift_code: None,
         };
-        engine.request_payment(trade_id, bank_details, 1003).unwrap();
+        engine
+            .request_payment(trade_id, bank_details, 1003)
+            .unwrap();
         engine.mark_payment_pending(trade_id, 1004).unwrap();
 
         // Advance time past payment deadline
@@ -1111,7 +1130,9 @@ mod tests {
             iban: None,
             swift_code: None,
         };
-        engine.request_payment(trade_id, bank_details, 1003).unwrap();
+        engine
+            .request_payment(trade_id, bank_details, 1003)
+            .unwrap();
         engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
 
         // Advance time past payment deadline — maker never confirmed
@@ -1183,7 +1204,9 @@ mod tests {
                     .unwrap();
                 engine.accept_trade(trade_id, 1100 + i as u64).unwrap();
                 engine.reserve_crypto(trade_id, 1200 + i as u64).unwrap();
-                engine.request_payment(trade_id, bank_details.clone(), 1300 + i as u64).unwrap();
+                engine
+                    .request_payment(trade_id, bank_details.clone(), 1300 + i as u64)
+                    .unwrap();
                 trade_id
             })
             .collect();

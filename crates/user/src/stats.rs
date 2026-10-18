@@ -119,7 +119,13 @@ impl UserStats {
     }
 
     /// Record a completed trade.
-    pub fn record_trade(&mut self, trade_id: TradeId, role: TradeRole, outcome: TradeOutcome, asset: Asset) {
+    pub fn record_trade(
+        &mut self,
+        trade_id: TradeId,
+        role: TradeRole,
+        outcome: TradeOutcome,
+        asset: Asset,
+    ) {
         let record = TradeRecord::new(trade_id, role, outcome, asset);
 
         match role {

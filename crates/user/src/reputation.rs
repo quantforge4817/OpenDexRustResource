@@ -8,4 +8,4 @@
 //! - Reputation tier (Newcomer → Trader → Trusted → Verified → Elite)
 
 // Re-export all reputation types from user.rs for backward compatibility
-pub use crate::user::{Rating, Review, Reputation, ReputationTier};
+pub use crate::user::{Rating, Reputation, ReputationTier, Review};

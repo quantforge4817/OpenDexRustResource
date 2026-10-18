@@ -1,19 +1,18 @@
+use opendex_fiat::adapter::MockPaymentProvider;
+use opendex_fiat::dispute::DisputeReason;
+use opendex_fiat::error::SettlementError;
+use opendex_fiat::payment::{FiatAmount, PaymentId, PaymentReference, PaymentStatus};
+use opendex_fiat::settlement_engine::{CryptoWallet, SettlementEngine};
+use opendex_fiat::trade::{FiatOffer, FiatTradeState, SettlementMethod};
+use opendex_fiat::verification::VerifiedPayment;
+use opendex_types::{Asset, FiatCurrency, ParticipantId, Price, TradeId};
 /// Adversarial tests for fiat settlement security.
 ///
 /// These tests verify that the settlement engine correctly handles
 /// malicious participant behavior, race conditions, and edge cases
 /// that could lead to fund loss or protocol violations.
-
 use std::collections::HashMap;
 use uuid::Uuid;
-use opendex_fiat::adapter::MockPaymentProvider;
-use opendex_fiat::error::SettlementError;
-use opendex_fiat::settlement_engine::{CryptoWallet, SettlementEngine};
-use opendex_fiat::trade::{FiatOffer, FiatTradeState, SettlementMethod};
-use opendex_fiat::payment::{FiatAmount, PaymentId, PaymentReference, PaymentStatus};
-use opendex_fiat::verification::VerifiedPayment;
-use opendex_fiat::dispute::DisputeReason;
-use opendex_types::{Asset, FiatCurrency, ParticipantId, TradeId, Price};
 
 /// Mock crypto wallet that tracks escrow operations for adversarial testing.
 #[derive(Default)]
@@ -48,10 +47,7 @@ impl CryptoWallet for AdversarialMockWallet {
         Ok(format!("release_{}", trade_id.0.as_hyphenated()))
     }
 
-    fn return_escrow(
-        &self,
-        trade_id: TradeId,
-    ) -> Result<String, SettlementError> {
+    fn return_escrow(&self, trade_id: TradeId) -> Result<String, SettlementError> {
         Ok(format!("return_{}", trade_id.0.as_hyphenated()))
     }
 }
@@ -64,7 +60,10 @@ fn make_engine() -> (
     let maker = ParticipantId(Uuid::new_v4());
     let taker = ParticipantId(Uuid::new_v4());
     (
-        SettlementEngine::new(MockPaymentProvider::auto_confirm(), AdversarialMockWallet::default()),
+        SettlementEngine::new(
+            MockPaymentProvider::auto_confirm(),
+            AdversarialMockWallet::default(),
+        ),
         maker,
         taker,
     )
@@ -137,7 +136,9 @@ fn adversarial_cancel_after_payment_requested() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Maker should be able to cancel after sending payment instructions
     let result = engine.cancel_trade(trade_id, maker, 1004);
@@ -163,7 +164,9 @@ fn adversarial_cancel_after_maker_confirmed() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
     engine.maker_confirm_payment(trade_id, maker, 1005).unwrap();
 
@@ -191,7 +194,9 @@ fn adversarial_maker_confirmed_timeout() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
     engine.maker_confirm_payment(trade_id, maker, 1005).unwrap();
 
@@ -220,7 +225,9 @@ fn adversarial_unauthorized_release_crypto() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
     engine.maker_confirm_payment(trade_id, maker, 1005).unwrap();
 
@@ -246,7 +253,9 @@ fn adversarial_unauthorized_complete_trade() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
     engine.maker_confirm_payment(trade_id, maker, 1005).unwrap();
     engine.release_crypto(trade_id, maker, 1006).unwrap();
@@ -293,7 +302,9 @@ fn adversarial_taker_cannot_confirm_payment_as_maker() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Maker tries to confirm payment as taker
     let result = engine.taker_confirm_payment(trade_id, maker, 1004);
@@ -316,7 +327,9 @@ fn adversarial_maker_cannot_confirm_payment_as_taker() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
 
     // Taker tries to confirm payment as maker
@@ -342,7 +355,9 @@ fn adversarial_payment_amount_too_low() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Submit payment with 10% less than expected
     let verified = VerifiedPayment {
@@ -375,7 +390,9 @@ fn adversarial_payment_amount_too_high() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Submit payment with 10% more than expected
     let verified = VerifiedPayment {
@@ -469,7 +486,9 @@ fn adversarial_payment_confirm_rate_limiter_per_user() {
                 .unwrap();
             engine.accept_trade(tid, 1100 + i as u64).unwrap();
             engine.reserve_crypto(tid, 1200 + i as u64).unwrap();
-            engine.request_payment(tid, bank_details.clone(), 1300 + i as u64).unwrap();
+            engine
+                .request_payment(tid, bank_details.clone(), 1300 + i as u64)
+                .unwrap();
             tid
         })
         .collect();
@@ -481,14 +500,18 @@ fn adversarial_payment_confirm_rate_limiter_per_user() {
                 .unwrap();
             engine.accept_trade(tid, 2100 + i as u64).unwrap();
             engine.reserve_crypto(tid, 2200 + i as u64).unwrap();
-            engine.request_payment(tid, bank_details.clone(), 2300 + i as u64).unwrap();
+            engine
+                .request_payment(tid, bank_details.clone(), 2300 + i as u64)
+                .unwrap();
             tid
         })
         .collect();
 
     // Exhaust taker1's payment confirm limit
     for (i, &tid) in trade_ids1.iter().enumerate() {
-        engine.taker_confirm_payment(tid, taker1, 3000 + i as u64).ok();
+        engine
+            .taker_confirm_payment(tid, taker1, 3000 + i as u64)
+            .ok();
     }
 
     // taker1 should be rate limited
@@ -497,7 +520,10 @@ fn adversarial_payment_confirm_rate_limiter_per_user() {
 
     // taker2 should still be able to confirm
     let result = engine.taker_confirm_payment(trade_ids2[0], taker2, 3005);
-    assert!(result.is_ok(), "Different user must not be affected by another user's rate limit");
+    assert!(
+        result.is_ok(),
+        "Different user must not be affected by another user's rate limit"
+    );
 }
 
 // ─── Crypto Address Validation Tests ────────────────────────────────────────
@@ -509,10 +535,7 @@ fn adversarial_invalid_btc_address() {
     let offer = make_offer(maker);
 
     let result = engine.create_trade(&offer, taker, "invalid_address".to_string(), 1000);
-    assert!(
-        result.is_err(),
-        "Invalid Bitcoin address must be rejected"
-    );
+    assert!(result.is_err(), "Invalid Bitcoin address must be rejected");
 }
 
 #[test]
@@ -522,10 +545,7 @@ fn adversarial_empty_crypto_address() {
     let offer = make_offer(maker);
 
     let result = engine.create_trade(&offer, taker, "".to_string(), 1000);
-    assert!(
-        result.is_err(),
-        "Empty crypto address must be rejected"
-    );
+    assert!(result.is_err(), "Empty crypto address must be rejected");
 }
 
 #[test]
@@ -537,10 +557,7 @@ fn adversarial_invalid_xmr_address() {
 
     // Invalid Monero address: wrong prefix
     let result = engine.create_trade(&offer, taker, "1invalidxmraddress".to_string(), 1000);
-    assert!(
-        result.is_err(),
-        "Invalid Monero address must be rejected"
-    );
+    assert!(result.is_err(), "Invalid Monero address must be rejected");
 }
 
 // ─── Dispute Edge Cases ─────────────────────────────────────────────────────
@@ -556,15 +573,13 @@ fn adversarial_double_dispute() {
         .unwrap();
 
     // First dispute succeeds
-    engine.open_dispute(trade_id, taker, DisputeReason::PaymentNotReceived, 1001)
+    engine
+        .open_dispute(trade_id, taker, DisputeReason::PaymentNotReceived, 1001)
         .unwrap();
 
     // Second dispute should fail
     let result = engine.open_dispute(trade_id, maker, DisputeReason::PaymentNotReceived, 1002);
-    assert!(
-        result.is_err(),
-        "Double dispute must be rejected"
-    );
+    assert!(result.is_err(), "Double dispute must be rejected");
 }
 
 // ─── State Machine Integrity Tests ──────────────────────────────────────────
@@ -605,10 +620,7 @@ fn adversarial_reverse_state_transition() {
     // We verify this by trying to do an operation that requires Created state
     // after the trade is already Accepted
     let result = engine.accept_trade(trade_id, 1002);
-    assert!(
-        result.is_err(),
-        "Reverse state transition must be rejected"
-    );
+    assert!(result.is_err(), "Reverse state transition must be rejected");
 }
 
 // ─── Fiat Payment Coordination Tests ────────────────────────────────────────
@@ -625,7 +637,9 @@ fn adversarial_concurrent_payment_confirmation() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Taker confirms first
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
@@ -650,7 +664,9 @@ fn adversarial_release_before_maker_confirm() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
 
     // Try to release crypto without maker confirmation
@@ -673,7 +689,9 @@ fn adversarial_cancel_after_complete() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
     engine.taker_confirm_payment(trade_id, taker, 1004).unwrap();
     engine.maker_confirm_payment(trade_id, maker, 1005).unwrap();
     engine.release_crypto(trade_id, maker, 1006).unwrap();
@@ -681,10 +699,7 @@ fn adversarial_cancel_after_complete() {
 
     // Try to cancel after completion
     let result = engine.cancel_trade(trade_id, taker, 1008);
-    assert!(
-        result.is_err(),
-        "Completed trade must not be cancellable"
-    );
+    assert!(result.is_err(), "Completed trade must not be cancellable");
 }
 
 #[test]
@@ -699,7 +714,9 @@ fn adversarial_operations_on_failed_trade() {
 
     engine.accept_trade(trade_id, 1001).unwrap();
     engine.reserve_crypto(trade_id, 1002).unwrap();
-    engine.request_payment(trade_id, make_bank_details(), 1003).unwrap();
+    engine
+        .request_payment(trade_id, make_bank_details(), 1003)
+        .unwrap();
 
     // Fail the trade via timeout
     engine.mark_payment_pending(trade_id, 1004).unwrap();

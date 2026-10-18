@@ -29,20 +29,18 @@ fn verify_bond_transition_graph() {
 
     // Prove that if valid, the pair is one of the 9 known transitions
     if valid {
-        assert!(
-            matches!(
-                (&current, &next),
-                (BondState::Required, BondState::Locked)
-                    | (BondState::Required, BondState::Released)
-                    | (BondState::Locked, BondState::Released)
-                    | (BondState::Locked, BondState::PartiallySlashed)
-                    | (BondState::Locked, BondState::Slashed)
-                    | (BondState::PartiallySlashed, BondState::Released)
-                    | (BondState::PartiallySlashed, BondState::Slashed)
-                    | (BondState::Slashed, BondState::Refunded)
-                    | (BondState::Released, BondState::Refunded)
-            )
-        );
+        assert!(matches!(
+            (&current, &next),
+            (BondState::Required, BondState::Locked)
+                | (BondState::Required, BondState::Released)
+                | (BondState::Locked, BondState::Released)
+                | (BondState::Locked, BondState::PartiallySlashed)
+                | (BondState::Locked, BondState::Slashed)
+                | (BondState::PartiallySlashed, BondState::Released)
+                | (BondState::PartiallySlashed, BondState::Slashed)
+                | (BondState::Slashed, BondState::Refunded)
+                | (BondState::Released, BondState::Refunded)
+        ));
     }
 }
 
@@ -95,15 +93,15 @@ fn make_bond(state: BondState) -> SecurityBond {
 fn verify_bond_lock_safety() {
     // Only Required can transition to Locked
     let state: BondState = kani::any();
-    
+
     // If lock would succeed, the state must be Required
     if state.can_transition_to(&BondState::Locked) {
         assert!(matches!(state, BondState::Required));
     }
-    
+
     // Required can lock
     assert!(BondState::Required.can_transition_to(&BondState::Locked));
-    
+
     // Non-Required states cannot lock
     assert!(!BondState::Locked.can_transition_to(&BondState::Locked));
     assert!(!BondState::Released.can_transition_to(&BondState::Locked));
@@ -119,16 +117,17 @@ fn verify_bond_slash_safety() {
 
     // If slash would succeed, the state must be Locked or PartiallySlashed
     if state.can_transition_to(&BondState::Slashed) {
-        assert!(
-            matches!(state, BondState::Locked | BondState::PartiallySlashed)
-        );
+        assert!(matches!(
+            state,
+            BondState::Locked | BondState::PartiallySlashed
+        ));
     }
 
     // Locked can slash
     assert!(BondState::Locked.can_transition_to(&BondState::Slashed));
     // PartiallySlashed can slash
     assert!(BondState::PartiallySlashed.can_transition_to(&BondState::Slashed));
-    
+
     // Other states cannot slash
     assert!(!BondState::Required.can_transition_to(&BondState::Slashed));
     assert!(!BondState::Released.can_transition_to(&BondState::Slashed));
@@ -143,9 +142,10 @@ fn verify_bond_release_safety() {
 
     // If release would succeed, the state must be one that can transition to Released
     if state.can_transition_to(&BondState::Released) {
-        assert!(
-            matches!(state, BondState::Required | BondState::Locked | BondState::PartiallySlashed)
-        );
+        assert!(matches!(
+            state,
+            BondState::Required | BondState::Locked | BondState::PartiallySlashed
+        ));
     }
 
     // Required can release (early cancellation)
@@ -154,7 +154,7 @@ fn verify_bond_release_safety() {
     assert!(BondState::Locked.can_transition_to(&BondState::Released));
     // PartiallySlashed can release
     assert!(BondState::PartiallySlashed.can_transition_to(&BondState::Released));
-    
+
     // Other states cannot release
     assert!(!BondState::Released.can_transition_to(&BondState::Released));
     assert!(!BondState::Slashed.can_transition_to(&BondState::Released));
