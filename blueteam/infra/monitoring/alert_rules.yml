@@ -1,0 +1,91 @@
+# Blue Team Prometheus Alert Rules
+#
+# These alert rules fire when attack signatures are detected in the testnet.
+# They extend the existing red team monitoring with blue team-specific alerts.
+
+groups:
+  - name: blueteam-attacks
+    rules:
+      # Fires when message rejection rate spikes > 10x baseline
+      - alert: AttackDetected
+        expr: rate(opendex_message_rejected_total[5m]) > 10 * rate(opendex_message_rejected_total[1h])
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Attack detected on {{ $labels.instance }}"
+          description: "Message rejection rate has spiked to {{ $value }} msgs/s, which is > 10x the baseline."
+
+      # Fires when replay protection detects duplicate messages
+      - alert: ReplayAttackDetected
+        expr: increase(opendex_message_replay_detected_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replay attack detected on {{ $labels.instance }}"
+          description: "{{ $value }} replayed messages detected in the last 5 minutes."
+
+      # Fires when auth failures spike from a single source
+      - alert: AuthFailureSpike
+        expr: rate(opendex_auth_failure_total[5m]) > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Authentication failure spike on {{ $labels.instance }}"
+          description: "{{ $value }} auth failures per minute detected, possible brute-force attack."
+
+      # Fires when rate limiter activates
+      - alert: RateLimiterActivated
+        expr: increase(opendex_rate_limiter_activations_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: info
+        annotations:
+          summary: "Rate limiter activated on {{ $labels.instance }}"
+          description: "Rate limiter has triggered {{ $value }} times in the last 5 minutes."
+
+  - name: blueteam-dos
+    rules:
+      # Fires when connection count > 80% of max
+      - alert: DoSSuspected
+        expr: opendex_connection_count / opendex_connection_max > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DoS suspected on {{ $labels.instance }}"
+          description: "Connection count is at {{ $value | humanizePercentage }} of max, possible DoS attack."
+
+      # Fires when node memory > 80% of limit
+      - alert: MemoryPressure
+        expr: opendex_memory_usage_bytes / opendex_memory_limit_bytes > 0.8
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory pressure on {{ $labels.instance }}"
+          description: "Memory usage is at {{ $value | humanizePercentage }} of limit."
+
+      # Fires when pending trade states > 90% of max
+      - alert: StateBloatDetected
+        expr: opendex_pending_trade_states / opendex_max_pending_trade_states > 0.9
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "State bloat detected on {{ $labels.instance }}"
+          description: "Pending trade states at {{ $value | humanizePercentage }} of max limit."
+
+  - name: blueteam-fiat
+    rules:
+      # Fires when state machine rejects invalid transition
+      - alert: InvalidStateTransition
+        expr: increase(opendex_fiat_invalid_transition_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Invalid state transition on {{ $labels.instance }}"
+          description: "{{ $value }} invalid state transitions detected, possible settlement bypass attempt."

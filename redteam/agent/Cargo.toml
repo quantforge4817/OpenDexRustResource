@@ -1,0 +1,58 @@
+[package]
+name = "red-team-agent"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.88"
+description = "OpenDex red team agent for adversarial P2P network testing"
+
+[dependencies]
+
+tokio = { workspace = true }
+
+libp2p = { version = "0.57", features = [
+    "tokio",
+    "tcp",
+    "noise",
+    "yamux",
+    "identify",
+    "macros",
+    "kad",
+    "ping",
+    "gossipsub"
+] }
+
+anyhow = { workspace = true }
+
+tracing = { workspace = true }
+
+tracing-subscriber = { workspace = true }
+
+futures = "0.3"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+
+uuid = { version = "1", features = ["v4"] }
+
+zeroize = "1"
+
+# OpenDex crates
+protocol = { path = "../../crates/protocol" }
+opendex-transport = { path = "../../crates/opendex-transport" }
+opendex-types = { path = "../../crates/opendex-types" }
+opendex-user = { path = "../../crates/user" }
+opendex-fiat = { path = "../../crates/fiat" }
+
+# Cryptography for attack scenarios
+hmac = "0.12"
+sha2 = "0.10"
+secp256k1 = { version = "0.29", features = ["rand-std", "serde"] }
+bitcoin = { version = "0.32", features = ["rand-std", "ordered", "std"] }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Timing measurements
+instant = "0.1"

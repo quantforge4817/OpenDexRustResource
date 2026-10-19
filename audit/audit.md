@@ -201,7 +201,7 @@ Remaining tests blocked by Miri's filesystem simulation limitations, not by UB. 
 - [x] Fuzz targets — 5 targets smoke-tested
 - [x] Miri UB detection — 146 tests passed, 0 undefined behavior (AUDIT-I05)
 
-**Total:** 459 tests passed, 0 failed across 23 crates (293 legacy + 92 fiat + 39 user + 35 other new).
+**Total:** 692 tests passed, 0 failed, 5 ignored across 23 crates (293 legacy + 96 fiat + 69 user + 234 other new including encryption, wallet, DLEQ).
 
 ### AUDIT-007 — Fixed-point settlement rounding
 
@@ -258,7 +258,7 @@ Key remaining work:
 
 ### New Crates Audit
 
-20 new crates were created for the BTC-XMR atomic swap system, regulatory compliance, web portal, desktop GUI, fiat settlement, and user authentication (Milestones 1-3 + ADMP v6 + M5 + fiat + user). All compile cleanly with 0 errors and 459 tests passing across 23 crates.
+20 new crates were created for the BTC-XMR atomic swap system, regulatory compliance, web portal, desktop GUI, fiat settlement, and user authentication (Milestones 1-3 + ADMP v6 + M5 + fiat + user). All compile cleanly with 0 errors and 692 tests passing across 23 crates.
 
 | Crate | Status | Notes |
 |---|---|---|
@@ -351,13 +351,13 @@ A comprehensive security audit was performed across all 23 crates in the workspa
 | Category | Status | Details |
 |----------|--------|---------|
 | Supply chain security | 🟢 GREEN | 0 RUSTSEC vulnerabilities, all licenses approved (MITNFA added) |
-| Code quality (Clippy) | 🟢 GREEN | 0 errors, 136 warnings (none security-related) |
-| Unsafe code | 🟢 GREEN | 0 `unsafe` blocks across all 23 crates |
+| Code quality (Clippy) | 🟢 GREEN | 0 errors, 2 warnings (unused M5 placeholder deps) |
+| Unsafe code | 🟢 GREEN | 0 `unsafe` blocks — all rewritten to safe Rust |
 | Hardcoded secrets | 🟢 GREEN | 0 passwords, API keys, tokens, or private keys found |
 | Panic safety | 🟢 GREEN | 1 safe panic in production (SHA-256 → UUID) |
 | Dependencies | 🟢 GREEN | All on current, maintained versions |
-| Workspace tests | 🟢 GREEN | 459 tests pass, 0 failures |
-| Unused dependencies | 🟢 GREEN | 0 — all previously unused deps wired into production code |
+| Workspace tests | 🟢 GREEN | 692 tests pass, 0 failures, 5 ignored |
+| Unused dependencies | ⚠️ 2 — `bitcoin`, `dleq` in opendex-btc-xmr (intentional M5 placeholders) |
 
 ### New Security Controls
 
@@ -372,7 +372,7 @@ A comprehensive security audit was performed across all 23 crates in the workspa
 
 ### Key Finding
 
-Zero `unsafe` code across all 23 crates in a financial application is a strong security posture. All memory safety is guaranteed by Rust's type system.
+Zero `unsafe` code across all 23 crates in a financial application is a strong security posture. All memory safety is guaranteed by Rust's type system. Previously, 6 `unsafe` blocks existed for credential zeroization and encryption; these have been rewritten using safe alternatives (`zeroize` crate, `TestMasterKeyProvider`, `Vec<u8>` mutation).
 
 ---
 
@@ -685,7 +685,7 @@ This means the maker's identity is not a real participant ID, making it impossib
 **Status:** 🟢 Resolved (2026-10-14)
 **Location:** `crates/p2p-node/src/lib.rs:94-111`
 
-**Remediation Applied:** `GuiNodeConfig` implements `Drop` that zeroizes `monero_rpc_pass` and `btc_rpc_pass` fields from memory when the config is dropped. Uses `unsafe` block to overwrite bytes with zeros, which is the standard pattern for sensitive data cleanup in Rust.
+**Remediation Applied:** `GuiNodeConfig` implements `Drop` that zeroizes `monero_rpc_pass` and `btc_rpc_pass` fields from memory when the config is dropped. Uses the `zeroize` crate's safe `String::zeroize()` API — no `unsafe` code required.
 
 **Description:** `GuiNodeConfig` stores Monero and Bitcoin RPC credentials as plaintext `String` fields. These can be leaked via:
 - Process environment inspection
@@ -786,10 +786,10 @@ This means the maker's identity is not a real participant ID, making it impossib
 | Authorization | 🟢 GREEN | Caller verification on all settlement methods |
 | Financial logic | 🟢 GREEN | Real crypto amounts, No KYC policy, real maker IDs |
 | P2P protocol | 🟡 WARNING | Transport signing OK, no app-level validation |
-| Error handling | 🟡 WARNING | RwLock/HashMap unwrap panics in production |
+| Error handling | 🟢 GREEN | RwLock poison recovery, HashMap ok_or_else error handling |
 | Supply chain | 🟢 GREEN | cargo-deny configured, 0 vulnerabilities |
-| Memory safety | 🟢 GREEN | 0 unsafe blocks |
-| Test coverage | 🟢 GREEN | 463 tests passing |
+| Memory safety | 🟢 GREEN | 0 unsafe blocks — all safe Rust |
+| Test coverage | 🟢 GREEN | 692 tests passing |
 
 **Recommendation:** All 7 critical findings have been resolved. The remaining high/medium/low findings should be addressed before production deployment, but the system is no longer vulnerable to account takeover or fund theft.
 
@@ -908,12 +908,12 @@ The user subsystem provides account management, secure authentication, and a rep
 | P2P protocol | 🟢 GREEN | App-level message validation, timestamp freshness, schema version check |
 | Error handling | 🟢 GREEN | RwLock poison recovery, HashMap ok_or_else error handling |
 | Supply chain | 🟢 GREEN | cargo-deny configured, duplicate versions denied, 0 vulnerabilities |
-| Memory safety | 🟢 GREEN | 0 unsafe blocks |
-| Test coverage | 🟢 GREEN | 480+ tests passing across 23 crates |
+| Memory safety | 🟢 GREEN | 0 unsafe blocks — all safe Rust |
+| Test coverage | 🟢 GREEN | 692 tests passing across 23 crates |
 | Log redaction | 🟢 GREEN | Sensitive field detection and redaction framework |
 | Rate limiting | 🟢 GREEN | Per-username login rate limiting (5/min) |
 
-**Total workspace tests:** 480+ passed, 0 failed across 23 crates.
+**Total workspace tests:** 692 passed, 0 failed, 5 ignored across 23 crates.
 
 **All findings resolved as of 2026-10-14.**
 
@@ -974,12 +974,12 @@ All 15 open findings (5 High, 6 Medium, 4 Low) have been resolved.
 | Testnet deployment | 🟢 GREEN | All 8 bugs resolved, 16/16 health checks pass |
 | Error handling | 🟢 GREEN | RwLock poison recovery, HashMap ok_or_else error handling |
 | Supply chain | 🟢 GREEN | cargo-deny configured, duplicate versions denied, 0 vulnerabilities |
-| Memory safety | 🟢 GREEN | 2 unsafe blocks (password zeroization only) |
-| Test coverage | 🟢 GREEN | 480+ tests passing across 23 crates |
+| Memory safety | 🟢 GREEN | 0 unsafe blocks — all safe Rust |
+| Test coverage | 🟢 GREEN | 692 tests passing across 23 crates |
 | Log redaction | 🟢 GREEN | Sensitive field detection and redaction framework |
 | Rate limiting | 🟢 GREEN | Per-username login rate limiting (5/min) |
 
-**Total workspace tests:** 480+ passed, 0 failed across 23 crates.
+**Total workspace tests:** 692 passed, 0 failed, 5 ignored across 23 crates.
 
 **All audit findings resolved as of 2026-10-14.**
 

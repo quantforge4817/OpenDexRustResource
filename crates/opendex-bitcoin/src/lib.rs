@@ -14,6 +14,8 @@
 //! let (header, height) = client.block_headers_subscribe()?;
 //! ```
 
+pub mod wallet;
+
 use std::str::FromStr;
 
 use opendex_errors::ChainError;

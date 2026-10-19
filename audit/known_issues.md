@@ -142,20 +142,20 @@
 
 **Independent verification required:** No
 
-### KNOWN-M03 — No Encryption at Rest
+### KNOWN-M03 — Encryption at Rest
 
 | Field | Value |
 |-------|-------|
 | **Severity** | Medium |
 | **Component** | `opendex-storage` |
-| **Status** | Open — future enhancement |
+| **Status** | ✅ Resolved (2026-10-19) — AES-256-GCM encryption implemented |
 | **Launch blocker** | No |
 
-**Description:** Swap state files, event logs, and transaction intents are stored as plaintext JSON files. No encryption at rest is implemented.
+**Description:** Swap state files, event logs, and transaction intents were stored as plaintext JSON files. **Resolved on 2026-10-19:** Implemented AES-256-GCM encryption with HKDF-SHA256 key derivation, per-file salts, and `OPNDEX01` magic bytes for definitive detection. The `EncryptedStorage` wrapper provides transparent encryption/decryption for all persisted data.
 
-**Impact:** If an attacker gains file system access, they can read swap details, participant addresses, and transaction data.
+**Impact:** Resolved — stored data is now encrypted at rest with authenticated encryption.
 
-**Remediation:** Implement AES-256-GCM encryption for stored state files.
+**Verification:** 14 tests cover encryption, decryption, key derivation, magic bytes detection, and environment-based key provisioning.
 
 **Independent verification required:** No
 
@@ -323,7 +323,7 @@ The following issues were identified and resolved during internal audit and adve
 | R06 | False payment claims | Medium | Medium | High | Mitigated | Design |
 | R07 | No real payment adapter testing | Medium | Medium | Medium | Open | Project |
 | R08 | No real P2P network testing | Medium | Medium | Medium | Open | Project |
-| R09 | No encryption at rest | Medium | Low | Medium | Open | Future |
+| R09 | No encryption at rest | Medium | Low | Medium | Resolved (2026-10-19) | Design |
 | R10 | No multi-party coordination testing | Medium | Medium | Medium | Open | Project |
 | R11 | Counterparty strategic disconnection | Medium | High | Medium | Mitigated | Design |
 | R12 | Blockchain node outage | Medium | Low | High | Mitigated | Design |
@@ -338,9 +338,9 @@ The following issues were identified and resolved during internal audit and adve
 | **Open — requires remediation** | 2 | No blockchain testing, no payment adapter testing |
 | **Mitigated — controls in place** | 7 | Fiat reversal, false claims, disconnection, node outage, replay, key leakage, Sybil |
 | **Partially mitigated** | 1 | Bank detail substitution |
-| **Open — future enhancement** | 2 | Encryption at rest, multi-party testing |
+| **Open — future enhancement** | 1 | Multi-party testing |
 | **Accepted — design decision** | 1 | Asset enum hardcoded |
-| **Resolved** | 2 | DLEQ proof stub (Fiat-Shamir implementation), Monero RPC stub (daemon RPC) |
+| **Resolved** | 3 | DLEQ proof stub (Fiat-Shamir), Monero RPC stub (daemon RPC), encryption at rest (AES-256-GCM) |
 
 ---
 

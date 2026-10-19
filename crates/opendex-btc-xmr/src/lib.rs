@@ -311,7 +311,7 @@ fn verify_cross_curve_proof(
     let s_xmr_bytes = &proof[96..128];
 
     // Parse public keys
-    let btc_xonly = XOnlyPublicKey::from_slice(btc_pk)
+    let _btc_xonly = XOnlyPublicKey::from_slice(btc_pk)
         .map_err(|e| ProtocolError::CryptoVerification(format!("Invalid BTC public key: {}", e)))?;
 
     let xmr_compressed = CompressedEdwardsY::from_slice(xmr_pk)
@@ -340,41 +340,109 @@ fn verify_cross_curve_proof(
     let challenge_bytes = hasher.finalize();
 
     // Verify secp256k1: s*G - c*P == R
-    // Compute s*G by creating a secret key from s_btc_bytes
-    let s_btc_reduced = {
-        let mut b = [0u8; 32];
-        b.copy_from_slice(s_btc_bytes);
-        reduce_mod_secp256k1_order(&b)
-    };
-    let s_secret = SecretKey::from_slice(&s_btc_reduced)
-        .map_err(|_| ProtocolError::CryptoVerification("Invalid s_btc scalar".to_string()))?;
-    let s_times_g = s_secret.public_key(&secp);
+    // Equivalently: s == r + c*x mod n
+    //
+    // We verify this using k256::Scalar arithmetic, matching the generation side.
+    // The secp256k1 crate doesn't expose point addition directly, so we verify
+    // the scalar equation s = r + c*x mod n, which is equivalent.
 
-    // Compute c*P using key tweaking
-    let c_btc_reduced = {
-        let mut b = [0u8; 32];
-        b.copy_from_slice(&challenge_bytes[..]);
-        reduce_mod_secp256k1_order(&b)
-    };
-    let _c_secret = SecretKey::from_slice(&c_btc_reduced)
-        .map_err(|_| ProtocolError::CryptoVerification("Invalid challenge scalar".to_string()))?;
+    // Parse the nonce r from R_btc: R = r*G, so r is the discrete log of R.
+    // We can't extract r from R directly, so instead we verify the equation
+    // by checking that s*G - c*P has the same x-coordinate as R.
+    //
+    // To do this without point addition, we use the secp256k1 crate's
+    // signature verification as a proxy: we construct a "signature" (r, s)
+    // and verify it against a message derived from c*H where H is the hash.
+    //
+    // However, the simplest correct approach is to use k256 for the full
+    // verification, matching the generation side.
 
-    let btc_pub_full = PublicKey::from_x_only_public_key(btc_xonly, secp256k1::Parity::Even);
-    let c_scalar = secp256k1::Scalar::from_be_bytes(c_btc_reduced)
-        .map_err(|_| ProtocolError::CryptoVerification("Invalid challenge scalar".to_string()))?;
-    let c_times_p = btc_pub_full
-        .mul_tweak(&secp, &c_scalar)
-        .map_err(|_| ProtocolError::CryptoVerification("Failed to compute c*P".to_string()))?;
+    use k256::elliptic_curve::group::GroupEncoding;
+    use k256::elliptic_curve::sec1::ToSec1Point;
+    use k256::elliptic_curve::PrimeField;
+    use k256::elliptic_curve::CurveAffine;
+    use k256::{AffinePoint, ProjectivePoint, Scalar as K256Scalar};
 
-    // Verify: s*G should equal R + c*P
-    // We check by computing R + c*P and comparing to s*G
-    // Since secp256k1 doesn't expose point addition, verify via scalar check:
-    // s = r + c*x mod n
-    // We can't extract r from R directly, so we verify the ed25519 side
-    // and trust the cross-curve challenge binding
+    // Parse s_btc as k256 scalar
+    let mut s_btc_arr = [0u8; 32];
+    s_btc_arr.copy_from_slice(s_btc_bytes);
+    let s_btc_reduced = reduce_mod_secp256k1_order(&s_btc_arr);
+    let s_k256 = K256Scalar::from_repr(s_btc_reduced.into())
+        .unwrap_or(K256Scalar::ZERO);
 
-    let _ = s_times_g; // Used for secp256k1 verification
-    let _ = c_times_p;
+    // Parse challenge c as k256 scalar
+    let mut c_btc_arr = [0u8; 32];
+    c_btc_arr.copy_from_slice(&challenge_bytes[..]);
+    let c_reduced = reduce_mod_secp256k1_order(&c_btc_arr);
+    let c_k256 = K256Scalar::from_repr(c_reduced.into())
+        .unwrap_or(K256Scalar::ZERO);
+
+    // Parse P (Bitcoin public key) as k256 affine point
+    // btc_pk is an x-only compressed key (32 bytes)
+    // We try both y-coordinate parities
+    let mut btc_pk_compressed = [0u8; 33];
+    btc_pk_compressed[1..].copy_from_slice(btc_pk);
+    let mut p_affines = Vec::new();
+    for prefix in [0x02u8, 0x03u8] {
+        btc_pk_compressed[0] = prefix;
+        if let Some(p) = k256::AffinePoint::from_bytes(&btc_pk_compressed.into()).into_option() {
+            p_affines.push(p);
+        }
+    }
+    if p_affines.is_empty() {
+        return Err(ProtocolError::CryptoVerification(
+            "Invalid BTC public key for k256".to_string(),
+        ));
+    }
+
+    // Parse R (nonce commitment) as k256 affine point
+    let mut r_btc_compressed = [0u8; 33];
+    r_btc_compressed[1..].copy_from_slice(r_btc_bytes);
+    let mut r_affines = Vec::new();
+    for prefix in [0x02u8, 0x03u8] {
+        r_btc_compressed[0] = prefix;
+        if let Some(r) = k256::AffinePoint::from_bytes(&r_btc_compressed.into()).into_option() {
+            r_affines.push(r);
+        }
+    }
+    if r_affines.is_empty() {
+        return Err(ProtocolError::CryptoVerification(
+            "Invalid R_btc for k256".to_string(),
+        ));
+    }
+
+    // Compute s*G on k256
+    let generator = k256::AffinePoint::generator();
+    let s_times_g: ProjectivePoint = generator * &s_k256;
+
+    // Try all combinations of P and R parities to find one where s*G - c*P == R
+    let mut verified = false;
+    for &p_affine in &p_affines {
+        let c_times_p: ProjectivePoint = p_affine * &c_k256;
+        let s_g_minus_c_p = s_times_g - c_times_p;
+        let result_affine = AffinePoint::from(s_g_minus_c_p);
+        let result_x = result_affine.to_sec1_point(false);
+        let result_x_bytes = result_x.as_bytes();
+
+        for &r_affine in &r_affines {
+            let r_x = r_affine.to_sec1_point(false);
+            let r_x_bytes = r_x.as_bytes();
+            // Compare x-coordinates (bytes 1..33 of the 33-byte compressed point)
+            if result_x_bytes[1..] == r_x_bytes[1..] {
+                verified = true;
+                break;
+            }
+        }
+        if verified {
+            break;
+        }
+    }
+
+    if !verified {
+        return Err(ProtocolError::CryptoVerification(
+            "DLEQ proof verification failed: secp256k1 side".to_string(),
+        ));
+    }
 
     // Verify ed25519: s*G - c*P == R
     let mut s_xmr_arr = [0u8; 32];
@@ -395,9 +463,9 @@ fn verify_cross_curve_proof(
         ));
     }
 
-    // The secp256k1 side is verified by the cross-curve challenge binding:
-    // if the ed25519 side passes and the challenge was computed over both
-    // curves' commitments, the prover must know the discrete log on both curves.
+    // Both secp256k1 and ed25519 sides are now verified independently.
+    // The cross-curve challenge binding ensures the same discrete log
+    // exists on both curves.
 
     Ok(true)
 }
@@ -587,5 +655,121 @@ impl SettlementProtocol for BtcXmrAdapter {
             }
             _ => Ok(vec![]),
         }
+    }
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A valid secret scalar that works for both secp256k1 and ed25519.
+    fn test_secret() -> [u8; 32] {
+        // Small scalar that's valid for both curves
+        let mut secret = [0u8; 32];
+        secret[31] = 42;
+        secret
+    }
+
+    #[test]
+    fn test_dleq_proof_generate_and_verify() {
+        let secret = test_secret();
+        let proof_data = DleqProofGenerator::generate_proof(&secret)
+            .expect("Proof generation should succeed");
+
+        assert_eq!(proof_data.version, 1);
+        assert!(!proof_data.btc_public_key.is_empty());
+        assert!(!proof_data.xmr_public_key.is_empty());
+        assert!(!proof_data.proof.is_empty());
+
+        let valid = DleqProofGenerator::verify_proof(&proof_data)
+            .expect("Proof verification should succeed");
+        assert!(valid);
+    }
+
+    #[test]
+    fn test_dleq_proof_serialization_roundtrip() {
+        let secret = test_secret();
+        let proof_data = DleqProofGenerator::generate_proof(&secret)
+            .expect("Proof generation should succeed");
+
+        let serialized = proof_data.serialize();
+        let deserialized = DleqProofData::deserialize(&serialized)
+            .expect("Deserialization should succeed");
+
+        assert_eq!(deserialized.btc_public_key, proof_data.btc_public_key);
+        assert_eq!(deserialized.xmr_public_key, proof_data.xmr_public_key);
+        assert_eq!(deserialized.proof, proof_data.proof);
+
+        let valid = DleqProofGenerator::verify_proof(&deserialized)
+            .expect("Proof verification should succeed");
+        assert!(valid);
+    }
+
+    #[test]
+    fn test_dleq_proof_tampered_fails() {
+        let secret = test_secret();
+        let mut proof_data = DleqProofGenerator::generate_proof(&secret)
+            .expect("Proof generation should succeed");
+
+        // Tamper with the proof bytes
+        if !proof_data.proof.is_empty() {
+            proof_data.proof[0] ^= 0xFF;
+        }
+
+        let result = DleqProofGenerator::verify_proof(&proof_data);
+        assert!(result.is_err(), "Tampered proof should fail verification");
+    }
+
+    #[test]
+    fn test_dleq_proof_wrong_public_key_fails() {
+        let secret = test_secret();
+        let mut proof_data = DleqProofGenerator::generate_proof(&secret)
+            .expect("Proof generation should succeed");
+
+        // Tamper with the BTC public key
+        if !proof_data.btc_public_key.is_empty() {
+            proof_data.btc_public_key[0] ^= 0xFF;
+        }
+
+        let result = DleqProofGenerator::verify_proof(&proof_data);
+        // Should fail because the challenge hash changes with the tampered public key
+        assert!(result.is_err(), "Proof with wrong public key should fail");
+    }
+
+    #[test]
+    fn test_dleq_proof_too_short_fails() {
+        let proof_data = DleqProofData::new(
+            vec![0x02; 32],
+            vec![0x00; 32],
+            vec![0u8; 64], // Too short: needs 128 bytes
+        );
+
+        let result = DleqProofGenerator::verify_proof(&proof_data);
+        assert!(result.is_err(), "Too-short proof should fail");
+    }
+
+    #[test]
+    fn test_secp256k1_verification_independent() {
+        // This test verifies that the secp256k1 side is actually checked,
+        // not just the ed25519 side via cross-curve binding.
+        // We tamper only the secp256k1 response (s_btc) while keeping
+        // the ed25519 side valid.
+        let secret = test_secret();
+        let mut proof_data = DleqProofGenerator::generate_proof(&secret)
+            .expect("Proof generation should succeed");
+
+        // Tamper s_btc (bytes 64..96 of the proof)
+        let s_btc_offset = 64;
+        if proof_data.proof.len() > s_btc_offset + 32 {
+            proof_data.proof[s_btc_offset] ^= 0xFF;
+        }
+
+        let result = DleqProofGenerator::verify_proof(&proof_data);
+        assert!(
+            result.is_err(),
+            "Tampering secp256k1 response should fail verification"
+        );
     }
 }

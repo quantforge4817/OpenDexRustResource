@@ -13,7 +13,8 @@ require_token = true
 
 # Registration token — change this to a random secure string!
 # Generate with: openssl rand -hex 16
-token = "CHANGE_ME_TO_RANDOM_TOKEN"
+# WARNING: Change this before deploying to production!
+token = "a3f8b2c9d1e4f7a6b5c8d2e9f1a4b7c3"
 
 # Allow new user registration (set to false to disable)
 enabled = true

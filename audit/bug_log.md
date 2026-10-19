@@ -18,6 +18,20 @@ Status Definitions
 • ⚪ Accepted — known behaviour considered intentional
 
 Open Issues
+
+BUG-UNSAFE-001 — Eliminate all `unsafe` blocks
+Status: 🟢 Resolved
+Priority: Medium
+Resolved: 2026-10-19
+The codebase contained 6 `unsafe` blocks across 3 files: credential zeroization in p2p-node, env var manipulation in opendex-storage tests, and byte mutation in crypto penetration tests. All have been rewritten using safe Rust alternatives.
+Implementation
+• p2p-node: Replaced manual byte-by-byte zeroing with `zeroize::Zeroize::zeroize()` — safe API from the `zeroize` crate. Moved `zeroize` from dev-dependencies to regular dependencies.
+• opendex-storage: Created `TestMasterKeyProvider` test-only implementation of `MasterKeyProvider` trait, eliminating the need for `std::env::set_var` (which is `unsafe` in Rust due to potential concurrent access UB).
+• crypto penetration tests: Replaced `String::as_bytes_mut()` (unsafe) with `String::into_bytes()` → modify `Vec<u8>` → `String::from_utf8()` — all safe operations.
+Verification
+• `grep -r "unsafe" crates/` — 0 matches (only comments reference "unsafe")
+• `cargo test --workspace` — 692 passed, 0 failed, 5 ignored
+• All 23 crates now compile with 0 `unsafe` blocks
 ARCH-004 — Trade/Order Consistency Validation Is Incomplete
 Status: 🟢 Resolved
 Priority: Critical
@@ -1017,3 +1031,139 @@ The `desktop-gui` doesn't know about the new swap engine yet. Integration requir
 **Fix:** Changed `MONERO_RPC_PORT` from `18082` to `18083` and updated `MONERO_RPC_URL` accordingly.
 
 **Verification:** Configuration now matches the actual wallet RPC service port.
+
+## BUG-GUI-001 — Email verification code displayed in UI
+
+**Status:** 🟢 Resolved
+**Severity:** High
+**Category:** Security
+**Component:** `crates/desktop-gui/src/app.rs`
+**Discovered:** 2026-10-18 (frontend/GUI security audit)
+**Resolved:** 2026-10-19
+
+**Description:** After user registration, the email verification code (6-digit one-time code) was displayed in plain text in the GUI. Any observer viewing the screen could read the code and use it to impersonate the user by completing the verification flow.
+
+**Fix:** Changed the UI message from displaying the verification code to "Verification code sent to your email" without revealing the code.
+
+**Related Finding:** DG-001 in `audit/audit_checklist.md` Section 17.
+
+## BUG-GUI-006 — Password reset code displayed in UI
+
+**Status:** 🟢 Resolved
+**Severity:** High
+**Category:** Security
+**Component:** `crates/desktop-gui/src/app.rs`
+**Discovered:** 2026-10-18 (frontend/GUI security audit)
+**Resolved:** 2026-10-19
+
+**Description:** When a user requested a password reset, the reset code (one-time code) was displayed in plain text in the GUI. Any observer viewing the screen could read the code and use it to reset the user's password, locking them out of their account.
+
+**Fix:** Changed the UI message from displaying the reset code to "Reset code sent to your email" without revealing the code.
+
+**Related Finding:** DG-006 in `audit/audit_checklist.md` Section 17.
+
+## BUG-AUDIT-M01 — Verification code logged in plaintext
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Security / Information Disclosure
+**Component:** `crates/user/src/auth.rs`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** Email verification codes were logged in plaintext via `tracing::info!` at two locations: the registration flow and the resend verification code flow. If logs are accessible to unauthorized parties, verification codes could be extracted.
+
+**Fix:** Changed both `tracing::info!` calls to redact the code: `code = "[REDACTED]"` instead of `code = %code`.
+
+**Related Finding:** AUDIT-M01 in `audit/audit_checklist.md` Section 19.
+
+## BUG-AUDIT-I01 — Matrix config placeholder token
+
+**Status:** 🟢 Resolved
+**Severity:** Informational
+**Category:** Configuration
+**Component:** `docs/matrix/conduit.toml`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** The Matrix Conduit registration token was set to `CHANGE_ME_TO_RANDOM_TOKEN`, a clearly placeholder value. If deployed as-is, anyone knowing the placeholder could register users on the Matrix server.
+
+**Fix:** Updated to a generated random hex token with a warning comment to change before production deployment.
+
+**Related Finding:** AUDIT-I01 in `audit/audit_checklist.md` Section 19.
+
+## BUG-AUDIT-L02 — Wildcard path dependencies in desktop-gui
+
+**Status:** 🟢 Resolved
+**Severity:** Low
+**Category:** Dependency Management
+**Component:** `crates/desktop-gui/Cargo.toml`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** The desktop-gui crate used wildcard path dependencies for `protocol`, `p2p-node`, and `opendex-user` without version constraints. This could lead to reproducibility issues if the path dependencies' APIs change unexpectedly.
+
+**Fix:** Added `version = "0.1"` constraints to all three path dependencies, ensuring Cargo validates version compatibility.
+
+**Related Finding:** AUDIT-L02 in `audit/audit_checklist.md` Section 19.
+
+## BUG-AUDIT-L04 — Encrypted file detection is heuristic
+
+**Status:** 🟢 Resolved
+**Severity:** Low
+**Category:** Security / Reliability
+**Component:** `crates/opendex-storage/src/encryption.rs`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** The `is_encrypted_file()` function determined if a file was encrypted by checking its size (≥44 bytes). This heuristic could produce false positives for any file larger than 44 bytes, or false negatives for encrypted files with very short content.
+
+**Fix:** Added magic bytes (`OPNDEX01`) to the start of every encrypted file. The `is_encrypted_file()` function now reads the first 8 bytes and checks for the magic header, providing definitive detection. The `encrypt()` function prepends magic bytes, and `decrypt()` verifies them before processing.
+
+**Related Finding:** AUDIT-L04 in `audit/audit_checklist.md` Section 19.
+
+## BUG-AUDIT-M02 — hkdf duplicate dependency
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Dependency Hygiene
+**Component:** `crates/opendex-storage/Cargo.toml`, `crates/opendex-btc-xmr/Cargo.toml`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** The `hkdf` crate had two versions in the dependency tree: 0.12.4 (via `k256` → `elliptic-curve`) and 0.13.0 (via `libp2p-identity`). This duplicate is a dependency hygiene issue.
+
+**Fix:** Two-step resolution:
+1. Upgraded `opendex-storage` from `hkdf` 0.12 to 0.13 and `sha2` from 0.10 to 0.11 for API compatibility.
+2. Upgraded `k256` from 0.13 to 0.14 in `opendex-btc-xmr`. k256 0.14 uses `elliptic-curve` 0.14, which depends on `hkdf` 0.13, unifying the entire dependency tree to a single `hkdf` 0.13.0 version.
+
+API breaking changes in k256 0.14 were addressed: replaced deprecated `ToEncodedPoint` with `ToSec1Point`, replaced `to_encoded_point()` with `to_sec1_point()`, and imported `CurveAffine` trait for `generator()` access.
+
+**Verification:** `cargo tree -i hkdf` shows only `hkdf v0.13.0` in the dependency tree — no duplicate versions remain.
+
+**Related Finding:** AUDIT-M02 in `audit/audit_checklist.md` Section 19.
+
+## BUG-AUDIT-M04 — electrum-client duplicate dependency
+
+**Status:** 🟢 Resolved
+**Severity:** Medium
+**Category:** Dependency Hygiene
+**Component:** `crates/opendex-bitcoin/Cargo.toml`
+**Discovered:** 2026-10-19 (deep security audit)
+**Resolved:** 2026-10-19
+
+**Description:** The `electrum-client` crate had two versions in the dependency tree: 0.22.0 (via `bdk_electrum` 0.20) and 0.24.1 (direct `opendex-bitcoin` dependency). This duplicate is a dependency hygiene issue caused by BDK 1.x pinning an older electrum-client version.
+
+**Fix:** Migrated BDK from 1.x to 3.x:
+- `bdk_wallet` upgraded from 1.0 to 3.2
+- `bdk_electrum` upgraded from 0.20 to 0.24
+- `bdk_chain` upgraded from 0.21 to 0.23
+- Direct `electrum-client` upgraded from 0.24 to 0.25
+
+BDK 3.x's `bdk_electrum` 0.24 depends on `electrum-client` 0.25, unifying the entire dependency tree to a single `electrum-client` 0.25.1 version.
+
+API migration: The BDK 3.x API is largely compatible with 1.x. The main change was updating `sign_psbt()` to use `sign_with_signers()` instead of the deprecated `Wallet::sign()` method, using `get_signers(KeychainKind::External)` to retrieve the wallet's signers.
+
+**Verification:** `cargo tree -i electrum-client` shows only `electrum-client v0.25.1` in the dependency tree — no duplicate versions remain. All 692 workspace tests pass.
+
+**Related Finding:** AUDIT-M02 in `audit/audit_checklist.md` Section 19.

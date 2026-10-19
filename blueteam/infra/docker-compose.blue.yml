@@ -1,0 +1,58 @@
+# Blue Team Docker Compose overlay
+#
+# Extends the red team Docker Compose by adding:
+# - Blue team observer node (6th node in the testnet)
+# - Alertmanager for Prometheus alerts
+# - Blue team Grafana dashboard provisioning
+
+services:
+  # Blue team observer node
+  blueteam-observer:
+    build:
+      context: ../../../..
+      dockerfile: blueteam/infra/Dockerfile.observer
+    container_name: blueteam-observer
+    ports:
+      - "5000:5000"
+      - "9101:9101"  # Prometheus metrics endpoint
+    environment:
+      - RUST_LOG=info
+    command: >
+      --connect /ip4/honest-node-1/tcp/4001
+      --connect /ip4/honest-node-2/tcp/4002
+      --connect /ip4/honest-node-3/tcp/4003
+      --connect /ip4/honest-node-4/tcp/4004
+      --all
+    depends_on:
+      - honest-node-1
+      - honest-node-2
+      - honest-node-3
+      - honest-node-4
+    networks:
+      - testnet
+
+  # Alertmanager for handling Prometheus alerts
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - testnet
+
+  # Extend Prometheus to include blue team alert rules
+  prometheus:
+    volumes:
+      - ../../blueteam/infra/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  # Extend Grafana to include blue team dashboards
+  grafana:
+    volumes:
+      - ../../blueteam/infra/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../../blueteam/infra/monitoring/grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+
+networks:
+  testnet:
+    external: true

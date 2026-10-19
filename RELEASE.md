@@ -218,7 +218,7 @@ No real private keys, API keys, passwords, or Monero addresses have been committ
 | Kani proofs | 🟡 YELLOW | 24 proofs, 11 verified, 13 disabled (state space explosion) |
 | Penetration testing | 🟢 GREEN | 133 tests across 7 phases, all pass |
 | Hardcoded secrets | 🟢 GREEN | 0 found |
-| `unsafe` blocks | 🟢 GREEN | 2 blocks (password zeroization only) |
+| `unsafe` blocks | 🟢 GREEN | 0 blocks — all code is safe Rust |
 | External audit | 🟡 PENDING | Independent review requested |
 
 All audit findings are documented in `audit/audit.md`.

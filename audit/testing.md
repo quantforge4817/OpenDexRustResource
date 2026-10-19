@@ -27,12 +27,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Total tests | 511 passed, 0 failed, 3 ignored |
+| Total tests | 692 passed, 0 failed, 5 ignored |
 | Unit tests | ~480 across all 23 crates |
 | Integration tests | 3 E2E fiat integration tests |
 | Adversarial tests | 26 scenarios |
-| Fuzz targets | 8 |
-| Unsafe blocks | 2 (both credential zeroization) |
+| Fuzz targets | 12 |
+| Unsafe blocks | 0 — all rewritten to safe Rust |
 | RUSTSEC vulnerabilities | 0 (cargo-deny verified) |
 
 ### 1.2 Test Command
@@ -41,7 +41,7 @@
 cargo test --workspace
 ```
 
-**Result:** 511 passed, 0 failed, 3 ignored
+**Result:** 692 passed, 0 failed, 5 ignored
 
 ### 1.3 Test Philosophy
 
@@ -318,14 +318,9 @@ cargo deny check
 
 ### 6.4 Unsafe Code Review
 
-**Total `unsafe` blocks:** 2
+**Total `unsafe` blocks:** 0 — all code is safe Rust.
 
-| Location | Purpose | Justification |
-|----------|---------|---------------|
-| `p2p-node::GuiNodeConfig::drop()` | Zeroize RPC password byte arrays | Credential security |
-| `fiat::multisig::EscrowKeyPair::drop()` | Zeroize secp256k1 secret key bytes | Key security |
-
-Both are for credential zeroization and are necessary for security.
+All credential zeroization is handled by the `zeroize` crate's safe API (`Zeroize::zeroize()`), eliminating the need for any `unsafe` blocks. Test code uses `TestMasterKeyProvider` instead of `std::env::set_var`, and crypto penetration tests use `Vec<u8>` mutation instead of raw pointer access.
 
 ### 6.5 Miri (Memory Safety)
 

@@ -28,7 +28,7 @@ Kani uses symbolic execution to prove properties hold for **all possible inputs*
 - Async code verification (Kani doesn't support async/await — P2P network layer excluded)
 - External library verification (libp2p, secp256k1, Monero RPC)
 - Concurrency verification (use Miri for that)
-- `unsafe` block verification (2 password-zeroing blocks, use Miri)
+- Memory safety verification (0 `unsafe` blocks — all safe Rust, use Miri)
 
 ### Acceptance Criteria
 

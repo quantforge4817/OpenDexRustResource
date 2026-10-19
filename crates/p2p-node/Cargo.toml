@@ -45,6 +45,7 @@ uuid = { version = "1", features = ["v4"] }
 
 flume = "0.11"
 
+zeroize = "1"
 
 protocol = { path = "../protocol" }
 
@@ -63,7 +64,6 @@ opendex-types = { path = "../opendex-types" }
 argon2 = "0.5"
 hmac = "0.12"
 secp256k1 = { version = "0.29", features = ["rand-std", "serde"] }
-zeroize = "1"
 bitcoin = { version = "0.32", features = ["rand-std", "ordered", "std"] }
 
 [[bench]]

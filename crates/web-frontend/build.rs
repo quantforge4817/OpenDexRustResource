@@ -48,11 +48,23 @@ fn collect_files(project_root: &Path, current: &Path, files: &mut BTreeMap<Strin
             || relative_str.starts_with(".git/")
             || relative_str.starts_with(".idea/")
             || relative_str.starts_with(".junie/")
+            || relative_str.starts_with(".cargo/")
+            || relative_str.starts_with(".env")
+            || relative_str.starts_with("crates/web-frontend/dist/")
+            || relative_str.starts_with("crates/web-frontend/node_modules/")
+            || relative_str.starts_with("crates/desktop-gui/target/")
             || relative_str == "Cargo.lock"
             || relative_str.contains("/target/")
             || relative_str.contains("/.git/")
             || relative_str.contains("/.idea/")
             || relative_str.contains("/.junie/")
+            || relative_str.contains("/.cargo/")
+            || relative_str.contains("/node_modules/")
+            || relative_str.contains("/dist/")
+            || relative_str.ends_with(".env")
+            || relative_str.ends_with(".env.local")
+            || relative_str.ends_with(".env.production")
+            || relative_str.ends_with(".env.development")
         {
             continue;
         }

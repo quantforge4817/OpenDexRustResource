@@ -1,0 +1,50 @@
+[package]
+name = "blueteam-agent"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.88"
+description = "OpenDex blue team observer agent for defense validation and monitoring"
+
+[dependencies]
+
+tokio = { workspace = true }
+
+libp2p = { version = "0.57", features = [
+    "tokio",
+    "tcp",
+    "noise",
+    "yamux",
+    "identify",
+    "macros",
+    "kad",
+    "ping",
+    "gossipsub"
+] }
+
+anyhow = { workspace = true }
+
+tracing = { workspace = true }
+
+tracing-subscriber = { workspace = true }
+
+futures = "0.3"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+
+uuid = { version = "1", features = ["v4"] }
+
+# OpenDex crates
+protocol = { path = "../../crates/protocol" }
+opendex-transport = { path = "../../crates/opendex-transport" }
+opendex-types = { path = "../../crates/opendex-types" }
+opendex-user = { path = "../../crates/user" }
+opendex-fiat = { path = "../../crates/fiat" }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Timing measurements
+instant = "0.1"

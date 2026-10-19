@@ -476,7 +476,7 @@ struct DleqProofData {
 | `EscrowKeyPair` | `Drop` implementation calls `zeroize()` on secret key bytes |
 | Password hashes | Argon2id operates on temporary buffers |
 
-**Memory Safety:** The project contains exactly 2 `unsafe` blocks, both for credential zeroization in `p2p-node::GuiNodeConfig::drop()`. All other code is safe Rust.
+**Memory Safety:** The project contains 0 `unsafe` blocks — all code is safe Rust. Previously, 6 `unsafe` blocks existed for credential zeroization, password zeroization, encryption, and test code; all have been rewritten using safe alternatives (`zeroize` crate, `TestMasterKeyProvider`, `Vec<u8>` mutation).
 
 ---
 

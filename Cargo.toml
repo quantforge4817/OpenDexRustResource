@@ -43,6 +43,9 @@ members = [
 
     # User accounts, authentication, and reputation
     "crates/user",
+
+    # Blue team observer agent for defense validation
+    "blueteam/agent",
 ]
 
 [workspace.dependencies]

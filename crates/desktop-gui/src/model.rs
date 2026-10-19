@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use zeroize::Zeroizing;
+
 use opendex_user::AuthService;
 use protocol::message::{Asset, Order, Side, Trade, TradeState};
 use uuid::Uuid;
@@ -238,10 +240,10 @@ pub struct GuiModel {
     pub auth_screen: AuthScreen,
     /// Login form fields
     pub login_username: String,
-    pub login_password: String,
+    pub login_password: Zeroizing<String>,
     /// Registration form fields
     pub reg_username: String,
-    pub reg_password: String,
+    pub reg_password: Zeroizing<String>,
     pub reg_email: String,
     pub reg_btc_wallet: String,
     pub reg_xmr_wallet: String,
@@ -272,7 +274,7 @@ pub struct GuiModel {
     /// Password reset fields
     pub reset_email: String,
     pub reset_code: String,
-    pub reset_new_password: String,
+    pub reset_new_password: Zeroizing<String>,
     /// Theme preference
     pub theme_override: Option<ThemeMode>,
     /// Trading analytics for the current user
@@ -375,9 +377,9 @@ impl GuiModel {
             },
             auth_screen: AuthScreen::Login,
             login_username: String::new(),
-            login_password: String::new(),
+            login_password: Zeroizing::new(String::new()),
             reg_username: String::new(),
-            reg_password: String::new(),
+            reg_password: Zeroizing::new(String::new()),
             reg_email: String::new(),
             reg_btc_wallet: String::new(),
             reg_xmr_wallet: String::new(),
@@ -395,7 +397,7 @@ impl GuiModel {
             show_profile: false,
             reset_email: String::new(),
             reset_code: String::new(),
-            reset_new_password: String::new(),
+            reset_new_password: Zeroizing::new(String::new()),
             theme_override: None,
             analytics: TradingAnalytics::default(),
             network_stats: NetworkStats::default(),

@@ -518,22 +518,25 @@ The OS CSPRNG provides cryptographically secure random bytes. An attacker cannot
 
 **Crate:** `zeroize`
 
-Two `unsafe` blocks in the entire codebase, both for credential zeroization:
+All credential zeroization uses the `zeroize` crate's safe API — zero `unsafe` blocks are needed.
 
-| Location | Purpose |
+| Location | Method |
 |----------|---------|
-| `p2p-node::GuiNodeConfig::drop()` | Zeroize `monero_rpc_pass` and `btc_rpc_pass` byte arrays |
-| `fiat::multisig::EscrowKeyPair::drop()` | Zeroize secp256k1 secret key bytes |
+| `p2p-node::GuiNodeConfig::drop()` | `String::zeroize()` — safe API from `zeroize` crate |
+| `fiat::multisig::EscrowKeyPair::drop()` | `zeroize()` on secret key bytes via `zeroize` trait |
+| `desktop-gui` password fields | `Zeroizing<String>` — automatic zeroization on drop |
+| `opendex-storage` encryption keys | `TestMasterKeyProvider` in tests — no unsafe env var access |
 
 **Implementation:**
 
 ```rust
 impl Drop for GuiNodeConfig {
     fn drop(&mut self) {
-        unsafe {
-            // Zeroize password byte arrays
-            std::ptr::write_bytes(self.monero_rpc_pass.as_mut_ptr(), 0, self.monero_rpc_pass.len());
-            std::ptr::write_bytes(self.btc_rpc_pass.as_mut_ptr(), 0, self.btc_rpc_pass.len());
+        if let Some(mut pass) = self.monero_rpc_pass.take() {
+            pass.zeroize();
+        }
+        if let Some(mut pass) = self.btc_rpc_pass.take() {
+            pass.zeroize();
         }
     }
 }
@@ -590,7 +593,7 @@ impl Drop for GuiNodeConfig {
 | No constant-time verification | Signature verification may leak timing information | Side-channel attack possible |
 | No hardware security module | Keys stored in software memory | Memory dump can extract keys |
 | No key rotation | HMAC secrets are long-lived | Compromised secret affects all past tokens |
-| No encryption at rest | Swap state files are plaintext | File access reveals swap details |
+| No encryption at rest | Swap state files are plaintext | File access reveals swap details | **Resolved** — AES-256-GCM encryption implemented in `opendex-storage` |
 
 ### 11.3 Future Enhancements
 
@@ -598,7 +601,7 @@ impl Drop for GuiNodeConfig {
 |-------------|---------|----------|
 | Eigenwallet integration | Full DLEQ proof implementation | **Critical** |
 | Constant-time operations | Prevent side-channel attacks | High |
-| Encryption at rest | Protect stored state files | Medium |
+| Encryption at rest | Protect stored state files | Medium | **Resolved** — AES-256-GCM with HKDF-SHA256 key derivation
 | Key rotation | Limit impact of compromised secrets | Medium |
 | Hardware security module | Protect keys from memory extraction | Low |
 

@@ -1,0 +1,201 @@
+# OpenDex Red Team Local Testnet
+#
+# This Docker Compose configuration emulates the 5-node testnet locally:
+# - 4 honest nodes running p2p-node
+# - 1 attacker node running red-team-agent
+#
+# Usage:
+#   docker-compose up -d          # Start all nodes
+#   docker-compose logs -f        # View all logs
+#   docker-compose exec attacker cargo run --bin red-team-agent  # Run attacker
+#   docker-compose down           # Stop all nodes
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # Honest Node 1
+  # ============================================================
+  honest-node-1:
+    build:
+      context: ../..
+      dockerfile: redteam/infra/Dockerfile.node
+    container_name: opendex-honest-node-1
+    environment:
+      - NODE_ID=1
+      - NODE_NAME=honest-node-1
+      - LISTEN_PORT=4001
+      - PEER_ADDRESSES=/dns4/honest-node-2/tcp/4002,/dns4/honest-node-3/tcp/4003
+      - RUST_LOG=info
+    ports:
+      - "4001:4001"
+    networks:
+      - testnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # Honest Node 2
+  # ============================================================
+  honest-node-2:
+    build:
+      context: ../..
+      dockerfile: redteam/infra/Dockerfile.node
+    container_name: opendex-honest-node-2
+    environment:
+      - NODE_ID=2
+      - NODE_NAME=honest-node-2
+      - LISTEN_PORT=4002
+      - PEER_ADDRESSES=/dns4/honest-node-1/tcp/4001,/dns4/honest-node-3/tcp/4003
+      - RUST_LOG=info
+    ports:
+      - "4002:4002"
+    networks:
+      - testnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # Honest Node 3
+  # ============================================================
+  honest-node-3:
+    build:
+      context: ../..
+      dockerfile: redteam/infra/Dockerfile.node
+    container_name: opendex-honest-node-3
+    environment:
+      - NODE_ID=3
+      - NODE_NAME=honest-node-3
+      - LISTEN_PORT=4003
+      - PEER_ADDRESSES=/dns4/honest-node-2/tcp/4002,/dns4/honest-node-4/tcp/4004
+      - RUST_LOG=info
+    ports:
+      - "4003:4003"
+    networks:
+      - testnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # Honest Node 4
+  # ============================================================
+  honest-node-4:
+    build:
+      context: ../..
+      dockerfile: redteam/infra/Dockerfile.node
+    container_name: opendex-honest-node-4
+    environment:
+      - NODE_ID=4
+      - NODE_NAME=honest-node-4
+      - LISTEN_PORT=4004
+      - PEER_ADDRESSES=/dns4/honest-node-3/tcp/4003
+      - RUST_LOG=info
+    ports:
+      - "4004:4004"
+    networks:
+      - testnet
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # Attacker Node (Red Team Agent)
+  # ============================================================
+  attacker:
+    build:
+      context: ../..
+      dockerfile: redteam/infra/Dockerfile.attacker
+    container_name: opendex-attacker
+    environment:
+      - ATTACKER_NAME=red-team-agent
+      - LISTEN_PORT=4000
+      - HONEST_NODE_ADDRESSES=/dns4/honest-node-1/tcp/4001,/dns4/honest-node-2/tcp/4002,/dns4/honest-node-3/tcp/4003,/dns4/honest-node-4/tcp/4004
+      - RUST_LOG=debug
+    ports:
+      - "4000:4000"
+    networks:
+      - testnet
+    depends_on:
+      - honest-node-1
+      - honest-node-2
+      - honest-node-3
+      - honest-node-4
+    # Run in detached mode; execute scenarios via docker-compose exec
+    entrypoint: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+  # ============================================================
+  # Prometheus (Monitoring)
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: opendex-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  # ============================================================
+  # Grafana (Dashboards)
+  # ============================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: opendex-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - testnet
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+# ============================================================
+# Networks
+# ============================================================
+networks:
+  testnet:
+    driver: bridge
+    name: opendex-testnet
+
+# ============================================================
+# Volumes
+# ============================================================
+volumes:
+  prometheus-data:
+  grafana-data:

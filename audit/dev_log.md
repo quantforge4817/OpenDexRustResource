@@ -1137,7 +1137,7 @@ Milestone 3 added P2P transport abstraction, peer discovery infrastructure, and 
 | 22 | `opendex-fiat` | ~3,500 | 92 | ✅ Complete — Fiat settlement, Bitcoin multisig escrow, bonds, disputes |
 | 23 | `opendex-user` | ~1,050 | 39 | ✅ Complete — User accounts, Argon2id auth, reputation system |
 
-**Total new code: ~13,596 lines across 23 crates. 459 tests passing. 0 compilation errors.**
+**Total new code: ~13,596 lines across 23 crates. 692 tests passing. 0 compilation errors.**
 
 ### Milestone Status
 
@@ -1505,6 +1505,8 @@ Previously blocked actions are now unblocked by integrating real external librar
 - Hardcoded secrets — **0 found**
 - Unused dependencies — **0** (all previously unused deps wired into production code)
 
+*(Note: This section preserves the 2026-10-13 verification snapshot. See audit_checklist.md Section 19 for the current 2026-10-19 verification results.)*
+
 ---
 
 # Testnet Deployment — 2026-10-14
@@ -1562,3 +1564,58 @@ Integration testing with real blockchain RPC services is essential. These bugs w
 - `docs/testnet/testnet-config.env` — Monero port fix
 - `docs/testnet/test-results/verification/e2e-test.sh` — Test script fixes
 - `docs/testnet/test-results/verification/health-check.sh` — Health check fixes
+
+---
+
+# Frontend & GUI Security Audit — 2026-10-18
+
+## Milestone: Web Frontend and Desktop GUI Source-Level Security Audit
+
+**Date:** 18 October 2026
+
+**Status:** 🟡 PENDING FIXES (2 High-severity findings require immediate attention)
+
+The web frontend (`web-frontend`) and desktop GUI (`desktop-gui`) crates received their first source-level security audit, covering all 23 source files (~4,000 lines). This completes the audit coverage for all 23 crates in the workspace.
+
+### Web Frontend Findings (3 findings — Low risk overall)
+
+- **WF-001 (Medium):** `build.rs` embeds the entire project tree with an incomplete exclusion list, potentially exposing sensitive files in the compiled binary.
+- **WF-002 (Low):** `inner_html` usage in the source browser component could render unsafe HTML if source file content changes.
+- **WF-003 (Low):** Inline JavaScript with placeholder donation addresses in the legal page.
+
+### Desktop GUI Findings (8 findings — Medium risk overall)
+
+- **DG-001 (High):** Email verification code displayed in plain text in the UI after registration — an observer could read the code and impersonate the user.
+- **DG-002 (Medium):** Passwords stored as plain `String` in GUI state without memory zeroization on drop.
+- **DG-003 (Medium):** RPC credentials (username, password, URL) exposed via CLI arguments visible in process listings.
+- **DG-004 (Low):** CSV export creates files with default OS permissions (world-readable on some systems).
+- **DG-005 (Low):** External URLs opened via `open!` macro without validation.
+- **DG-006 (High):** Password reset code displayed in plain text in the UI — an observer could use the code to reset the user's password.
+- **DG-007 (Low):** No validation of peer addresses when adding bootstrap peers.
+- **DG-008 (Info):** Password reset UI is a placeholder — form exists but backend integration is incomplete.
+
+### Security Controls Documented
+
+9 security controls documented across both crates:
+
+- **SEC-WF-001 through SEC-WF-004:** HTML escaping, build-time file embedding, no external scripts, no user data collection.
+- **SEC-DG-001 through SEC-DG-005:** Password input masking, order confirmation dialog, auth gate on main UI, persistent user storage via Argon2id, thread isolation.
+
+### Audit Documentation Updated
+
+All audit documentation updated for consistency:
+
+- `audit/audit_checklist.md` — Section 17 added with full finding details.
+- `audit/security.md` — Header, scope, Section 3.4 (9 new controls), Section 6.2 (finding summary).
+- `audit/audit_package/code_inventory.md` — Audit status column added.
+- `audit/audit_package/test_report.md` — Both crates listed with 0 tests.
+- `CHANGELOG.md` — Unreleased section documents the audit.
+
+### Key Insight
+
+The 2 High-severity findings (DG-001, DG-006) share the same root cause: sensitive one-time codes are displayed in the UI where they can be read by anyone viewing the screen. These must be fixed before production deployment of the desktop GUI. The web frontend presents low risk as a static informational site with no user data collection.
+
+### Files Audited
+
+- `crates/web-frontend/` — 11 source files (lib.rs, main.rs, build.rs, source_browser/*, legal.rs, Cargo.toml)
+- `crates/desktop-gui/` — 12 source files (app.rs, model.rs, main.rs, lib.rs, view/auth.rs, view/trade_form.rs, Cargo.toml)

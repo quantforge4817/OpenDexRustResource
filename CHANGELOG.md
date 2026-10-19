@@ -33,6 +33,13 @@ All notable changes to the OpenDex project will be documented in this file.
 - Resolved `KNOWN-H01` (High) — Monero RPC stub replaced with real daemon RPC
 - CI pipeline now enforces clippy, cargo-deny, and formatting on every PR
 - All 380+ tests pass, including 133 penetration tests across 7 attack phases
+- **Frontend/GUI audit 2026-10-18** — Web frontend and desktop GUI source-level security audit complete (Section 17 in `audit/audit_checklist.md`)
+  - Web frontend: 3 findings (WF-001 through WF-003) — low risk overall
+  - Desktop GUI: 8 findings (DG-001 through DG-008) — medium risk overall
+  - 2 High-severity findings (DG-001, DG-006): verification codes displayed in UI — require immediate fix
+  - 3 Medium-severity findings (DG-002, DG-003, WF-001): password memory zeroization, CLI credential exposure, build.rs file inclusion
+  - 9 security controls documented (SEC-WF-001 through SEC-WF-004, SEC-DG-001 through SEC-DG-005)
+  - All audit documentation updated: `audit/security.md`, `audit/audit_package/code_inventory.md`, `audit/audit_package/test_report.md`
 
 ## [v0.1.0-rc1] — 2026-10-15
 

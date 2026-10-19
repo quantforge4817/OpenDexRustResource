@@ -20,7 +20,7 @@ sha2 = "0.10"
 serde_json = "1"
 
 # Cross-curve DLEQ proof dependencies
-k256 = { version = "0.13", features = ["ecdh"] }
+k256 = { version = "0.14", features = ["ecdh"] }
 curve25519-dalek = { version = "4", features = ["group"] }
 rand_core = "0.6"
 zeroize = "1"

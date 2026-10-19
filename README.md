@@ -145,7 +145,7 @@ OpenDex takes security seriously:
 - **Miri** undefined behavior detection: 146 tests, 0 UB
 - **24 Kani formal proofs** (11 verified, 13 disabled)
 - **133 penetration tests** across 7 attack phases
-- **2 `unsafe` blocks** total, both for password zeroization
+- **0 `unsafe` blocks** — all code is safe Rust; credential zeroization uses the `zeroize` crate
 - No custom cryptographic primitives; uses standard `secp256k1`, `Ed25519`, `SHA-256`
 - **Cross-curve DLEQ proofs** using Fiat-Shamir challenge-response (secp256k1 + Ed25519)
 - **CI pipeline** enforces clippy, cargo-deny, and formatting on every PR

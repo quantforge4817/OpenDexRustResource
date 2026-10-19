@@ -443,7 +443,7 @@ If an external service (node, bank API) is compromised:
 |----------|-------------|----------|
 | **State machine enforcement** | Invalid transitions are rejected | `can_transition_to()` methods; unit tests |
 | **Replay protection** | Duplicate messages are rejected | `MessageStore`; unique message IDs |
-| **Key zeroization** | Secret keys are wiped from memory | `Drop` implementations; 2 `unsafe` blocks |
+| **Key zeroization** | Secret keys are wiped from memory | `Drop` implementations using `zeroize` crate; 0 `unsafe` blocks |
 | **Integer-only arithmetic** | No floating-point in monetary calculations | Type system; `Satoshis`, `Piconero`, `FiatAmount` |
 | **Event sourcing** | Full state reconstruction from events | `EventRepository`; atomic writes |
 | **2-of-2 multisig** | Both parties must co-sign escrow operations | `MultisigManager`; Bitcoin P2WSH |

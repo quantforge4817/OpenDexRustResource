@@ -1,5 +1,7 @@
 #![allow(unreachable_code)]
 
+use zeroize::Zeroize;
+
 pub mod balances;
 pub mod btc_wallet_client;
 pub mod cli;
@@ -108,20 +110,12 @@ pub struct GuiNodeConfig {
 
 impl Drop for GuiNodeConfig {
     fn drop(&mut self) {
-        // M23: Zeroize sensitive password fields on drop
-        if let Some(ref mut pass) = self.monero_rpc_pass {
-            unsafe {
-                for byte in pass.as_bytes_mut() {
-                    *byte = 0;
-                }
-            }
+        // Zeroize sensitive password fields on drop to prevent leakage in memory dumps
+        if let Some(mut pass) = self.monero_rpc_pass.take() {
+            pass.zeroize();
         }
-        if let Some(ref mut pass) = self.btc_rpc_pass {
-            unsafe {
-                for byte in pass.as_bytes_mut() {
-                    *byte = 0;
-                }
-            }
+        if let Some(mut pass) = self.btc_rpc_pass.take() {
+            pass.zeroize();
         }
     }
 }

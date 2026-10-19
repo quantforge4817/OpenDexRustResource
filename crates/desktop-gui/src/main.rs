@@ -22,16 +22,16 @@ use p2p_node::gui_bridge::{GuiCommand as BridgeCmd, GuiUpdate as BridgeUpd};
 use p2p_node::{GuiNodeConfig, run_with_gui};
 
 /// Parse command-line arguments for the desktop application.
+/// RPC passwords are read from environment variables, not CLI args, to avoid
+/// exposure in process listings (ps, /proc, etc.).
 struct DesktopArgs {
     port: u16,
     peer: Option<String>,
     new_identity: bool,
     monero_rpc_url: Option<String>,
     monero_rpc_user: Option<String>,
-    monero_rpc_pass: Option<String>,
     btc_rpc_url: Option<String>,
     btc_rpc_user: Option<String>,
-    btc_rpc_pass: Option<String>,
 }
 
 impl Default for DesktopArgs {
@@ -42,10 +42,8 @@ impl Default for DesktopArgs {
             new_identity: false,
             monero_rpc_url: None,
             monero_rpc_user: None,
-            monero_rpc_pass: None,
             btc_rpc_url: None,
             btc_rpc_user: None,
-            btc_rpc_pass: None,
         }
     }
 }
@@ -84,12 +82,6 @@ impl DesktopArgs {
                         config.monero_rpc_user = Some(val.clone());
                     }
                 }
-                "--monero-rpc-pass" => {
-                    i += 1;
-                    if let Some(val) = args.get(i) {
-                        config.monero_rpc_pass = Some(val.clone());
-                    }
-                }
                 "--btc-rpc" => {
                     i += 1;
                     if let Some(val) = args.get(i) {
@@ -100,12 +92,6 @@ impl DesktopArgs {
                     i += 1;
                     if let Some(val) = args.get(i) {
                         config.btc_rpc_user = Some(val.clone());
-                    }
-                }
-                "--btc-rpc-pass" => {
-                    i += 1;
-                    if let Some(val) = args.get(i) {
-                        config.btc_rpc_pass = Some(val.clone());
                     }
                 }
                 "-h" | "--help" => {
@@ -121,10 +107,12 @@ OPTIONS:
     --new-identity             Generate a new identity
     --monero-rpc <URL>         Monero wallet RPC URL
     --monero-rpc-user <U>      Monero wallet RPC username
-    --monero-rpc-pass <P>      Monero wallet RPC password
     --btc-rpc <URL>            Bitcoin wallet RPC URL
     --btc-rpc-user <U>         Bitcoin wallet RPC username
-    --btc-rpc-pass <P>         Bitcoin wallet RPC password
+
+ENVIRONMENT VARIABLES:
+    OPENDEX_MONERO_RPC_PASS    Monero wallet RPC password
+    OPENDEX_BTC_RPC_PASS       Bitcoin wallet RPC password
     -h, --help                 Print this help message
 "
                     );
@@ -143,6 +131,10 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let desktop_args = DesktopArgs::parse(&args);
 
+    // Read RPC passwords from environment variables to avoid exposure in process listings
+    let monero_rpc_pass = std::env::var("OPENDEX_MONERO_RPC_PASS").ok();
+    let btc_rpc_pass = std::env::var("OPENDEX_BTC_RPC_PASS").ok();
+
     // Build the node configuration
     let node_config = GuiNodeConfig {
         port: desktop_args.port,
@@ -150,10 +142,10 @@ fn main() -> Result<()> {
         new_identity: desktop_args.new_identity,
         monero_rpc_url: desktop_args.monero_rpc_url,
         monero_rpc_user: desktop_args.monero_rpc_user,
-        monero_rpc_pass: desktop_args.monero_rpc_pass,
+        monero_rpc_pass,
         btc_rpc_url: desktop_args.btc_rpc_url,
         btc_rpc_user: desktop_args.btc_rpc_user,
-        btc_rpc_pass: desktop_args.btc_rpc_pass,
+        btc_rpc_pass,
     };
 
     // Create adapter channels between desktop-gui types and p2p-node bridge types

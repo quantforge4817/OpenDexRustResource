@@ -58,14 +58,13 @@ mod hmac_token_security {
         let original_token = login.token.token.clone();
 
         // Flip bits in the signature portion (last 64 hex chars = 32 bytes)
-        let mut modified = original_token.clone();
-        let sig_start = modified.len().saturating_sub(64);
-        let sig_bytes =
-            unsafe { std::slice::from_raw_parts_mut(modified.as_mut_ptr().add(sig_start), 64) };
-        sig_bytes[0] = match sig_bytes[0] {
-            b'0'..=b'9' => (sig_bytes[0] + 1) as u8,
+        let mut modified_bytes: Vec<u8> = original_token.clone().into_bytes();
+        let sig_start = modified_bytes.len().saturating_sub(64);
+        modified_bytes[sig_start] = match modified_bytes[sig_start] {
+            b'0'..=b'9' => (modified_bytes[sig_start] + 1) as u8,
             _ => b'0',
         };
+        let modified = String::from_utf8(modified_bytes).unwrap();
 
         let result = auth.validate_token(&modified);
         assert!(result.is_err(), "Modified signature should be rejected");

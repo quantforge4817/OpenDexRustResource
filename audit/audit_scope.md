@@ -146,7 +146,7 @@ The primary objective is to obtain an independent assessment of OpenDex's crypto
 
 ### 4.5 Implementation
 
-17. **Are there memory safety issues?** — Beyond the 2 known `unsafe` blocks, are there any memory safety concerns?
+17. **Are there memory safety issues?** — The codebase contains 0 `unsafe` blocks; are there any memory safety concerns in safe Rust code?
 18. **Is error handling adequate?** — Are errors properly propagated and handled?
 19. **Is the storage layer robust?** — Can storage corruption lead to fund loss?
 20. **Are there race conditions?** — Can concurrent operations lead to inconsistent state?

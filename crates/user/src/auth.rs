@@ -519,10 +519,11 @@ impl AuthService {
         self.verification_codes.insert(user_id, verification_entry);
 
         // Log the verification code (in production, this would be sent via email)
+        // Code is redacted in logs to prevent accidental exposure
         tracing::info!(
             user_id = %user_id,
             email = %self.users.get(&user_id).unwrap().email,
-            code = %verification_code,
+            code = "[REDACTED]",
             "Email verification code generated (console output for development)"
         );
 
@@ -592,7 +593,7 @@ impl AuthService {
 
         tracing::info!(
             user_id = %user_id,
-            code = %code,
+            code = "[REDACTED]",
             "New verification code generated"
         );
 

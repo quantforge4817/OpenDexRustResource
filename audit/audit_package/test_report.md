@@ -16,8 +16,12 @@
 | opendex-protocol | 11 | ✅ Pass |
 | opendex-dao | 61 | ✅ Pass |
 | opendex-user | 69 | ✅ Pass |
+| opendex-fee-treasury | 25 | ✅ Pass |
 | fiat | 96 | ✅ Pass |
-| **Total** | **~338** | **All Pass** |
+| p2p-node | 23 | ✅ Pass |
+| web-frontend | 0 | ⚪ No tests (static site, audited 2026-10-18) |
+| desktop-gui | 0 | ⚪ No tests (GUI, audited 2026-10-18) |
+| **Total** | **~459** | **All Pass** |
 
 ## Integration Tests
 
@@ -63,6 +67,8 @@
 | `cargo test --workspace` | ✅ All pass |
 | `cargo deny check licenses` | ✅ Pass |
 | `cargo deny check sources` | ✅ Pass |
+
+**Note:** `desktop-gui` is excluded from clippy checks due to iced 0.14 platform-specific code generating warnings. `p2p-node` is excluded due to complexity of resolving all warnings in integration test code.
 
 ## Code Coverage Notes
 

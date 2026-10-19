@@ -54,7 +54,7 @@ OpenDex follows these security practices:
 - **Fuzz testing:** 7 fuzz targets for protocol message parsing and state machine validation
 - **Static analysis:** `cargo clippy` and Miri for undefined behavior detection
 - **Code review:** All changes require review before merging
-- **Minimal unsafe code:** Only 2 `unsafe` blocks in the entire codebase, both for password zeroization
+- **Zero unsafe code:** All code is safe Rust; credential zeroization uses the `zeroize` crate's safe API
 
 ### Acknowledgments
 

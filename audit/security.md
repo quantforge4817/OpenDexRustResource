@@ -4,7 +4,8 @@
 **Date:** 2026-10-14  
 **Commit:** `512f4cd`  
 **Tag:** `v0.1.0-security-review`  
-**Status:** All code-level findings resolved — ready for independent external audit
+**Status:** Core findings resolved; frontend/GUI high-severity fixes applied; deep audit findings addressed
+**Last updated:** 2026-10-19 (BDK 3.x migration, electrum-client unified, k256 0.14, hkdf unified, magic bytes, wildcard pinning)
 
 ---
 
@@ -73,7 +74,7 @@ Reporting vulnerabilities in good faith is considered a lawful good-faith attemp
 
 ### 1.6 Scope
 
-**In scope:** `opendex-btc-xmr`, `opendex-protocol-types`, `opendex-swap`, `opendex-recovery`, `opendex-bitcoin`, `opendex-monero`, `fiat`, `opendex-transport`, `opendex-storage`, `p2p-node`, `user`
+**In scope:** `opendex-btc-xmr`, `opendex-protocol-types`, `opendex-swap`, `opendex-recovery`, `opendex-bitcoin`, `opendex-monero`, `fiat`, `opendex-transport`, `opendex-storage`, `p2p-node`, `user`, `web-frontend`, `desktop-gui`
 
 **Out of scope:** Theoretical attacks requiring unrealistic assumptions, social engineering, physical attacks, third-party services (Electrum servers, bank APIs), standard rate-limiting bypasses, issues in dependencies (report to maintainer).
 
@@ -103,7 +104,7 @@ This section establishes the security baseline for the OpenDex project. It conso
 | Crates | 23 |
 | Source files | 110 Rust files |
 | Lines of code | ~32,400 lines of Rust |
-| Test count | 511 passed, 0 failed, 3 ignored |
+| Test count | 692 passed, 0 failed, 5 ignored |
 | Supply chain | 0 RUSTSEC vulnerabilities (cargo-deny verified) |
 
 ### 2.3 Architecture Summary
@@ -164,7 +165,7 @@ See `protocol.md` and `btc_xmr_financial_transaction/sequence_diagrams_transacti
 | SEC-015 | Integer-only monetary arithmetic | ✓ Verified |
 | SEC-016 | Supply chain security (cargo-deny) | ✓ Verified |
 | SEC-017 | Clippy clean (0 warnings) | ✓ Verified |
-| SEC-018 | 2 unsafe blocks (credential zeroization only) | ✓ Verified |
+| SEC-018 | 0 unsafe blocks — all safe Rust | ✓ Verified |
 
 ### 3.2 BTC-XMR Security Controls (SEC-BTC-001 through SEC-BTC-007)
 
@@ -195,6 +196,15 @@ See `protocol.md` and `btc_xmr_financial_transaction/sequence_diagrams_transacti
 | SEC-WEB-001 | Web portal informational only | ✓ Verified |
 | SEC-WEB-002 | Legal compliance page | ✓ Verified |
 | SEC-WEB-003 | Nginx security headers | ✓ Verified |
+| SEC-WF-001 | HTML escaping in source browser | ✓ Verified |
+| SEC-WF-002 | Build-time file embedding (no runtime FS access) | ✓ Verified |
+| SEC-WF-003 | No external scripts or tracking | ✓ Verified |
+| SEC-WF-004 | No user data collection (static site) | ✓ Verified |
+| SEC-DG-001 | Password input masking | ✓ Verified |
+| SEC-DG-002 | Order confirmation dialog | ✓ Verified |
+| SEC-DG-003 | Auth gate on main UI | ✓ Verified |
+| SEC-DG-004 | Persistent user storage (Argon2id via opendex-user) | ✓ Verified |
+| SEC-DG-005 | Thread isolation (GUI main thread, node background) | ✓ Verified |
 
 ### 3.5 Detailed Control Descriptions
 
@@ -289,9 +299,9 @@ The most critical controls are described in detail below. Full descriptions for 
 | ID | Title | Priority | Status |
 |----|-------|----------|--------|
 | BUG-001 | Per-order balance reservations | High | 🟡 Deferred |
-| ARCH-002 | Synchronization/OrderBook boundaries | Medium | 🟡 Deferred |
+| ARCH-002 | Synchronization/OrderBook boundaries | Medium | 🟢 Resolved (2026-10-06) |
 | ARCH-003 | Command handler responsibility boundaries | Medium | 🟡 Deferred |
-| AUDIT-M02 | Asset extensibility | Medium | 🟡 Design decision |
+| AUDIT-M03 | Unsound `lru` crate (transitive) | Medium | ⚠️ Known — monitor for fix |
 
 See `audit.md` (990 lines) and `audit_checklist.md` (1,428 lines) for full audit details.
 
@@ -303,19 +313,19 @@ See `audit.md` (990 lines) and `audit_checklist.md` (1,428 lines) for full audit
 
 | Metric | Value |
 |--------|-------|
-| Workspace tests | 511 passed, 0 failed, 3 ignored |
+| Workspace tests | 692 passed, 0 failed, 5 ignored |
 | Adversarial tests | 26 scenarios |
 | E2E integration tests | 3 fiat-crypto trade flows |
-| Fiat settlement tests | 92 (opendex-fiat) |
-| User auth tests | 39 (opendex-user) |
+| Fiat settlement tests | 96 (opendex-fiat) |
+| User auth tests | 69 (opendex-user) |
 
 ### 5.2 Memory Safety
 
 | Metric | Value |
 |--------|-------|
-| `unsafe` blocks | 2 (password zeroization only) |
+| `unsafe` blocks | 0 — all rewritten to safe Rust |
 | Miri verification | 146 tests, 0 undefined behavior |
-| Fuzzing targets | 5 (deserialization boundaries) |
+| Fuzzing targets | 12 (auth, bonds, trades, messages, orders, P2P, settlement) |
 
 ### 5.3 Supply Chain Security
 
@@ -326,7 +336,7 @@ See `audit.md` (990 lines) and `audit_checklist.md` (1,428 lines) for full audit
 | Banned crates | **0** |
 | Source policy | ✓ crates.io only |
 
-Three low-risk warnings remain: `paste` and `ttf-parser` (unmaintained, GUI-only transitive deps), `lru` (unsoundness in `pop()`, not used by depending crates).
+Six warnings remain: 5 unmaintained transitive deps (paste, ttf-parser, zbus_names, zvariant, zvariant_derive — all GUI-only), 1 unsound `lru` crate (RUSTSEC-2026-0253, transitive only). All duplicate dependency versions have been resolved: `hkdf` unified to 0.13.0 via `k256` 0.14 upgrade, and `electrum-client` unified to 0.25.1 via BDK 3.x migration. `cargo deny` reports 3 advisory errors for the unmaintained zbus-related crates (zbus_names, zvariant, zvariant_derive) — these are transitive GUI-only deps with no security impact on core protocol.
 
 ### 5.4 Code Quality
 
@@ -346,6 +356,9 @@ Three low-risk warnings remain: `paste` and `ttf-parser` (unmaintained, GUI-only
 | serde | 1.0.229 | ✓ Current |
 | iced | 0.14.0 | ✓ Current |
 | bitcoin | 0.32 | ✓ Current |
+| bdk_wallet | 3.2 | ✓ Current (upgraded from 1.0) |
+| k256 | 0.14 | ✓ Current (upgraded from 0.13) |
+| electrum-client | 0.25 | ✓ Current (unified) |
 
 ### 5.6 Testnet Deployment
 
@@ -369,7 +382,21 @@ On 2026-10-14, a 3-node testnet was deployed with real blockchain RPC services:
 
 **Production trading is disabled until the launch blockers are resolved.**
 
-### 6.2 Inherent Limitations
+### 6.2 Frontend/GUI Audit Findings (2026-10-18)
+
+Web frontend and desktop GUI audited 2026-10-18. 11 findings identified (see `audit_checklist.md` Section 17 for details).
+
+| Severity | Count | Key Findings |
+|----------|-------|-------------|
+| **High** | 2 | Verification codes displayed in UI (DG-001, DG-006) — authentication bypass risk |
+| **Medium** | 3 | Password memory zeroization (DG-002), CLI credential exposure (DG-003), build.rs file inclusion (WF-001) |
+| **Low** | 2 | CSV file permissions (DG-004), inner_html usage (WF-002) |
+| **Low** | 1 | Inline JavaScript with placeholder addresses (WF-003) |
+| **Info** | 1 | Placeholder password reset UI (DG-008) |
+
+**The 2 High-severity findings (DG-001, DG-006) require immediate fix before production deployment of the desktop GUI.**
+
+### 6.3 Inherent Limitations
 
 | Risk | Status | Documentation |
 |------|--------|---------------|
@@ -377,7 +404,7 @@ On 2026-10-14, a 3-node testnet was deployed with real blockchain RPC services:
 
 Bank transfers do not provide atomic settlement with cryptocurrency transactions. The protocol mitigates this through Bitcoin 2-of-2 multisig escrow, but cannot guarantee payment finality.
 
-### 6.3 Cryptographic Implementation Status
+### 6.4 Cryptographic Implementation Status
 
 - **DLEQ proof integration:** Stub implementation in `opendex-btc-xmr`
 - **Adaptor signatures:** Specified but not yet implemented
@@ -385,7 +412,7 @@ Bank transfers do not provide atomic settlement with cryptocurrency transactions
 
 No custom cryptographic primitives, signature schemes, or zero-knowledge proof constructions are used. The project relies entirely on standard, well-reviewed cryptographic libraries (`secp256k1`, `dleq`, `sha2`, `ed25519`).
 
-### 6.4 External Audit Status
+### 6.5 External Audit Status
 
 - **Internal audit:** ✓ Complete — all code-level findings resolved
 - **External audit:** ⏳ Pending — no independent external security review has been performed
@@ -531,10 +558,12 @@ OpenDex treats network-delivered protocol messages as untrusted input. Security-
 ### B.5 External Dependencies Integration (2026-10-13)
 
 Real library dependencies integrated:
-- **Bitcoin RPC:** `electrum-client` 0.24, `bitcoin` 0.32
+- **Bitcoin RPC:** `electrum-client` 0.25, `bitcoin` 0.32
+- **BDK wallet:** `bdk_wallet` 3.2, `bdk_electrum` 0.24, `bdk_chain` 0.23
 - **Monero RPC:** `monero-rpc` 0.5
-- **DLEQ proofs:** `dleq` 0.4, `secp256k1` 0.29
+- **DLEQ proofs:** `k256` 0.14, `curve25519-dalek` 4, `secp256k1` 0.29
 - **Transport:** `libp2p` 0.57
+- **Encryption:** `aes-gcm` 0.10, `hkdf` 0.13, `sha2` 0.11
 
 11 unused dependencies removed across 7 crates.
 
@@ -555,6 +584,8 @@ Real library dependencies integrated:
 | 2026-10-12 | Fiat settlement (92 tests) + user auth (39 tests); 7 critical findings resolved; Bitcoin multisig escrow |
 | 2026-10-13 | Real library dependencies integrated; 11 unused deps removed |
 | 2026-10-14 | Testnet deployment verified; 8 bugs resolved; adversarial hardening (6 issues, 26 tests) |
+| 2026-10-18 | Web frontend and desktop GUI audit; high-severity fixes (DG-001, DG-006); memory safety (DG-002, DG-003) |
+| 2026-10-19 | Deep security audit; encryption at rest (AES-256-GCM); BDK 3.x migration; k256 0.14 upgrade; magic bytes; log redaction |
 
 ---
 

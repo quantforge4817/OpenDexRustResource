@@ -1,0 +1,95 @@
+# Dockerfile for OpenDex Red Team Agent
+#
+# Builds the red-team-agent binary for executing attack scenarios against the testnet.
+#
+# Usage:
+#   docker build -f redteam/infra/Dockerfile.attacker -t opendex-attacker ..
+#
+# Environment variables:
+#   ATTACKER_NAME        - Human-readable attacker name
+#   LISTEN_PORT          - Port for libp2p listener
+#   HONEST_NODE_ADDRESSES - Comma-separated honest node multiaddrs
+#   RUST_LOG             - Rust log level (default: debug)
+
+FROM rust:1.75-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/opendex
+
+# Copy Cargo files first for better caching
+COPY Cargo.toml Cargo.lock ./
+COPY crates/common/Cargo.toml crates/common/
+COPY crates/protocol/Cargo.toml crates/protocol/
+COPY crates/p2p-node/Cargo.toml crates/p2p-node/
+COPY crates/opendex-types/Cargo.toml crates/opendex-types/
+COPY crates/opendex-errors/Cargo.toml crates/opendex-errors/
+COPY crates/opendex-protocol-types/Cargo.toml crates/opendex-protocol-types/
+COPY crates/opendex-protocol/Cargo.toml crates/opendex-protocol/
+COPY crates/opendex-transport/Cargo.toml crates/opendex-transport/
+COPY crates/opendex-storage/Cargo.toml crates/opendex-storage/
+COPY crates/opendex-events/Cargo.toml crates/opendex-events/
+COPY crates/user/Cargo.toml crates/user/
+COPY crates/fiat/Cargo.toml crates/fiat/
+COPY crates/opendex-btc-xmr/Cargo.toml crates/opendex-btc-xmr/
+COPY crates/opendex-bitcoin/Cargo.toml crates/opendex-bitcoin/
+COPY crates/opendex-monero/Cargo.toml crates/opendex-monero/
+COPY crates/opendex-swap/Cargo.toml crates/opendex-swap/
+COPY crates/opendex-watchers/Cargo.toml crates/opendex-watchers/
+COPY crates/opendex-recovery/Cargo.toml crates/opendex-recovery/
+COPY crates/opendex-chain/Cargo.toml crates/opendex-chain/
+COPY crates/opendex-dao/Cargo.toml crates/opendex-dao/
+COPY crates/opendex-fee-treasury/Cargo.toml crates/opendex-fee-treasury/
+
+# Copy red-team-agent Cargo.toml
+COPY redteam/agent/Cargo.toml redteam/agent/
+
+# Create dummy source files for dependency resolution
+RUN for crate in crates/*/; do \
+    mkdir -p "${crate}src"; \
+    echo "pub mod dummy {}" > "${crate}src/lib.rs"; \
+done
+
+# Copy actual source code
+COPY crates/ crates/
+COPY redteam/ redteam/
+
+# Build the red-team-agent binary
+RUN cargo build --release -p red-team-agent
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 opendex
+
+# Copy the binary from builder
+COPY --from=builder /usr/src/opendex/target/release/red-team-agent /usr/local/bin/red-team-agent
+
+# Set environment variables
+ENV ATTACKER_NAME=red-team-agent
+ENV LISTEN_PORT=4000
+ENV HONEST_NODE_ADDRESSES=""
+ENV RUST_LOG=debug
+
+# Create config directory
+RUN mkdir -p /home/opendex/config && chown -R opendex:opendex /home/opendex
+
+USER opendex
+WORKDIR /home/opendex
+
+EXPOSE ${LISTEN_PORT}
+
+ENTRYPOINT ["red-team-agent"]
+CMD ["--help"]

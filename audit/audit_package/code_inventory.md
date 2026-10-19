@@ -36,17 +36,17 @@
 
 ## Supporting Crates (Priority: Low)
 
-| Crate | Description |
-|-------|-------------|
-| `opendex-dao` | DAO governance interface |
-| `opendex-fee-treasury` | Fee and treasury subsystem |
-| `common` | Shared utilities |
-| `protocol` | Legacy protocol types |
-| `user` | User accounts, auth, reputation |
-| `fiat` | Fiat settlement subsystem |
-| `p2p-node` | Full P2P node implementation |
-| `web-frontend` | Leptos web portal |
-| `desktop-gui` | Iced desktop application |
+| Crate | Description | Audit Status |
+|-------|-------------|--------------|
+| `opendex-dao` | DAO governance interface | ✓ Audited (61 tests) |
+| `opendex-fee-treasury` | Fee and treasury subsystem | ✓ Audited (25 tests) |
+| `common` | Shared utilities | ✓ Audited |
+| `protocol` | Legacy protocol types | ✓ Audited |
+| `user` | User accounts, auth, reputation | ✓ Audited (39 tests) |
+| `fiat` | Fiat settlement subsystem | ✓ Audited (88 tests) |
+| `p2p-node` | Full P2P node implementation | ✓ Audited (23 tests) |
+| `web-frontend` | Leptos web portal | 🟢 Audited 2026-10-18: Low risk, 3 findings (WF-001 through WF-003) |
+| `desktop-gui` | Iced desktop application | 🟡 Audited 2026-10-18: Medium risk, 8 findings (DG-001 through DG-008) |
 
 ## Test Infrastructure
 

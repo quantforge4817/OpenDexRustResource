@@ -33,7 +33,7 @@
 | **Crates** | 23 |
 | **Source files** | 110 Rust files |
 | **Lines of code** | ~32,400 lines of Rust |
-| **Test count** | 511 passed, 0 failed, 3 ignored |
+| **Test count** | 692 passed, 0 failed, 5 ignored |
 
 To check out the reviewed version:
 
@@ -137,7 +137,7 @@ This should produce 0 warnings.
 cargo test --workspace
 ```
 
-**Expected result:** 511 passed, 0 failed, 3 ignored
+**Expected result:** 692 passed, 0 failed, 5 ignored
 
 ### 5.2 Individual Crate Tests
 
@@ -212,7 +212,7 @@ cargo deny check
 grep -r "unsafe" crates/ --include="*.rs"
 ```
 
-**Expected result:** 2 `unsafe` blocks, both for credential zeroization
+**Expected result:** 0 `unsafe` blocks — all code is safe Rust
 
 ---
 
@@ -318,11 +318,11 @@ git diff v0.1.0-security-review..HEAD
 At the time of the security review baseline:
 
 - **All 23 crates** compile without errors or warnings
-- **511 tests** pass, 0 fail, 3 ignored
+- **692 tests** pass, 0 fail, 5 ignored
 - **0 RUSTSEC vulnerabilities** in financial code path
-- **2 `unsafe` blocks** (both credential zeroization)
+- **0 `unsafe` blocks** — all code is safe Rust
 - **146 tests** verified with Miri
-- **8 fuzz targets** with no crashes
+- **12 fuzz targets** with no crashes
 
 ### 9.4 Known Implementation Gaps
 

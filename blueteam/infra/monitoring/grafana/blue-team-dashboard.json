@@ -1,0 +1,156 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Blue Team Defense Monitor — tracks attack detection, defense health, and response times",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Defense Health Score",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "targets": [
+        {
+          "expr": "(count(opendex_defense_validation_status{status=\"pass\"}) / count(opendex_defense_validation_status)) * 100",
+          "legendFormat": "Detection Rate"
+        }
+      ]
+    },
+    {
+      "title": "Attack Detection Timeline",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(opendex_message_rejected_total[5m])",
+          "legendFormat": "Rejected Messages/s"
+        },
+        {
+          "expr": "rate(opendex_message_processed_total[5m])",
+          "legendFormat": "Processed Messages/s"
+        },
+        {
+          "expr": "increase(opendex_message_replay_detected_total[5m])",
+          "legendFormat": "Replay Detections"
+        }
+      ]
+    },
+    {
+      "title": "Message Flow Analysis",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(opendex_message_accepted_total[5m])",
+          "legendFormat": "Accepted"
+        },
+        {
+          "expr": "rate(opendex_message_rejected_total[5m])",
+          "legendFormat": "Rejected"
+        }
+      ]
+    },
+    {
+      "title": "Authentication Security",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(opendex_auth_failure_total[5m])",
+          "legendFormat": "Auth Failures/s"
+        },
+        {
+          "expr": "increase(opendex_rate_limiter_activations_total[5m])",
+          "legendFormat": "Rate Limiter Activations"
+        }
+      ]
+    },
+    {
+      "title": "Resource Protection",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "opendex_memory_usage_bytes",
+          "legendFormat": "Memory Usage"
+        },
+        {
+          "expr": "opendex_connection_count",
+          "legendFormat": "Connections",
+          "unit": "short"
+        }
+      ]
+    },
+    {
+      "title": "Fiat Trade Security",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "increase(opendex_fiat_invalid_transition_total[5m])",
+          "legendFormat": "Invalid Transitions"
+        },
+        {
+          "expr": "increase(opendex_fiat_payment_rejected_total[5m])",
+          "legendFormat": "Rejected Payments"
+        },
+        {
+          "expr": "increase(opendex_fiat_reversal_detected_total[5m])",
+          "legendFormat": "Reversals Detected"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["opendex", "blueteam", "security"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Blue Team Defense Monitor",
+  "uid": "opendex-blueteam",
+  "version": 1
+}

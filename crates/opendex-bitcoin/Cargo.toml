@@ -11,6 +11,11 @@ opendex-errors = { path = "../opendex-errors" }
 serde = { version = "1", features = ["derive"] }
 
 # Real Bitcoin RPC via Electrum
-electrum-client = "0.24"
+electrum-client = "0.25"
 bitcoin = { version = "0.32", features = ["std"] }
 hex = "0.4"
+
+# BDK 3.x — descriptor-based Bitcoin wallet
+bdk_wallet = { version = "3.2", default-features = false, features = ["std"] }
+bdk_electrum = { version = "0.24", default-features = false }
+bdk_chain = { version = "0.23", default-features = false }

@@ -500,7 +500,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             model.auth_message = None;
         }
         Message::LoginPasswordChanged(v) => {
-            model.login_password = v;
+            model.login_password = zeroize::Zeroizing::new(v);
             model.auth_message = None;
         }
         Message::LoginSubmit => {
@@ -531,7 +531,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             model.auth_message = None;
         }
         Message::RegPasswordChanged(v) => {
-            model.reg_password = v;
+            model.reg_password = zeroize::Zeroizing::new(v);
             model.auth_message = None;
         }
         Message::RegEmailChanged(v) => {
@@ -564,7 +564,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             return Task::perform(
                 async move {
                     let mut auth = auth.lock().unwrap();
-                    auth.register(username, password, email, btc_wallet, xmr_wallet)
+                    auth.register(username, password.to_string(), email, btc_wallet, xmr_wallet)
                 },
                 move |result| match result {
                     Ok(reg_result) => Message::RegisterSuccess(reg_result),
@@ -628,10 +628,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             model.auth_message = Some(format!("Login failed: {}", msg));
         }
         Message::RegisterSuccess(result) => {
-            model.auth_message = Some(format!(
-                "Account created! Verification code: {}",
-                result.verification_code
-            ));
+            model.auth_message = Some("Account created! Verification code sent to your email.".to_string());
             model.auth_screen = AuthScreen::VerifyEmail;
             model.verify_code.clear();
             // Store the user ID for verification
@@ -692,14 +689,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             model.reset_code = value;
         }
         Message::ResetPasswordChanged(value) => {
-            model.reset_new_password = value;
+            model.reset_new_password = zeroize::Zeroizing::new(value);
         }
         Message::SendResetCode => {
             if let Some(user_id) = model.logged_in_user_id
                 && let Ok(mut auth) = model.auth_service.lock()
             {
                 match auth.resend_verification_code(user_id) {
-                    Ok(code) => model.auth_message = Some(format!("Reset code sent: {}", code)),
+                    Ok(_) => model.auth_message = Some("Reset code sent to your email.".to_string()),
                     Err(e) => model.auth_message = Some(format!("Reset failed: {}", e)),
                 }
             }
